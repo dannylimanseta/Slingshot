@@ -40,6 +40,7 @@ function BattleScene.new()
     idleT = 0,
     borderFragments = {}, -- For shatter effect
     borderFadeInTime = 0, -- Fade-in animation timer for border
+    armorIconFlashTimer = 0, -- Timer for armor icon flash when damage is fully blocked
     borderFadeInDuration = 0.2, -- Fade-in duration in seconds
     -- Jackpot damage display state
     jackpotActive = false,
@@ -450,6 +451,11 @@ function BattleScene:update(dt, bounds)
   end
   self.popups = alive
   
+  -- Update armor icon flash timer
+  if self.armorIconFlashTimer > 0 then
+    self.armorIconFlashTimer = math.max(0, self.armorIconFlashTimer - dt)
+  end
+  
   -- Update border fragments and detect armor break/gain
   local armorBroken = (self.prevPlayerArmor or 0) > 0 and (self.playerArmor or 0) == 0
   local armorGained = (self.prevPlayerArmor or 0) == 0 and (self.playerArmor or 0) > 0
@@ -543,20 +549,32 @@ function BattleScene:update(dt, bounds)
               local net = dmg - blocked
               self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
               self.playerHP = math.max(0, self.playerHP - net)
-              self.playerFlash = config.battle.hitFlashDuration
-              -- Apply random rotation (1-3 degrees) when hit
-              local rotationDegrees = love.math.random(1, 3)
-              local rotationRadians = math.rad(rotationDegrees)
-              if love.math.random() < 0.5 then
-                rotationRadians = -rotationRadians
+              
+              -- If damage is fully blocked, show armor icon popup and flash icon
+              if net <= 0 then
+                self.armorIconFlashTimer = 0.5 -- Flash duration
+                -- Show floating armor icon above player
+                table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+              else
+                self.playerFlash = config.battle.hitFlashDuration
+                -- Apply random rotation (1-3 degrees) when hit
+                local rotationDegrees = love.math.random(1, 3)
+                local rotationRadians = math.rad(rotationDegrees)
+                if love.math.random() < 0.5 then
+                  rotationRadians = -rotationRadians
+                end
+                -- Add rotation to current rotation (will tween back to 0)
+                self.playerRotation = self.playerRotation + rotationRadians
+                self.playerKnockbackTime = 1e-6
+                table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
+                pushLog(self, "Enemy dealt " .. net)
+                self.enemyLungeTime = 1e-6
+                self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+                -- Trigger callback for player damage
+                if self.onPlayerDamage then
+                  self.onPlayerDamage()
+                end
               end
-              -- Add rotation to current rotation (will tween back to 0)
-              self.playerRotation = self.playerRotation + rotationRadians
-              self.playerKnockbackTime = 1e-6
-              table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
-              pushLog(self, "Enemy dealt " .. net)
-              self.enemyLungeTime = 1e-6
-              self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
               if self.playerHP <= 0 then
                 self.state = "lose"
                 pushLog(self, "You were defeated!")
@@ -600,12 +618,24 @@ function BattleScene:update(dt, bounds)
           local net = dmg - blocked
           self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
           self.playerHP = math.max(0, self.playerHP - net)
-          self.playerFlash = config.battle.hitFlashDuration
-          self.playerKnockbackTime = 1e-6
-          table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
-          pushLog(self, "Enemy dealt " .. net)
-          self.enemyLungeTime = 1e-6
-          self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+          
+          -- If damage is fully blocked, show armor icon popup and flash icon
+          if net <= 0 then
+            self.armorIconFlashTimer = 0.5 -- Flash duration
+            -- Show floating armor icon above player
+            table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+          else
+            self.playerFlash = config.battle.hitFlashDuration
+            self.playerKnockbackTime = 1e-6
+            table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
+            pushLog(self, "Enemy dealt " .. net)
+            self.enemyLungeTime = 1e-6
+            self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+            -- Trigger callback for player damage
+            if self.onPlayerDamage then
+              self.onPlayerDamage()
+            end
+          end
           if self.playerHP <= 0 then
             self.state = "lose"
             pushLog(self, "You were defeated!")
@@ -1060,11 +1090,31 @@ function BattleScene:draw(bounds)
     local armorSpacing = 8
     local startX = barLeftEdge - (textW + (self.iconArmor and (iconW * s + 6) or 0) + armorSpacing)
     local y = barY + (barH - theme.fonts.base:getHeight()) * 0.5
-    love.graphics.setColor(1, 1, 1, 1)
+    
+    -- Flash effect when damage is fully blocked
+    local flashAlpha = 1
+    local flashScale = 1
+    if self.armorIconFlashTimer > 0 then
+      local flashProgress = 1 - (self.armorIconFlashTimer / 0.5) -- 0 to 1
+      -- Pulse effect: quick flash in, slow fade out
+      flashAlpha = 1 + math.sin(flashProgress * math.pi * 4) * 0.5 -- Pulse 4 times
+      flashAlpha = math.max(0.3, math.min(1.5, flashAlpha)) -- Clamp
+      flashScale = 1 + math.sin(flashProgress * math.pi * 2) * 0.2 -- Scale pulse
+    end
+    
     if self.iconArmor then
-      love.graphics.draw(self.iconArmor, startX, y + (theme.fonts.base:getHeight() - iconH * s) * 0.5, 0, s, s)
+      local iconX = startX
+      local iconY = y + (theme.fonts.base:getHeight() - iconH * s) * 0.5
+      love.graphics.push()
+      love.graphics.translate(iconX + iconW * s * 0.5, iconY + iconH * s * 0.5)
+      love.graphics.scale(flashScale, flashScale)
+      love.graphics.translate(-iconW * s * 0.5, -iconH * s * 0.5)
+      love.graphics.setColor(1, 1, 1, flashAlpha)
+      love.graphics.draw(self.iconArmor, 0, 0, 0, s, s)
+      love.graphics.pop()
       startX = startX + iconW * s + 6
     end
+    love.graphics.setColor(1, 1, 1, 0.9)
     theme.drawTextWithOutline(valueStr, startX, y, 1, 1, 1, 0.9, 2)
     love.graphics.setColor(1, 1, 1, 1)
   end
@@ -1288,7 +1338,7 @@ function BattleScene:draw(bounds)
     end
   end
 
-  -- Popups (no fade; single smooth bounce upward)
+  -- Popups (with fade; single smooth bounce upward)
   love.graphics.setFont(theme.fonts.large)
   local function singleSoftBounce(t)
     -- easeOutBack: smooth single overshoot, reads as one soft bounce
@@ -1305,18 +1355,46 @@ function BattleScene:draw(bounds)
     local height = (config.battle and config.battle.popupBounceHeight) or 60
     local y = baseTop - 20 - bounce * height
     local x = (p.who == "enemy") and curEnemyX or curPlayerX
-    love.graphics.setColor(1, 1, 1, 1)
+    
+    -- Calculate fade alpha
+    local start = (config.battle and config.battle.popupFadeStart) or 0.7
+    local mul = (config.battle and config.battle.popupFadeMultiplier) or 0.5
+    local alpha
+    if prog <= start then
+      alpha = 1
+    else
+      local frac = (prog - start) / math.max(1e-6, (1 - start)) -- 0..1 within fade window
+      local scaled = frac / math.max(1e-6, mul) -- mul <1 fades faster
+      alpha = math.max(0, 1 - scaled)
+    end
+    
+    -- Set color based on who took damage (player = #E0707E, enemy = white)
+    -- Armor popups always use white
+    local r, g, b = 1, 1, 1 -- default white
+    if p.who == "player" and p.kind ~= "armor" then
+      -- Player damage color: #E0707E = RGB(224, 112, 126)
+      r, g, b = 224/255, 112/255, 126/255
+    end
+    
     if p.kind == "armor" and self.iconArmor then
-      local valueStr = "+" .. tostring(p.value or 0)
+      local valueStr = tostring(p.value or 0)
       local textW = theme.fonts.large:getWidth(valueStr)
       local iconW, iconH = self.iconArmor:getWidth(), self.iconArmor:getHeight()
       local s = 28 / math.max(1, iconH)
       local totalW = textW + iconW * s + 6
       local startX = x - totalW * 0.5
+      love.graphics.setColor(r, g, b, alpha)
       love.graphics.draw(self.iconArmor, startX, y - 40 + (theme.fonts.large:getHeight() - iconH * s) * 0.5, 0, s, s)
-      theme.printfWithOutline(valueStr, startX + iconW * s + 6, y - 40, totalW - (iconW * s + 6), "left", 1, 1, 1, 1, 2)
+      theme.printfWithOutline(valueStr, startX + iconW * s + 6, y - 40, totalW - (iconW * s + 6), "left", r, g, b, alpha, 2)
+    elseif p.kind == "armor_blocked" and self.iconArmor then
+      -- Show armor icon only (no text) when damage is blocked
+      local iconW, iconH = self.iconArmor:getWidth(), self.iconArmor:getHeight()
+      local s = 28 / math.max(1, iconH)
+      local startX = x - (iconW * s) * 0.5
+      love.graphics.setColor(1, 1, 1, alpha) -- White color for blocked armor icon
+      love.graphics.draw(self.iconArmor, startX, y - 40 + (theme.fonts.large:getHeight() - iconH * s) * 0.5, 0, s, s)
     else
-      theme.printfWithOutline(p.text or "", x - 40, y - 40, 80, "center", 1, 1, 1, 1, 2)
+      theme.printfWithOutline(p.text or "", x - 40, y - 40, 80, "center", r, g, b, alpha, 2)
     end
   end
   love.graphics.setFont(theme.fonts.base)
@@ -1388,10 +1466,22 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
   local net = dmg - blocked
   self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
   self.playerHP = math.max(0, self.playerHP - net)
-  self.playerFlash = config.battle.hitFlashDuration
-  self.playerKnockbackTime = 1e-6
-  table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
-  pushLog(self, "Enemy dealt " .. net)
+  
+  -- If damage is fully blocked, show armor icon popup and flash icon
+  if net <= 0 then
+    self.armorIconFlashTimer = 0.5 -- Flash duration
+    -- Show floating armor icon above player
+    table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+  else
+    self.playerFlash = config.battle.hitFlashDuration
+    self.playerKnockbackTime = 1e-6
+    table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
+    pushLog(self, "Enemy dealt " .. net)
+    -- Trigger callback for player damage
+    if self.onPlayerDamage then
+      self.onPlayerDamage()
+    end
+  end
   -- Trigger enemy lunge animation
   self.enemyLungeTime = 1e-6
   -- Trigger screenshake

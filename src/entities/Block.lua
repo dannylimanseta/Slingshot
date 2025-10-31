@@ -44,12 +44,15 @@ function Block.new(world, cx, cy, hp, kind, opts)
     pendingDestroy = false,
     pendingResize = false,
     flashTime = 0,
+    hitThisFrame = false, -- Flag to prevent multiple hits from multiple balls
     -- spawn animation
     spawnAnimating = opts and opts.animateSpawn == true or false,
     spawnAnimT = 0,
     spawnAnimDelay = (opts and opts.spawnDelay) or 0, -- delay before animation starts (for staggering)
     spawnAnimDuration = (config.blocks and config.blocks.spawnAnim and config.blocks.spawnAnim.duration) or 0.35,
     spawnAnimOffset = (config.blocks and config.blocks.spawnAnim and config.blocks.spawnAnim.offset) or 28,
+    -- pulse animation
+    pulseTime = love.math.random() * (2 * math.pi), -- random phase offset for different timings
   }, Block)
 
   -- Static body at origin; use shape offsets for placement
@@ -78,7 +81,8 @@ function Block:getPlacementAABB()
 end
 
 function Block:hit()
-  if not self.alive then return end
+  if not self.alive or self.hitThisFrame then return end
+  self.hitThisFrame = true -- Mark as hit to prevent duplicate processing
   self.hp = 0
   self.flashTime = config.blocks.flashDuration
   -- Delay destruction until after flash is visible
@@ -118,6 +122,12 @@ function Block:update(dt)
   if self.flashTime > 0 then
     self.flashTime = math.max(0, self.flashTime - dt)
   end
+  -- Update pulse animation
+  local pulseConfig = config.blocks.pulse
+  if pulseConfig and (pulseConfig.enabled ~= false) then
+    local speed = pulseConfig.speed or 1.2
+    self.pulseTime = (self.pulseTime or 0) + dt * speed * 2 * math.pi
+  end
 end
 
 function Block:draw()
@@ -139,6 +149,14 @@ function Block:draw()
     alpha = 0
   end
 
+  -- Calculate pulse brightness multiplier
+  local brightnessMultiplier = 1
+  local pulseConfig = config.blocks.pulse
+  if pulseConfig and (pulseConfig.enabled ~= false) then
+    local variation = pulseConfig.brightnessVariation or 0.05
+    brightnessMultiplier = 1 + math.sin(self.pulseTime or 0) * variation
+  end
+
   -- Draw sprite if available, else fallback to colored rectangle
   local sprite
   if self.kind == "armor" then
@@ -157,7 +175,7 @@ function Block:draw()
     s = s * mul
     local dx = self.cx - iw * s * 0.5
     local dy = (self.cy + yOffset) - ih * s * 0.5
-    love.graphics.setColor(1, 1, 1, alpha)
+    love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
     love.graphics.draw(sprite, dx, dy, 0, s, s)
     -- Hit flash: additive white overlay passes similar to battle sprites
     if self.flashTime > 0 then
@@ -165,35 +183,50 @@ function Block:draw()
       local a = math.min(1, base * ((config.blocks and config.blocks.flashAlphaScale) or 1))
       local passes = math.max(1, (config.blocks and config.blocks.flashPasses) or 1)
       love.graphics.setBlendMode("add")
-      love.graphics.setColor(1, 1, 1, a * alpha) -- Respect block alpha
+      love.graphics.setColor(1, 1, 1, a * alpha) -- Flash remains white for proper visual feedback
       for i = 1, passes do
         love.graphics.draw(sprite, dx, dy, 0, s, s)
       end
       love.graphics.setBlendMode("alpha")
-      love.graphics.setColor(1, 1, 1, alpha)
+      love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
     end
   else
     if self.kind == "armor" then
-      love.graphics.setColor(theme.colors.blockArmor[1], theme.colors.blockArmor[2], theme.colors.blockArmor[3], (theme.colors.blockArmor[4] or 1) * alpha)
+      love.graphics.setColor(
+        (theme.colors.blockArmor[1] or 1) * brightnessMultiplier,
+        (theme.colors.blockArmor[2] or 1) * brightnessMultiplier,
+        (theme.colors.blockArmor[3] or 1) * brightnessMultiplier,
+        (theme.colors.blockArmor[4] or 1) * alpha
+      )
     else
-      love.graphics.setColor(theme.colors.block[1], theme.colors.block[2], theme.colors.block[3], (theme.colors.block[4] or 1) * alpha)
+      love.graphics.setColor(
+        (theme.colors.block[1] or 1) * brightnessMultiplier,
+        (theme.colors.block[2] or 1) * brightnessMultiplier,
+        (theme.colors.block[3] or 1) * brightnessMultiplier,
+        (theme.colors.block[4] or 1) * alpha
+      )
     end
     love.graphics.rectangle("fill", x, y + yOffset, w, h, 4, 4)
-    love.graphics.setColor(theme.colors.blockOutline[1], theme.colors.blockOutline[2], theme.colors.blockOutline[3], (theme.colors.blockOutline[4] or 1) * alpha)
+    love.graphics.setColor(
+      (theme.colors.blockOutline[1] or 1) * brightnessMultiplier,
+      (theme.colors.blockOutline[2] or 1) * brightnessMultiplier,
+      (theme.colors.blockOutline[3] or 1) * brightnessMultiplier,
+      (theme.colors.blockOutline[4] or 1) * alpha
+    )
     love.graphics.setLineWidth(2)
     love.graphics.rectangle("line", x, y + yOffset, w, h, 4, 4)
-    love.graphics.setColor(1, 1, 1, alpha)
+    love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
     if self.flashTime > 0 then
       local base = self.flashTime / math.max(0.0001, (config.blocks and config.blocks.flashDuration) or 0.08)
       local a = math.min(1, base * ((config.blocks and config.blocks.flashAlphaScale) or 1))
       local passes = math.max(1, (config.blocks and config.blocks.flashPasses) or 1)
       love.graphics.setBlendMode("add")
-      love.graphics.setColor(1, 1, 1, a * alpha) -- Respect block alpha
+      love.graphics.setColor(1, 1, 1, a * alpha) -- Flash remains white for proper visual feedback
       for i = 1, passes do
         love.graphics.rectangle("fill", x, y + yOffset, w, h, 4, 4)
       end
       love.graphics.setBlendMode("alpha")
-      love.graphics.setColor(1, 1, 1, alpha)
+      love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
     end
   end
   -- Reset color for other draw calls

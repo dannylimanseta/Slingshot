@@ -38,6 +38,8 @@ function GameplayScene.new()
     comboCount = 0,
     comboTimeout = 0,
     lastHitTime = 0,
+    -- Track blocks hit this frame to prevent duplicate rewards from multistrike
+    _blocksHitThisFrame = {},
     -- Screenshake
     shakeMagnitude = 0,
     shakeDuration = 0,
@@ -113,6 +115,9 @@ function GameplayScene:load(bounds, projectileId)
 end
 
 function GameplayScene:update(dt, bounds)
+  -- Clear blocks hit this frame (reset each frame to prevent duplicate hits)
+  self._blocksHitThisFrame = {}
+  
   if self.world then self.world:update(dt) end
   
   -- Update single ball (backward compatibility)
@@ -317,6 +322,7 @@ function GameplayScene:draw(bounds)
       if icon then
         local ix = startX + tw + pad
         local iy = fy + (font:getAscent() - iconH * s) * 0.5 + 10
+        love.graphics.setColor(1, 1, 1, alpha)
         love.graphics.draw(icon, ix, iy, 0, s, s)
       end
       love.graphics.pop()
@@ -725,6 +731,16 @@ function GameplayScene:beginContact(fixA, fixB, contact)
     end
   end
   if ball and block then
+    -- Early exit checks: block must be alive, not already hit, and not marked as hit this frame
+    if not block.alive or block.hitThisFrame or self._blocksHitThisFrame[block] then
+      -- Block already destroyed or already processed this frame, skip all processing
+      ball:onBounce()
+      return
+    end
+    
+    -- Mark block as hit this frame IMMEDIATELY to prevent race conditions (double check)
+    self._blocksHitThisFrame[block] = true
+    
     block:hit()
     -- Increment blocks hit this turn
     self.blocksHitThisTurn = (self.blocksHitThisTurn or 0) + 1

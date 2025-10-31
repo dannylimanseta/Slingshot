@@ -96,7 +96,7 @@ projectiles.data = {
     name = "Multi Strike",
     rarity = projectiles.Rarity.COMMON,
     level = 1,
-    baseDamage = 3,
+    baseDamage = 2,
     icon = "assets/images/ball_2.png", -- spread shot sprite
     stats = {
       "Fires 3 projectiles",

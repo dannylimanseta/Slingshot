@@ -112,6 +112,12 @@ config.blocks = {
     clusterAttempts = 12, -- attempts to place entire cluster before falling back to individual blocks
     minRemainingForCluster = 9, -- if fewer blocks remain, place individually
   },
+  -- Pulse animation: subtle brightness pulsing
+  pulse = {
+    enabled = true,
+    speed = 1.2, -- pulse speed (cycles per second)
+    brightnessVariation = 0.15, -- +/- 15% brightness variation
+  },
 }
 
 config.score = {
@@ -181,6 +187,8 @@ config.battle = {
   hitFlashAlphaScale = 0.4, -- multiply base flash alpha (clamped to 1) - reduced from 1.0 to tone down intensity
   popupLifetime = 0.8,
   popupBounceHeight = 60, -- vertical distance for damage popup bounce
+  popupFadeStart = 0.7, -- start fading at 70% of lifetime (last 30%)
+  popupFadeMultiplier = 0.5, -- 50% faster fade within fade window (1.0 = baseline)
   hpBarTweenSpeed = 8, -- HP bar tween speed (how quickly bar moves toward actual HP)
   spriteScale = 5, -- global fallback
   playerSpriteScale = 5,

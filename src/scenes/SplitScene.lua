@@ -54,6 +54,13 @@ function SplitScene.new()
     edgeGlowLeftY = 0, -- Y position of left edge bounce
     edgeGlowRightY = 0, -- Y position of right edge bounce
     edgeGlowDuration = 0.3, -- Duration of glow effect in seconds
+    -- Left boundary damage effect
+    boundaryLeftDamageTimer = 0, -- Timer for left boundary fade-in when player takes damage
+    boundaryLeftDamageDuration = 0.5, -- Duration of fade-in effect
+    -- Screenshake for full screen
+    shakeTime = 0,
+    shakeDuration = 0,
+    shakeMagnitude = 0,
   }, SplitScene)
 end
 
@@ -95,6 +102,14 @@ function SplitScene:load()
   local okGlow, imgGlow = pcall(love.graphics.newImage, edgeGlowPath)
   if okGlow then self.edgeGlowImage = imgGlow end
 
+
+  -- Set up callback for when player takes damage
+  self.right.onPlayerDamage = function()
+    -- Trigger left boundary fade-in effect
+    self.boundaryLeftDamageTimer = self.boundaryLeftDamageDuration
+    -- Trigger screenshake
+    self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+  end
 
   -- When the enemy finishes its move, respawn blocks in the left pane
   self.right.onEnemyTurnResolved = function()
@@ -187,6 +202,8 @@ function SplitScene:setupTurnManagerEvents()
       local turnData = self.turnManager:getTurnData()
       -- Call the old method but only pass damage (armor will be handled separately)
       self.right:onPlayerTurnEnd(data.amount, turnData.armor or 0)
+      -- Trigger screenshake for player attack
+      self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
     end
   end)
   
@@ -293,6 +310,17 @@ function SplitScene:draw()
   local centerW = centerRect.w
   local centerX = centerRect.x
 
+  -- Apply screenshake as a camera translation (ease-out)
+  love.graphics.push()
+  if self.shakeTime > 0 and self.shakeDuration > 0 then
+    local t = self.shakeTime / self.shakeDuration
+    local ease = t * t -- quadratic ease-out
+    local mag = self.shakeMagnitude * ease
+    local ox = (love.math.random() * 2 - 1) * mag
+    local oy = (love.math.random() * 2 - 1) * mag
+    love.graphics.translate(ox, oy)
+  end
+
   -- Background clear
   love.graphics.clear(theme.colors.background)
 
@@ -319,18 +347,57 @@ function SplitScene:draw()
   -- Draw boundary images at left and right edges of breakout canvas (outside scissor so they extend outward)
   love.graphics.push("all")
   love.graphics.setBlendMode("add")
-  love.graphics.setColor(1, 1, 1, 0.1)
   
+  -- Left boundary with damage effect
   if self.boundaryLeft then
     local iw, ih = self.boundaryLeft:getWidth(), self.boundaryLeft:getHeight()
     if iw > 0 and ih > 0 then
       local scale = h / ih -- Scale to match canvas height
       local widthScale = scale * 1.1 -- Increase width by 10%
       local scaledWidth = iw * widthScale
+      
+      -- Calculate fade-in alpha for damage effect
+      local baseAlpha = 0.1
+      local damageAlpha = 0
+      if self.boundaryLeftDamageTimer > 0 then
+        -- Smooth fade: quick fade in (first 20%), hold briefly, then smooth fade out
+        local progress = 1 - (self.boundaryLeftDamageTimer / self.boundaryLeftDamageDuration)
+        local fadeInEnd = 0.2
+        local fadeOutStart = 0.4
+        
+        if progress <= fadeInEnd then
+          -- Fade in: 0 to 1 over first 20% using ease-out curve
+          local t = progress / fadeInEnd
+          damageAlpha = 1 - (1 - t) * (1 - t) -- Ease-out quadratic
+        elseif progress >= fadeOutStart then
+          -- Fade out: 1 to 0 over last 60% using ease-in curve
+          local t = (progress - fadeOutStart) / (1 - fadeOutStart)
+          damageAlpha = 1 - t * t -- Ease-in quadratic (smooth fade to 0)
+        else
+          -- Hold at full intensity between fade in and fade out
+          damageAlpha = 1
+        end
+      end
+      
+      -- Apply tint color #E0707E when damage effect is active, otherwise use white
+      local r, g, b = 1, 1, 1
+      if damageAlpha > 0 then
+        -- Player damage color: #E0707E = RGB(224, 112, 126)
+        r, g, b = 224/255, 112/255, 126/255
+        -- Blend base alpha with damage alpha (max intensity when damageAlpha = 1)
+        local totalAlpha = baseAlpha + damageAlpha * 0.9
+        love.graphics.setColor(r, g, b, totalAlpha)
+      else
+        love.graphics.setColor(r, g, b, baseAlpha)
+      end
+      
       -- Align right edge of image to left canvas edge (origin at top-right, extends leftward, 100px up)
       love.graphics.draw(self.boundaryLeft, centerX, -100, 0, widthScale, scale, scaledWidth, 0)
     end
   end
+  
+  -- Right boundary (unchanged)
+  love.graphics.setColor(1, 1, 1, 0.1)
   
   if self.boundaryRight then
     local iw, ih = self.boundaryRight:getWidth(), self.boundaryRight:getHeight()
@@ -420,8 +487,8 @@ function SplitScene:draw()
       alpha = t / fadeStart
     end
     
-    -- Draw black overlay (0.2 alpha)
-    love.graphics.setColor(0, 0, 0, 0.2 * alpha)
+    -- Draw black overlay (0.6 alpha)
+    love.graphics.setColor(0, 0, 0, 0.6 * alpha)
     love.graphics.rectangle("fill", 0, 0, w, h)
     love.graphics.setColor(1, 1, 1, 1)
     
@@ -453,6 +520,7 @@ function SplitScene:draw()
     love.graphics.pop()
   end
   
+  love.graphics.pop() -- Pop screenshake transform
   -- Draw projectile card at bottom-left
   if self.projectileCard then
     -- Determine which projectile to show based on turn number (even = spread shot)
@@ -556,6 +624,21 @@ function SplitScene:update(dt)
     self.edgeGlowRightTimer = math.max(0, self.edgeGlowRightTimer - dt)
   end
   
+  -- Update left boundary damage effect timer
+  if self.boundaryLeftDamageTimer > 0 then
+    self.boundaryLeftDamageTimer = math.max(0, self.boundaryLeftDamageTimer - dt)
+  end
+  
+  -- Update screenshake timer
+  if self.shakeTime > 0 then
+    self.shakeTime = math.max(0, self.shakeTime - dt)
+    if self.shakeTime <= 0 then
+      self.shakeTime = 0
+      self.shakeDuration = 0
+      self.shakeMagnitude = 0
+    end
+  end
+  
   local w = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
   local h = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
   local centerRect = self.layoutManager:getCenterRect(w, h)
@@ -625,15 +708,16 @@ function SplitScene:update(dt)
   local shotWasFired = (canShoot == false) -- If canShoot is false, a shot was fired
   if shotWasFired and not hasBall and self._leftTurnForwarded == false then
     if not self._leftForwardTimer then
-      self._leftForwardTimer = (config.battle and config.battle.playerAttackDelay) or 0
-      -- Trigger impact VFX when turn ends (ball died)
+      -- 0.3 second delay after balls despawn before starting attack animation
+      self._leftForwardTimer = 0.3
+    end
+    if self._leftForwardTimer <= 0 then
+      -- Trigger impact VFX after delay (ball died)
       if self.right and self.right.playImpact then
         local blockCount = (self.left and self.left.blocksHitThisTurn) or 1
         local isCrit = (self.left and self.left.critThisTurn and self.left.critThisTurn > 0) or false
         self.right:playImpact(blockCount, isCrit)
       end
-    end
-    if self._leftForwardTimer <= 0 then
       -- Use TurnManager to end the turn
       if self:endPlayerTurnWithTurnManager() then
         self._leftTurnForwarded = true
@@ -734,6 +818,13 @@ function SplitScene:getBattleType()
     return self.layoutManager:getBattleType()
   end
   return nil
+end
+
+-- Trigger screenshake
+function SplitScene:triggerShake(magnitude, duration)
+  self.shakeMagnitude = magnitude or 10
+  self.shakeDuration = duration or 0.25
+  self.shakeTime = self.shakeDuration
 end
 
 return SplitScene
