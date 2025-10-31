@@ -1,0 +1,9 @@
+# Love2D / Lua
+*.luac
+
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/
+
+
