@@ -25,7 +25,7 @@ love "/path/to/Slingshot"
 - **Turn Flow**:
   1. Aim and fire the ball
   2. Ball bounces off blocks and walls, accumulating score
-  3. When ball reaches max bounces OR falls out the bottom, a finisher projectile fires toward the enemy
+  3. When ball reaches max bounces OR falls out the bottom, the turn ends
   4. Turn score and armor are applied to the enemy
   5. After a delay, enemy attacks the player
   6. Destroyed blocks respawn equal to the number destroyed last turn
@@ -64,10 +64,10 @@ Blocks spawn with 1 HP and are destroyed in one hit. There are three types:
 ## Ball Mechanics
 - Ball speeds up slightly on each bounce (+1% per bounce)
 - Starts at 40% speed, then eases to full speed over time
-- Maximum 5 bounces before finisher triggers automatically
+- Maximum 5 bounces before turn ends automatically
 - Trail effect with gradient fade (head bright, tail dims)
 - Glow effect with pulsing alpha
-- Finisher projectile: After max bounces or falling out, fires a fast projectile from the ball's position toward the enemy, dynamically tracking enemy position
+- When ball reaches max bounces or falls out the bottom, the turn ends and damage is applied to the enemy
 
 ## Right-Pane Battle
 - **Visual Features**:
@@ -118,7 +118,7 @@ All tunables live in `src/config.lua`:
 ### Ball
 - `ball.radius`, `speed`, `maxBounces`, `spawnYFromBottom`
 - `ball.easing.enabled`, `easing.startFactor`, `easing.easeK`
-- `ball.bounceSpeedScale`, `finisherSpeed`
+- `ball.bounceSpeedScale`
 - `ball.trail.*` (enabled, width, maxPoints, sampleInterval, softness, color, colorStart, colorEnd, additive, overlap, taperPower, invert)
 - `ball.glow.*` (enabled, radiusScale, color, pulse, pulseSpeed, pulseAmount, outerGlow.*)
 
@@ -171,7 +171,7 @@ src/
     SceneManager.lua       # Scene management
     TurnManager.lua        # Turn state machine & event system
   scenes/
-    SplitScene.lua         # Left/Right panes container, finisher system
+    SplitScene.lua         # Left/Right panes container
     GameplayScene.lua     # Breakout gameplay (center pane)
     BattleScene.lua       # RPG battle (background)
     EmptyScene.lua

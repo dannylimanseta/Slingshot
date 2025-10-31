@@ -46,7 +46,6 @@ config.ball = {
     easeK = 6, -- higher = faster approach to target
   },
   bounceSpeedScale = 1.01, -- +8% target speed per bounce
-  finisherSpeed = 1000, -- speed of cross-pane finisher projectile (reduced)
   trail = {
     enabled = true,
     width = 23.4, -- increased by 30% (was 18)

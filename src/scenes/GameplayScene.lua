@@ -31,11 +31,6 @@ function GameplayScene.new()
     cursorX = 0,
     cursorY = 0,
     popups = {},
-    finisherActive = false,
-    finisherRequested = false,
-    finisherStartX = 0,
-    finisherStartY = 0,
-    finishers = {}, -- array of finisher requests for spread shot
     critThisTurn = 0, -- count of crit blocks hit this turn
     _prevCanShoot = true,
     turnManager = nil, -- reference to TurnManager (set by SplitScene)
@@ -136,7 +131,8 @@ function GameplayScene:update(dt, bounds)
     end
   end
   
-  -- Failsafe: if the ball tunnels past the bottom sensor, convert to finisher
+  -- Failsafe: if the ball tunnels past the bottom sensor, destroy it
+  -- Turn will end automatically when no balls are alive
   do
     -- Single ball check
     if self.ball and self.ball.alive and self.ball.body then
@@ -144,11 +140,6 @@ function GameplayScene:update(dt, bounds)
       local height = (bounds and bounds.h) or love.graphics.getHeight()
       local margin = 16 -- small buffer beyond bottom edge
       if by > height + margin then
-        if not self.finisherActive then
-          self.finisherActive = true
-          self.finisherRequested = true
-          self.finisherStartX, self.finisherStartY = bx, by
-        end
         self.ball:destroy()
       end
     end
@@ -162,8 +153,6 @@ function GameplayScene:update(dt, bounds)
         if ball and ball.alive and ball.body then
           local bx, by = ball.body:getX(), ball.body:getY()
           if by > height + margin then
-            -- Request finisher for this ball
-            table.insert(self.finishers, { x = bx, y = by })
             ball:destroy()
             table.remove(self.balls, i)
           end
@@ -541,9 +530,7 @@ function GameplayScene:mousepressed(x, y, button, bounds)
       end
     end
   end
-  -- Also check if there are pending finishers
-  local hasPendingFinishers = (self.finishers and #self.finishers > 0) or self.finisherRequested
-  if button == 1 and self.canShoot and not hasAliveBall and not hasPendingFinishers then
+  if button == 1 and self.canShoot and not hasAliveBall then
     if self.shooter then
       local sx, sy = self.shooter:getMuzzle()
       self.aimStartX = sx
@@ -576,9 +563,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       end
     end
   end
-  -- Also check if there are pending finishers
-  local hasPendingFinishers = (self.finishers and #self.finishers > 0) or self.finisherRequested
-  if button == 1 and self.isAiming and self.canShoot and not hasAliveBall and not hasPendingFinishers then
+  if button == 1 and self.isAiming and self.canShoot and not hasAliveBall then
     local dx = x - self.aimStartX
     local dy = y - self.aimStartY
     local ndx, ndy = math2d.normalize(dx, dy)
@@ -593,8 +578,6 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       self.comboCount = 0
       self.comboTimeout = 0
       self.lastHitTime = 0
-      -- Clear any pending finishers
-      self.finishers = {}
       
       -- Determine if this is a spread shot turn (odd turn numbers = spread shot)
       local isSpreadShot = false
@@ -634,9 +617,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
             spritePath = spritePath,
             trailConfig = spreadConfig.trail, -- Use spread shot trail config (green, smaller width)
             onLastBounce = function(ball)
-              -- Request finisher for this ball
-              local bx, by = ball.body:getX(), ball.body:getY()
-              table.insert(self.finishers, { x = bx, y = by })
+              -- Ball reached max bounces, destroy it - turn will end automatically
               ball:destroy()
             end
           })
@@ -652,14 +633,8 @@ function GameplayScene:mousereleased(x, y, button, bounds)
         self.balls = {} -- Clear multiple balls
         self.ball = Ball.new(self.world, self.aimStartX, self.aimStartY, ndx, ndy, {
           onLastBounce = function(ball)
-            -- Start finisher: record start position, destroy physics ball, keep turn active
-            if not self.finisherActive then
-              self.finisherActive = true
-              self.finisherRequested = true
-              local bx, by = ball.body:getX(), ball.body:getY()
-              self.finisherStartX, self.finisherStartY = bx, by
-              ball:destroy()
-            end
+            -- Ball reached max bounces, destroy it - turn will end automatically
+            ball:destroy()
           end
         })
         if self.ball then
@@ -822,32 +797,8 @@ function GameplayScene:beginContact(fixA, fixB, contact)
     end
   end
   if ball and (aType == "bottom" or bType == "bottom") then
-    -- Check if this is part of a spread shot (multiple balls)
-    local isSpreadBall = false
-    if self.balls then
-      for _, b in ipairs(self.balls) do
-        if b == ball then
-          isSpreadBall = true
-          break
-        end
-      end
-    end
-    
-    if isSpreadBall then
-      -- Spread shot: add to finishers array
-      local bx, by = ball.body:getX(), ball.body:getY()
-      table.insert(self.finishers, { x = bx, y = by })
-      ball:destroy()
-    else
-      -- Single ball: use old finisher system
-      if not self.finisherActive then
-        self.finisherActive = true
-        self.finisherRequested = true
-        local bx, by = ball.body:getX(), ball.body:getY()
-        self.finisherStartX, self.finisherStartY = bx, by
-      end
-      ball:destroy()
-    end
+    -- Ball hit bottom sensor, destroy it - turn will end automatically
+    ball:destroy()
   end
 end
 

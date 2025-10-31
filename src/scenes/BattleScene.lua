@@ -819,8 +819,6 @@ function BattleScene:update(dt, bounds)
           self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
         end
         
-        -- (Impact animation now triggers on finisher hit in SplitScene)
-        
         -- Clear pending damage
         self.pendingDamage = 0
         
