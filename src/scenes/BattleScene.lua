@@ -228,27 +228,39 @@ function BattleScene:onPlayerTurnEnd(turnScore, armor)
     self.state = "resolving"
     local dmg = math.floor(turnScore)
     
-    -- If jackpot is active, delay damage application and hit animations until jackpot crashes down
+    -- If jackpot is active, apply damage immediately and end jackpot display
     if self.jackpotActive then
-      -- Store damage to apply later when jackpot impacts
-      self.pendingDamage = dmg
-      self.pendingArmorFromTurn = armor or 0
+      -- End jackpot display immediately
+      self.jackpotActive = false
+      self.jackpotTarget = 0
+      self.jackpotDisplay = 0
+      self.jackpotFalling = false
+      self.jackpotFragments = {}
       
-      -- Start jackpot falling immediately (no delay)
-      if not self.jackpotFalling then
-        self.jackpotFalling = true
-        self.jackpotFallT = 0
-        self.jackpotFallDelayT = 0
-        -- Store initial Y position for rise effect
-        local w = (self._lastBounds and self._lastBounds.w) or love.graphics.getWidth()
-        local h = (self._lastBounds and self._lastBounds.h) or love.graphics.getHeight()
-        local center = self._lastBounds and self._lastBounds.center or nil
-        local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
-        local centerW = center and center.w or math.floor(w * 0.5)
-        local baselineY = h - ((config.battle and config.battle.positionOffsetY) or 50)
-        local enemyHalfH = self.enemyImg and ((self.enemyImg:getHeight() * 5) * 0.5) or 30
-        local cfg = config.battle and config.battle.jackpot or {}
-        self.jackpotFallStartY = baselineY - enemyHalfH - (cfg.offsetY or 120)
+      -- Apply damage immediately
+      self.enemyHP = math.max(0, self.enemyHP - dmg)
+      self.enemyFlash = config.battle.hitFlashDuration
+      self.enemyKnockbackTime = 1e-6
+      table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy" })
+      pushLog(self, "You dealt " .. dmg)
+      -- Trigger player lunge animation
+      self.playerLungeTime = 1e-6
+      -- Trigger screenshake
+      self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+      
+      if self.enemyHP <= 0 then
+        -- Start disintegration effect
+        if not self.enemyDisintegrating then
+          self.enemyDisintegrating = true
+          self.enemyDisintegrationTime = 0
+          pushLog(self, "Enemy defeated!")
+        end
+      else
+        -- Queue incoming armor to apply and show right before enemy attacks
+        self.pendingArmor = armor or 0
+        self.armorPopupShown = false
+        -- Queue enemy attack
+        self.enemyAttackTimer = config.battle.enemyAttackDelay
       end
     else
       -- No jackpot: apply damage immediately (backward compatibility)
@@ -748,18 +760,8 @@ function BattleScene:update(dt, bounds)
     end
   end
 
-  -- Update jackpot fall delay timer
-  if self.jackpotActive and not self.jackpotFalling and (self.jackpotFallDelayT or 0) > 0 then
-    self.jackpotFallDelayT = (self.jackpotFallDelayT or 0) - dt
-    if self.jackpotFallDelayT <= 0 then
-      self.jackpotFallDelayT = 0
-      self.jackpotFalling = true
-      self.jackpotFallT = 0
-    end
-  end
-
   -- Update jackpot display tick toward target (dynamic speed based on damage delta)
-  if self.jackpotActive and not self.jackpotFalling then
+  if self.jackpotActive then
     local scoreConfig = require("config").score or {}
     local baseSpeed = scoreConfig.tickerSpeed or 10
     local delta = (self.jackpotTarget - (self.jackpotDisplay or 0))
@@ -798,100 +800,6 @@ function BattleScene:update(dt, bounds)
     end
   end
 
-  -- Update jackpot falling
-  if self.jackpotActive and self.jackpotFalling then
-    local cfg = require("config").battle and require("config").battle.jackpot or {}
-    local dur = cfg.fallDuration or 0.25
-    self.jackpotFallT = (self.jackpotFallT or 0) + dt
-    if self.jackpotFallT >= dur then
-      self.jackpotFalling = false
-      
-      -- Apply pending damage and hit animations exactly when jackpot crashes down
-      if self.pendingDamage and self.pendingDamage > 0 then
-        local dmg = self.pendingDamage
-        self.enemyHP = math.max(0, self.enemyHP - dmg)
-        pushLog(self, "You dealt " .. dmg)
-        -- If impact effects weren't already played on hit, play them now as fallback
-        if not self.impactEffectsPlayed then
-          self.enemyFlash = config.battle.hitFlashDuration
-          self.enemyKnockbackTime = 1e-6
-          self.playerLungeTime = 1e-6
-          self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
-        end
-        
-        -- Clear pending damage
-        self.pendingDamage = 0
-        
-        if self.enemyHP <= 0 then
-          -- Start disintegration effect
-          if not self.enemyDisintegrating then
-            self.enemyDisintegrating = true
-            self.enemyDisintegrationTime = 0
-            pushLog(self, "Enemy defeated!")
-          end
-          -- Still spawn fragments and end jackpot
-        else
-          -- Queue incoming armor to apply and show right before enemy attacks
-          self.pendingArmor = self.pendingArmorFromTurn or 0
-          self.pendingArmorFromTurn = 0
-          self.armorPopupShown = false
-          -- Queue enemy attack
-          self.enemyAttackTimer = config.battle.enemyAttackDelay
-        end
-      end
-      
-      -- Spawn shatter fragments at impact point
-      local w = (self._lastBounds and self._lastBounds.w) or love.graphics.getWidth()
-      local h = (self._lastBounds and self._lastBounds.h) or love.graphics.getHeight()
-      local center = self._lastBounds and self._lastBounds.center or nil
-      local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
-      local centerW = center and center.w or math.floor(w * 0.5)
-      local rightStart = centerX + centerW
-      local rightWidth = math.max(0, w - rightStart)
-      local r = 24
-      local yOffset = (require("config").battle and require("config").battle.positionOffsetY) or 0
-      local baselineY = h * 0.55 + r + yOffset
-      local enemyX = (rightWidth > 0) and (rightStart + rightWidth * 0.5) or (w - 12 - r)
-      -- Compute enemy top point (sprite-aware)
-      local enemyHalfH = r
-      do
-        local cfg = require("config").battle
-        local enemyScaleCfg = (cfg and (cfg.enemySpriteScale or cfg.spriteScale)) or 1
-        if self.enemyImg then
-          local ih = self.enemyImg:getHeight()
-          local s = ((2 * r) / math.max(1, ih)) * enemyScaleCfg * (self.enemyScaleMul or 1)
-          enemyHalfH = (ih * s) * 0.5
-        end
-      end
-      local hitTopY = baselineY - enemyHalfH
-      local startYBase = baselineY - enemyHalfH - (cfg.offsetY or 120)
-      local endY = startYBase + (hitTopY - startYBase) * math.max(0, math.min(1, (cfg.fallDistanceFactor or 1)))
-      local hitX, hitY = enemyX, endY
-      local count = cfg.shatterFragments or 24
-      local spd = cfg.fragmentSpeed or 320
-      local life = cfg.fragmentLifetime or 0.5
-      self.jackpotFragments = {}
-      for i = 1, count do
-        local a = (i / count) * (2 * math.pi) + (love.math.random() - 0.5) * 0.6
-        local s = spd * (0.6 + love.math.random() * 0.8)
-        table.insert(self.jackpotFragments, {
-          x = hitX, y = hitY,
-          vx = math.cos(a) * s,
-          vy = math.sin(a) * s,
-          lifetime = life,
-          maxLifetime = life,
-          rotation = love.math.random() * (2 * math.pi),
-          rotationSpeed = (love.math.random() - 0.5) * 10,
-          length = 8 + love.math.random() * 10,
-          width = 3 + love.math.random() * 5,
-        })
-      end
-      -- End jackpot after impact
-      self.jackpotActive = false
-      self.jackpotTarget = 0
-      self.jackpotDisplay = 0
-    end
-  end
 
   -- Update jackpot fragment physics and fade
   if self.jackpotFragments and #self.jackpotFragments > 0 then
@@ -1311,41 +1219,14 @@ function BattleScene:draw(bounds)
     love.graphics.pop()
   end
 
-  -- Jackpot number (accumulating damage display above enemy)
+  -- Jackpot number (accumulating damage display above enemy) - HIDDEN
   do
-    if self.jackpotActive or (self.jackpotFragments and #self.jackpotFragments > 0) then
+    if false and (self.jackpotActive or (self.jackpotFragments and #self.jackpotFragments > 0)) then
       local cfg = config.battle and config.battle.jackpot or {}
       local startYBase = baselineY - enemyHalfH - (cfg.offsetY or 120)
-      -- Fall target = reduced distance toward enemy top
-      local hitTopY = baselineY - enemyHalfH
-      local endY = startYBase + (hitTopY - startYBase) * math.max(0, math.min(1, (cfg.fallDistanceFactor or 1)))
-      local hitX, hitY = curEnemyX, endY
+      local hitX = w * 0.5 -- Center horizontally across screen
       local y = startYBase
-      if self.jackpotActive and self.jackpotFalling then
-        local dur = (cfg.fallDuration or 0.25)
-        local t = math.min(1, (self.jackpotFallT or 0) / math.max(0.0001, dur))
-        
-        -- Rise effect: move up a few pixels first, then fall
-        local riseDistance = 12 -- pixels to rise before falling
-        local riseDuration = 0.15 -- portion of duration spent rising (15% of total)
-        local riseT = math.min(1, t / math.max(0.0001, riseDuration))
-        local fallT = math.max(0, (t - riseDuration) / math.max(0.0001, 1 - riseDuration))
-        
-        -- Ease-out for rise, ease-in for fall
-        local riseEase = 1 - (1 - riseT) * (1 - riseT) -- ease-out quadratic
-        local fallEase = fallT * fallT -- ease-in quadratic
-        
-        -- Calculate Y with rise then fall
-        if t <= riseDuration then
-          -- Rising phase
-          y = startYBase - riseDistance * riseEase
-        else
-          -- Falling phase (from risen position to end)
-          local risenY = startYBase - riseDistance
-          y = risenY + (endY - risenY) * fallEase
-        end
-      end
-      if self.jackpotActive and not (self.jackpotFalling and (self.jackpotFallT or 0) >= (cfg.fallDuration or 0.25)) then
+      if self.jackpotActive then
         local font = self.jackpotCrit and (theme.fonts.jackpot or theme.fonts.large) or theme.fonts.large
         love.graphics.setFont(font)
         local text = tostring(math.floor(self.jackpotDisplay or 0))
@@ -1369,29 +1250,13 @@ function BattleScene:draw(bounds)
             dy = dy - amp * bob
           end
         end
-        -- Apply scale tween during fall (increase by 10%)
-        local scale = 1.0
-        if self.jackpotActive and self.jackpotFalling then
-          local dur = (cfg.fallDuration or 0.25)
-          local t = math.min(1, (self.jackpotFallT or 0) / math.max(0.0001, dur))
-          -- Ease-out scale: start at 1.0, peak at 1.1, back to 1.0 at end
-          -- Peak at 50% of fall duration
-          if t <= 0.5 then
-            -- Scale up: 1.0 to 1.1
-            scale = 1.0 + (t / 0.5) * 0.1
-          else
-            -- Scale down: 1.1 back to 1.0
-            scale = 1.1 - ((t - 0.5) / 0.5) * 0.1
-          end
-        end
         
         love.graphics.push()
         love.graphics.translate(hitX + dx, y + dy)
-        love.graphics.scale(scale, scale)
-        local w = font:getWidth(text)
+        local textW = font:getWidth(text)
         -- Keep jackpot number at full opacity at all times
         local alpha = 1.0
-        theme.drawTextWithOutline(text, -w * 0.5, -40, 1, 1, 1, alpha, 3)
+        theme.drawTextWithOutline(text, -textW * 0.5, -40, 1, 1, 1, alpha, 3)
         love.graphics.pop()
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.setFont(theme.fonts.base)

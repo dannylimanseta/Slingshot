@@ -197,7 +197,6 @@ function TurnManager:endPlayerTurn(turnData)
   
   self:transitionTo(TurnManager.States.PLAYER_TURN_RESOLVING, {
     actions = {
-      { type = "wait", duration = 0.3 }, -- Delay after balls despawn before applying damage
       { type = "apply_damage", target = "enemy", amount = turnData.score },
       { type = "check_victory" },
       -- Transition to enemy turn will be triggered after armor popup (if any) or immediately
