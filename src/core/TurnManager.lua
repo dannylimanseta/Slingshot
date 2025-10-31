@@ -197,6 +197,7 @@ function TurnManager:endPlayerTurn(turnData)
   
   self:transitionTo(TurnManager.States.PLAYER_TURN_RESOLVING, {
     actions = {
+      { type = "wait", duration = 0.3 }, -- Delay after balls despawn before applying damage
       { type = "apply_damage", target = "enemy", amount = turnData.score },
       { type = "check_victory" },
       -- Transition to enemy turn will be triggered after armor popup (if any) or immediately
@@ -234,7 +235,7 @@ function TurnManager:startEnemyTurn()
   local success = self:transitionTo(TurnManager.States.ENEMY_TURN_START, {
     actions = {
       { type = "show_indicator", text = "ENEMY'S TURN", indicatorDuration = 1.0 },
-      { type = "wait", duration = 0.4 },
+      { type = "wait", duration = 0.8 },
       { type = "enemy_attack" },
       { type = "check_defeat" },
       { type = "spawn_blocks", count = self.turnData.blocksDestroyed or 0 },
