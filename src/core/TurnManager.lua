@@ -69,6 +69,7 @@ function TurnManager:queueAction(actionName, params)
 end
 
 function TurnManager:queueActions(actions)
+  if not actions then return end
   for _, actionDef in ipairs(actions) do
     self:queueAction(actionDef.type, actionDef)
   end

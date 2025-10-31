@@ -3,6 +3,8 @@ local theme = require("theme")
 local Bar = require("ui.Bar")
 local SpriteAnimation = require("utils.SpriteAnimation")
 local DisintegrationShader = require("utils.DisintegrationShader")
+local FogShader = require("utils.FogShader")
+local TurnManager = require("core.TurnManager")
 
 local BattleScene = {}
 BattleScene.__index = BattleScene
@@ -19,8 +21,8 @@ function BattleScene.new()
     playerFlash = 0,
     popups = {},
     log = {},
-    state = "idle", -- idle | resolving | win | lose
-    enemyAttackTimer = 0,
+    state = "idle", -- idle | win | lose (deprecated, use TurnManager state)
+    _enemyTurnDelay = nil, -- Delay timer for enemy turn start (after armor popup)
     playerImg = nil,
     enemyImg = nil,
     playerScaleMul = 1,
@@ -71,10 +73,17 @@ function BattleScene.new()
     -- Enemy disintegration effect
     enemyDisintegrating = false,
     enemyDisintegrationTime = 0,
+    pendingDisintegration = false, -- Set to true when HP reaches 0 but waiting for impact animations
     disintegrationShader = nil,
     -- Lunge speed streaks
     lungeStreaks = {},
     lungeStreakAcc = 0,
+    -- Pulse animation timers (different phase offsets for visual variety)
+    playerPulseTime = love.math.random() * (2 * math.pi),
+    enemyPulseTime = love.math.random() * (2 * math.pi),
+    -- Fog shader
+    fogShader = nil,
+    fogTime = 0, -- Time accumulator for fog animation
   }, BattleScene)
 end
 
@@ -112,6 +121,15 @@ function BattleScene:load(bounds)
   else
     -- Shader failed to load, disable disintegration effect
     self.disintegrationShader = nil
+  end
+  
+  -- Load fog shader
+  local fogOk, fogShader = pcall(function() return FogShader.getShader() end)
+  if fogOk and fogShader then
+    self.fogShader = fogShader
+  else
+    -- Shader failed to load, disable fog effect
+    self.fogShader = nil
   end
 end
 
@@ -224,9 +242,10 @@ local function createBorderFragments(x, y, w, h, gap, radius)
 end
 
 function BattleScene:onPlayerTurnEnd(turnScore, armor)
-  if self.state == "win" or self.state == "lose" then return end
+  -- Check win/lose states via TurnManager
+  local tmState = self.turnManager and self.turnManager:getState()
+  if tmState == TurnManager.States.VICTORY or tmState == TurnManager.States.DEFEAT then return end
   if turnScore and turnScore > 0 then
-    self.state = "resolving"
     local dmg = math.floor(turnScore)
     
     -- If jackpot is active, apply damage immediately and end jackpot display
@@ -250,46 +269,57 @@ function BattleScene:onPlayerTurnEnd(turnScore, armor)
       self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
       
       if self.enemyHP <= 0 then
-        -- Start disintegration effect
-        if not self.enemyDisintegrating then
-          self.enemyDisintegrating = true
-          self.enemyDisintegrationTime = 0
+        -- Check if impact animations are still playing
+        local impactsActive = (self.impactInstances and #self.impactInstances > 0)
+        if impactsActive then
+          -- Wait for impact animations to finish before starting disintegration
+          self.pendingDisintegration = true
           pushLog(self, "Enemy defeated!")
+        else
+          -- Start disintegration effect immediately if no impacts
+          if not self.enemyDisintegrating then
+            self.enemyDisintegrating = true
+            self.enemyDisintegrationTime = 0
+            pushLog(self, "Enemy defeated!")
+          end
         end
       else
-        -- Queue incoming armor to apply and show right before enemy attacks
+        -- Queue incoming armor for TurnManager to handle
         self.pendingArmor = armor or 0
         self.armorPopupShown = false
-        -- Queue enemy attack
-        self.enemyAttackTimer = config.battle.enemyAttackDelay
       end
     else
-      -- No jackpot: apply damage immediately (backward compatibility)
-    self.enemyHP = math.max(0, self.enemyHP - dmg)
-    self.enemyFlash = config.battle.hitFlashDuration
-    self.enemyKnockbackTime = 1e-6
+      -- No jackpot: apply damage immediately (backward compatibility for non-jackpot path)
+      self.enemyHP = math.max(0, self.enemyHP - dmg)
+      self.enemyFlash = config.battle.hitFlashDuration
+      self.enemyKnockbackTime = 1e-6
       table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy" })
-    pushLog(self, "You dealt " .. dmg)
-    -- Trigger player lunge animation
-    self.playerLungeTime = 1e-6
-    -- Trigger screenshake
-    self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+      pushLog(self, "You dealt " .. dmg)
+      -- Trigger player lunge animation
+      self.playerLungeTime = 1e-6
+      -- Trigger screenshake
+      self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
       
-    if self.enemyHP <= 0 then
-      -- Start disintegration effect
-      if not self.enemyDisintegrating then
-        self.enemyDisintegrating = true
-        self.enemyDisintegrationTime = 0
+      if self.enemyHP <= 0 then
+        -- Check if impact animations are still playing
+        local impactsActive = (self.impactInstances and #self.impactInstances > 0)
+        if impactsActive then
+          -- Wait for impact animations to finish before starting disintegration
+          self.pendingDisintegration = true
+        else
+          -- Start disintegration effect immediately if no impacts
+          if not self.enemyDisintegrating then
+            self.enemyDisintegrating = true
+            self.enemyDisintegrationTime = 0
+          end
+        end
+        -- State will change to "win" after disintegration completes
+        return
       end
-      -- State will change to "win" after disintegration completes
-      return
-    end
       
-    -- Queue incoming armor to apply and show right before enemy attacks
-    self.pendingArmor = armor or 0
-    self.armorPopupShown = false
-    -- Queue enemy attack
-    self.enemyAttackTimer = config.battle.enemyAttackDelay
+      -- Queue incoming armor for TurnManager to handle
+      self.pendingArmor = armor or 0
+      self.armorPopupShown = false
     end
   end
 end
@@ -379,6 +409,16 @@ function BattleScene:update(dt, bounds)
       end
     end
     self.impactInstances = activeInstances
+    
+    -- Check if impact animations finished and disintegration is pending
+    if self.pendingDisintegration and #self.impactInstances == 0 then
+      -- All impact animations finished, start disintegration
+      if not self.enemyDisintegrating then
+        self.enemyDisintegrating = true
+        self.enemyDisintegrationTime = 0
+      end
+      self.pendingDisintegration = false
+    end
   end
   
   -- Tween HP bars toward actual HP values
@@ -401,9 +441,17 @@ function BattleScene:update(dt, bounds)
   end
   
   -- Check if enemy should start disintegrating (safeguard for any code path)
-  if self.enemyHP <= 0 and not self.enemyDisintegrating and self.state ~= "win" then
-    self.enemyDisintegrating = true
-    self.enemyDisintegrationTime = 0
+  -- Only auto-start if no impact animations are active and disintegration isn't pending
+  if self.enemyHP <= 0 and not self.enemyDisintegrating and not self.pendingDisintegration and self.state ~= "win" then
+    local impactsActive = (self.impactInstances and #self.impactInstances > 0)
+    if impactsActive then
+      -- Wait for impact animations to finish
+      self.pendingDisintegration = true
+    else
+      -- No impacts, start disintegration immediately
+      self.enemyDisintegrating = true
+      self.enemyDisintegrationTime = 0
+    end
   end
   
   -- Update enemy disintegration effect
@@ -502,153 +550,13 @@ function BattleScene:update(dt, bounds)
   end
   self.borderFragments = aliveFragments
 
-  -- Enemy attack resolve (two-phase: show armor popup, then attack after popup ends + delay)
-  -- Migrated to use TurnManager when available
-  if self.state == "resolving" and self.enemyAttackTimer > 0 then
-    self.enemyAttackTimer = self.enemyAttackTimer - dt
-    if self.enemyAttackTimer <= 0 then
-      if not self.armorPopupShown then
-        if (self.pendingArmor or 0) > 0 then
-          -- Phase 1 with armor: show popup (and apply), then trigger TurnManager enemy turn
-          self.playerArmor = self.pendingArmor
-          table.insert(self.popups, { x = 0, y = 0, kind = "armor", value = self.pendingArmor, t = config.battle.popupLifetime, who = "player" })
-          self.armorPopupShown = true
-          -- Trigger TurnManager enemy turn sequence after armor popup timing
-          if self.turnManager then
-            self.enemyAttackTimer = (config.battle.popupLifetime or 0.8) + ((config.battle.enemyAttackPostArmorDelay or 0.3))
-            -- Mark that we're waiting for TurnManager
-            self._waitingForTurnManager = true
-          else
-            -- Fallback to old system
-            self._pendingTurnIndicator = { text = "ENEMY'S TURN", t = 1.0 }
-            self.turnIndicatorDelay = 0.2
-            self.enemyAttackTimer = (config.battle.popupLifetime or 0.8) + ((config.battle.enemyAttackPostArmorDelay or 0.3))
-          end
-        else
-          -- No armor: trigger TurnManager enemy turn immediately
-          if self.turnManager then
-            local tmState = self.turnManager.getState and self.turnManager:getState() or nil
-            if tmState == "player_resolving" then
-              local success = self.turnManager:startEnemyTurn()
-              if success then
-            self.enemyAttackTimer = 0 -- Stop timer, TurnManager handles it now
-              else
-                -- Manager not ready; retry shortly
-                self.enemyAttackTimer = 0.05
-              end
-            else
-              -- Not in the right state yet; retry shortly
-              self.enemyAttackTimer = 0.05
-            end
-          else
-            -- Fallback to old system
-            if self._pendingTurnIndicator or self.turnIndicator then
-              -- Old system attack logic (fallback)
-              local dmg = love.math.random(config.battle.enemyDamageMin, config.battle.enemyDamageMax)
-              local blocked = math.min(self.playerArmor or 0, dmg)
-              local net = dmg - blocked
-              self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
-              self.playerHP = math.max(0, self.playerHP - net)
-              
-              -- If damage is fully blocked, show armor icon popup and flash icon
-              if net <= 0 then
-                self.armorIconFlashTimer = 0.5 -- Flash duration
-                -- Show floating armor icon above player
-                table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
-              else
-                self.playerFlash = config.battle.hitFlashDuration
-                -- Apply random rotation (1-3 degrees) when hit
-                local rotationDegrees = love.math.random(1, 3)
-                local rotationRadians = math.rad(rotationDegrees)
-                if love.math.random() < 0.5 then
-                  rotationRadians = -rotationRadians
-                end
-                -- Add rotation to current rotation (will tween back to 0)
-                self.playerRotation = self.playerRotation + rotationRadians
-                self.playerKnockbackTime = 1e-6
-                table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
-                pushLog(self, "Enemy dealt " .. net)
-                self.enemyLungeTime = 1e-6
-                self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
-                -- Trigger callback for player damage
-                if self.onPlayerDamage then
-                  self.onPlayerDamage()
-                end
-              end
-              if self.playerHP <= 0 then
-                self.state = "lose"
-                pushLog(self, "You were defeated!")
-              else
-                self.state = "idle"
-                self.playerArmor = 0
-              end
-              self.pendingArmor = 0
-              self.armorPopupShown = false
-              if self.onEnemyTurnResolved then
-                self.onEnemyTurnResolved()
-              end
-            else
-              self._pendingTurnIndicator = { text = "ENEMY'S TURN", t = 1.0 }
-              self.turnIndicatorDelay = 0.1
-              self.enemyAttackTimer = 0.4
-            end
-          end
-        end
-      else
-        -- Phase 2: armor popup shown, now trigger TurnManager enemy turn
-        if self.turnManager and self._waitingForTurnManager then
-          local tmState = self.turnManager.getState and self.turnManager:getState() or nil
-          if tmState == "player_resolving" then
-            local success = self.turnManager:startEnemyTurn()
-          self._waitingForTurnManager = false
-            if success then
-          self.enemyAttackTimer = 0 -- Stop timer, TurnManager handles it now
-            else
-              -- Manager not ready; retry shortly
-              self.enemyAttackTimer = 0.05
-            end
-          else
-            -- Not in the right state yet; wait a bit more
-            self.enemyAttackTimer = 0.05
-          end
-        else
-          -- Fallback to old system
-          local dmg = love.math.random(config.battle.enemyDamageMin, config.battle.enemyDamageMax)
-          local blocked = math.min(self.playerArmor or 0, dmg)
-          local net = dmg - blocked
-          self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
-          self.playerHP = math.max(0, self.playerHP - net)
-          
-          -- If damage is fully blocked, show armor icon popup and flash icon
-          if net <= 0 then
-            self.armorIconFlashTimer = 0.5 -- Flash duration
-            -- Show floating armor icon above player
-            table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
-          else
-            self.playerFlash = config.battle.hitFlashDuration
-            self.playerKnockbackTime = 1e-6
-            table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
-            pushLog(self, "Enemy dealt " .. net)
-            self.enemyLungeTime = 1e-6
-            self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
-            -- Trigger callback for player damage
-            if self.onPlayerDamage then
-              self.onPlayerDamage()
-            end
-          end
-          if self.playerHP <= 0 then
-            self.state = "lose"
-            pushLog(self, "You were defeated!")
-          else
-            self.state = "idle"
-            self.playerArmor = 0
-          end
-          self.pendingArmor = 0
-          self.armorPopupShown = false
-          if self.onEnemyTurnResolved then
-            self.onEnemyTurnResolved()
-          end
-        end
+  -- Handle enemy turn delay (for armor popup timing)
+  if self._enemyTurnDelay and self._enemyTurnDelay > 0 then
+    self._enemyTurnDelay = self._enemyTurnDelay - dt
+    if self._enemyTurnDelay <= 0 then
+      self._enemyTurnDelay = nil
+      if self.turnManager then
+        self.turnManager:startEnemyTurn()
       end
     end
   end
@@ -705,6 +613,9 @@ function BattleScene:update(dt, bounds)
       self.enemyRotation = 0
     end
   end
+  -- Update fog time for animation
+  self.fogTime = (self.fogTime or 0) + dt
+  
   -- Advance screenshake timer
   if self.shakeTime > 0 then
     self.shakeTime = self.shakeTime - dt
@@ -716,6 +627,14 @@ function BattleScene:update(dt, bounds)
   end
   -- Idle bob time
   self.idleT = (self.idleT or 0) + dt
+  
+  -- Update pulse animation timers
+  local pulseConfig = config.battle.pulse
+  if pulseConfig and (pulseConfig.enabled ~= false) then
+    local speed = pulseConfig.speed or 1.2
+    self.playerPulseTime = (self.playerPulseTime or 0) + dt * speed * 2 * math.pi
+    self.enemyPulseTime = (self.enemyPulseTime or 0) + dt * speed * 2 * math.pi
+  end
 
   -- Emit and update lunge speed streaks during forward phase
   do
@@ -1045,12 +964,15 @@ function BattleScene:draw(bounds)
       love.graphics.setColor(0, 0, 0, 0.35 * barAlpha)
       love.graphics.rectangle("fill", enemyBarX, barY, enemyBarW, barH, 6, 6)
       local barColor = { 153/255, 224/255, 122/255 }
-      love.graphics.setColor(barColor[1], barColor[2], barColor[3], barAlpha)
       local ratio = 0
       local maxHP = config.battle.enemyMaxHP
       local currentHP = self.displayEnemyHP or self.enemyHP
       if maxHP > 0 then ratio = math.max(0, math.min(1, currentHP / maxHP)) end
-      love.graphics.rectangle("fill", enemyBarX, barY, enemyBarW * ratio, barH, 6, 6)
+      -- Only draw colored bar if HP > 0
+      if ratio > 0 then
+        love.graphics.setColor(barColor[1], barColor[2], barColor[3], barAlpha)
+        love.graphics.rectangle("fill", enemyBarX, barY, enemyBarW * ratio, barH, 6, 6)
+      end
       -- Draw dark grey border around HP bar
       love.graphics.setColor(0.25, 0.25, 0.25, barAlpha)
       love.graphics.setLineWidth(2)
@@ -1119,6 +1041,32 @@ function BattleScene:draw(bounds)
     love.graphics.setColor(1, 1, 1, 1)
   end
 
+  -- Draw fog effect (behind player and enemy sprites)
+  local fogConfig = config.battle.fog or {}
+  if (fogConfig.enabled ~= false) and self.fogShader then
+    love.graphics.push("all")
+    -- Use normal alpha blending to overlay fog (fog color is white, alpha controls density)
+    love.graphics.setBlendMode("alpha")
+    
+    -- Set shader and send uniforms
+    love.graphics.setShader(self.fogShader)
+    self.fogShader:send("u_time", self.fogTime or 0)
+    self.fogShader:send("u_resolution", {w, h})
+    self.fogShader:send("u_cloudDensity", fogConfig.cloudDensity or 0.15)
+    self.fogShader:send("u_noisiness", fogConfig.noisiness or 0.35)
+    self.fogShader:send("u_speed", fogConfig.speed or 0.1)
+    self.fogShader:send("u_cloudHeight", fogConfig.cloudHeight or 2.5)
+    self.fogShader:send("u_fogStartY", fogConfig.startY or 0.65)
+    
+    -- Draw fullscreen quad for fog (shader uses screen coordinates)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", 0, 0, w, h)
+    
+    -- Reset shader
+    love.graphics.setShader()
+    love.graphics.pop()
+  end
+
   -- Enemy/Player silhouettes with flash
   -- Draw player sprite or fallback circle
   if self.playerImg then
@@ -1155,23 +1103,41 @@ function BattleScene:draw(bounds)
         end
       end
     end
-    love.graphics.setColor(1, 1, 1, drawAlpha)
+    -- Calculate pulse brightness multiplier
+    local brightnessMultiplier = 1
+    local pulseConfig = config.battle.pulse
+    if pulseConfig and (pulseConfig.enabled ~= false) then
+      local variation = pulseConfig.brightnessVariation or 0.08
+      brightnessMultiplier = 1 + math.sin(self.playerPulseTime or 0) * variation
+    end
+    love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, drawAlpha)
     love.graphics.draw(self.playerImg, curPlayerX, baselineY, tilt, sx, sy, iw * 0.5, ih)
     if self.playerFlash and self.playerFlash > 0 then
       local base = self.playerFlash / math.max(0.0001, config.battle.hitFlashDuration)
       local a = math.min(1, base * ((config.battle and config.battle.hitFlashAlphaScale) or 1))
       local passes = (config.battle and config.battle.hitFlashPasses) or 1
       love.graphics.setBlendMode("add")
-      -- Apply flash scaled by current sprite alpha so fade is consistent
+      -- Apply flash scaled by current sprite alpha so fade is consistent (flash remains white)
       love.graphics.setColor(1, 1, 1, a * (drawAlpha or 1))
       for i = 1, math.max(1, passes) do
         love.graphics.draw(self.playerImg, curPlayerX, baselineY, self.playerRotation or 0, sx, sy, iw * 0.5, ih)
       end
       love.graphics.setBlendMode("alpha")
-      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, drawAlpha)
     end
   else
-    if self.playerFlash > 0 then love.graphics.setColor(1, 1, 1, 1) else love.graphics.setColor(0.2, 0.8, 0.3, 1) end
+    -- Fallback circle (apply pulse brightness)
+    local brightnessMultiplier = 1
+    local pulseConfig = config.battle.pulse
+    if pulseConfig and (pulseConfig.enabled ~= false) then
+      local variation = pulseConfig.brightnessVariation or 0.08
+      brightnessMultiplier = 1 + math.sin(self.playerPulseTime or 0) * variation
+    end
+    if self.playerFlash > 0 then
+      love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, 1)
+    else
+      love.graphics.setColor(0.2 * brightnessMultiplier, 0.8 * brightnessMultiplier, 0.3 * brightnessMultiplier, 1)
+    end
     love.graphics.circle("fill", curPlayerX, baselineY - r, r)
     love.graphics.setColor(1, 1, 1, 1)
   end
@@ -1226,7 +1192,15 @@ function BattleScene:draw(bounds)
       self.disintegrationShader:send("u_progress", progress)
     end
     
-    love.graphics.setColor(1, 1, 1, 1)
+    -- Calculate pulse brightness multiplier
+    local brightnessMultiplier = 1
+    local pulseConfig = config.battle.pulse
+    if pulseConfig and (pulseConfig.enabled ~= false) then
+      local variation = pulseConfig.brightnessVariation or 0.08
+      brightnessMultiplier = 1 + math.sin(self.enemyPulseTime or 0) * variation
+    end
+    
+    love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, 1)
     love.graphics.draw(self.enemyImg, curEnemyX, baselineY, tilt, sx, sy, iw * 0.5, ih)
     
     -- Reset shader after drawing
@@ -1240,16 +1214,26 @@ function BattleScene:draw(bounds)
       local a = math.min(1, base * ((config.battle and config.battle.hitFlashAlphaScale) or 1))
       local passes = (config.battle and config.battle.hitFlashPasses) or 1
       love.graphics.setBlendMode("add")
-      love.graphics.setColor(1, 1, 1, a)
+      love.graphics.setColor(1, 1, 1, a) -- Flash remains white for proper visual feedback
       for i = 1, math.max(1, passes) do
         love.graphics.draw(self.enemyImg, curEnemyX, baselineY, self.enemyRotation or 0, sx, sy, iw * 0.5, ih)
       end
       love.graphics.setBlendMode("alpha")
-      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, 1)
     end
   elseif self.state ~= "win" then
-    -- Fallback circle (only draw if enemy is not dead)
-    if self.enemyFlash > 0 then love.graphics.setColor(1, 1, 1, 1) else love.graphics.setColor(0.9, 0.2, 0.2, 1) end
+    -- Fallback circle (only draw if enemy is not dead, apply pulse brightness)
+    local brightnessMultiplier = 1
+    local pulseConfig = config.battle.pulse
+    if pulseConfig and (pulseConfig.enabled ~= false) then
+      local variation = pulseConfig.brightnessVariation or 0.08
+      brightnessMultiplier = 1 + math.sin(self.enemyPulseTime or 0) * variation
+    end
+    if self.enemyFlash > 0 then
+      love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, 1)
+    else
+      love.graphics.setColor(0.9 * brightnessMultiplier, 0.2 * brightnessMultiplier, 0.2 * brightnessMultiplier, 1)
+    end
     love.graphics.circle("fill", curEnemyX, baselineY - r, r)
     love.graphics.setColor(1, 1, 1, 1)
   end
@@ -1398,6 +1382,7 @@ function BattleScene:draw(bounds)
     end
   end
   love.graphics.setFont(theme.fonts.base)
+  
   love.graphics.pop()
   love.graphics.setColor(1, 1, 1, 1)
 
@@ -1489,10 +1474,12 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
   if self.playerHP <= 0 then
     self.state = "lose"
     pushLog(self, "You were defeated!")
+    -- Notify TurnManager of defeat
+    if self.turnManager then
+      self.turnManager:transitionTo(TurnManager.States.DEFEAT)
+    end
   else
-    self.state = "idle"
-    -- Armor is per-turn; clear any remainder
-    self.playerArmor = 0
+    -- Armor is per-turn; cleared by TurnManager state transition
   end
   -- Clear pending armor state for next turn
   self.pendingArmor = 0
@@ -1502,6 +1489,48 @@ end
 -- Set TurnManager reference (called by SplitScene)
 function BattleScene:setTurnManager(turnManager)
   self.turnManager = turnManager
+  
+  -- Subscribe to TurnManager events
+  if turnManager then
+    -- Show turn indicator event
+    turnManager:on("show_turn_indicator", function(data)
+      if data and data.text then
+        self:showTurnIndicator(data.text, data.duration or 1.0)
+      end
+    end)
+    
+    -- Enemy attack event
+    turnManager:on("enemy_attack", function(data)
+      self:performEnemyAttack(data.min or config.battle.enemyDamageMin, data.max or config.battle.enemyDamageMax)
+    end)
+    
+    -- Start enemy turn event - handle armor popup timing, then let TurnManager continue
+    turnManager:on("start_enemy_turn", function()
+      -- If we have pending armor, show popup first, then trigger enemy turn after delay
+      if (self.pendingArmor or 0) > 0 and not self.armorPopupShown then
+        self.playerArmor = self.pendingArmor
+        table.insert(self.popups, { x = 0, y = 0, kind = "armor", value = self.pendingArmor, t = config.battle.popupLifetime, who = "player" })
+        self.armorPopupShown = true
+        -- Queue enemy turn start after armor popup duration + delay
+        local delay = (config.battle.popupLifetime or 0.8) + (config.battle.enemyAttackPostArmorDelay or 0.3)
+        -- Use a simple timer to trigger enemy turn after delay
+        self._enemyTurnDelay = delay
+      else
+        -- No armor, start enemy turn immediately
+        turnManager:startEnemyTurn()
+      end
+    end)
+    
+    -- State transitions
+    turnManager:on("state_enter", function(newState, previousState)
+      if newState == TurnManager.States.ENEMY_TURN_RESOLVING then
+        -- After enemy turn resolves, reset armor and spawn blocks
+        self.playerArmor = 0
+        self.pendingArmor = 0
+        self.armorPopupShown = false
+      end
+    end)
+  end
 end
 
 -- Compute current enemy hit point (screen coordinates), matching draw layout
@@ -1636,5 +1665,6 @@ function BattleScene:playImpact(blockCount, isCrit)
 end
 
 return BattleScene
+
 
 

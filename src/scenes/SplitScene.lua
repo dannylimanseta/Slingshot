@@ -34,10 +34,8 @@ function SplitScene.new()
   return setmetatable({ 
     left = nil, 
     right = nil, 
-    playerTurnDelay = 0, -- Delay timer before showing "PLAYER'S TURN" after enemy attack
-    -- New turn management system (integrated alongside old system for gradual migration)
+    -- Turn management system
     turnManager = nil,
-    _usingTurnManager = false, -- Flag to enable/disable new system
     -- Projectile card UI
     projectileCard = nil,
     currentProjectileId = "qi_orb", -- Default projectile
@@ -111,23 +109,9 @@ function SplitScene:load()
     self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
   end
 
-  -- When the enemy finishes its move, respawn blocks in the left pane
-  self.right.onEnemyTurnResolved = function()
-    if not self.left then return end
-    local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
-    local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
-    local centerRect = self.layoutManager:getCenterRect(vw, vh)
-    -- Convert to left local bounds (0..centerW) for spawn queries
-    if self.left.respawnDestroyedBlocks then
-      self.left:respawnDestroyedBlocks({ x = 0, y = 0, w = centerRect.w, h = vh })
-    end
-    -- Re-enable shooting now that the enemy has moved
-    self.left.canShoot = true
-    -- Queue "PLAYER'S TURN" indicator with delay after enemy attack completes
-    self.playerTurnDelay = 0.3
-  end
+  -- Enemy turn resolved callback removed - handled by TurnManager events
   
-  -- Initialize TurnManager (optional, runs alongside old system)
+  -- Initialize TurnManager
   self.turnManager = TurnManager.new()
   TurnActions.registerAll(self.turnManager)
   
@@ -163,14 +147,7 @@ function SplitScene:load()
   
   -- Show initial "PLAYER'S TURN" indicator at game start using TurnManager
   -- Start the first player turn
-  if self.turnManager then
-    self.turnManager:startPlayerTurn()
-  else
-    -- Fallback to old method if TurnManager not available
-    if self.right and self.right.showPlayerTurn then
-      self.right:showPlayerTurn()
-    end
-  end
+  self.turnManager:startPlayerTurn()
 end
 
 -- Set up TurnManager event handlers
@@ -187,11 +164,16 @@ function SplitScene:setupTurnManagerEvents()
     end
   end)
   
-  -- Enable shooting exactly when the "PLAYER'S TURN" indicator becomes visible
-  self.turnManager:on("turn_indicator_shown", function(data)
-    if data and data.text == "PLAYER'S TURN" then
+  -- Enable shooting when player turn becomes active
+  self.turnManager:on("state_enter", function(newState, previousState)
+    if newState == TurnManager.States.PLAYER_TURN_ACTIVE then
       if self.left then
         self.left.canShoot = true
+      end
+    elseif newState == TurnManager.States.PLAYER_TURN_START then
+      -- Disable shooting at start of turn (will be enabled when active)
+      if self.left then
+        self.left.canShoot = false
       end
     end
   end)
@@ -215,32 +197,21 @@ function SplitScene:setupTurnManagerEvents()
   
   -- Check victory event
   self.turnManager:on("check_victory", function()
-    if self.right and self.right.state == "win" then
+    if self.right and self.right.enemyHP and self.right.enemyHP <= 0 then
       self.turnManager:transitionTo(TurnManager.States.VICTORY)
     end
   end)
   
-  -- Start enemy turn event (triggered after player turn resolving)
-  self.turnManager:on("start_enemy_turn", function()
-    -- BattleScene will handle armor popup timing, then call startEnemyTurn when ready
-    -- For now, we'll have BattleScene trigger this after its timing logic
-  end)
-  
-  -- Enemy attack event
-  self.turnManager:on("enemy_attack", function(data)
-    if self.right and self.right.performEnemyAttack then
-      self.right:performEnemyAttack(data.min, data.max)
-    end
-  end)
+  -- Enemy attack event (handled by BattleScene directly)
   
   -- Check defeat event
   self.turnManager:on("check_defeat", function()
-    if self.right and self.right.state == "lose" then
+    if self.right and self.right.playerHP and self.right.playerHP <= 0 then
       self.turnManager:transitionTo(TurnManager.States.DEFEAT)
     end
   end)
   
-  -- Spawn blocks event (do not enable shooting here; wait for indicator)
+  -- Spawn blocks event
   self.turnManager:on("spawn_blocks", function(data)
     if self.left and self.left.respawnDestroyedBlocks then
       local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
@@ -249,14 +220,10 @@ function SplitScene:setupTurnManagerEvents()
       self.left:respawnDestroyedBlocks({ x = 0, y = 0, w = centerRect.w, h = vh })
     end
   end)
-  
-  -- Player turn start transition is now sequenced by TurnManager's enemy turn actions.
-  -- We intentionally avoid auto-calling startPlayerTurn() here to prevent loops.
 end
 
 -- Helper function to end player turn using TurnManager
 function SplitScene:endPlayerTurnWithTurnManager()
-  if not self.turnManager then return false end
   local state = self.turnManager:getState()
   if state ~= TurnManager.States.PLAYER_TURN_ACTIVE then return false end
   
@@ -657,25 +624,8 @@ function SplitScene:update(dt)
   if self.left and self.left.update then self.left:update(dt, { x = 0, y = 0, w = centerRect.w, h = h }) end
   if self.right and self.right.update then self.right:update(dt, { x = 0, y = 0, w = w, h = h, center = centerRect.center }) end
 
-  -- Update player turn delay timer
-  if self.playerTurnDelay > 0 then
-    self.playerTurnDelay = self.playerTurnDelay - dt
-    if self.playerTurnDelay <= 0 then
-      -- Delay finished, show "PLAYER'S TURN" indicator
-      if self.right and self.right.showPlayerTurn then
-        self.right:showPlayerTurn()
-      end
-      self.playerTurnDelay = 0
-    end
-  end
-
-  -- Robust detection:
-  -- - New shot started: left.canShoot == false and left.ball exists -> reset forward flag
-  -- - Turn ended: left.canShoot == true and no ball and not forwarded -> send score
-  self._leftTurnForwarded = self._leftTurnForwarded or false
-  self._leftForwardTimer = self._leftForwardTimer or nil
+  -- Detect turn end: when player turn is active and all balls are gone
   local canShoot = self.left and self.left.canShoot
-  -- Check for single ball or multiple balls (spread shot)
   local hasSingleBall = (self.left and self.left.ball and self.left.ball.alive) and true or false
   local hasMultipleBalls = false
   if self.left and self.left.balls then
@@ -687,13 +637,11 @@ function SplitScene:update(dt)
     end
   end
   local hasBall = hasSingleBall or hasMultipleBalls
-
-  -- Detect shot start (transition from inactive to active)
+  
+  -- Detect shot start (transition from inactive to active) for jackpot display
   self._prevShotActive = self._prevShotActive or false
   local shotActive = (canShoot == false and hasBall)
   if shotActive and not self._prevShotActive then
-    self._leftTurnForwarded = false
-    self._leftForwardTimer = nil
     -- Start jackpot display on the right once per shot
     if self.right and self.right.startJackpotDisplay then
       self.right:startJackpotDisplay()
@@ -701,45 +649,18 @@ function SplitScene:update(dt)
   end
   self._prevShotActive = shotActive
 
-  -- Turn ended, forward once after optional delay
-  -- Must have no active balls
-  -- canShoot will be false while turn is active, so we detect completion when all balls are done
-  -- Also check that a shot was actually fired (canShoot is false, indicating turn started)
+  -- Turn ended: player turn active, shot was fired, and no balls remain
+  local turnState = self.turnManager:getState()
   local shotWasFired = (canShoot == false) -- If canShoot is false, a shot was fired
-  if shotWasFired and not hasBall and self._leftTurnForwarded == false then
-    if not self._leftForwardTimer then
-      -- 0.3 second delay after balls despawn before starting attack animation
-      self._leftForwardTimer = 0.3
+  if turnState == TurnManager.States.PLAYER_TURN_ACTIVE and shotWasFired and not hasBall then
+    -- Trigger impact VFX
+    if self.right and self.right.playImpact then
+      local blockCount = (self.left and self.left.blocksHitThisTurn) or 1
+      local isCrit = (self.left and self.left.critThisTurn and self.left.critThisTurn > 0) or false
+      self.right:playImpact(blockCount, isCrit)
     end
-    if self._leftForwardTimer <= 0 then
-      -- Trigger impact VFX after delay (ball died)
-      if self.right and self.right.playImpact then
-        local blockCount = (self.left and self.left.blocksHitThisTurn) or 1
-        local isCrit = (self.left and self.left.critThisTurn and self.left.critThisTurn > 0) or false
-        self.right:playImpact(blockCount, isCrit)
-      end
-      -- Use TurnManager to end the turn
-      if self:endPlayerTurnWithTurnManager() then
-        self._leftTurnForwarded = true
-        self._leftForwardTimer = nil
-      else
-        -- Fallback to old method if TurnManager not ready
-        local turnScore = self.left and self.left.score or 0
-        local mult = (config.score and config.score.critMultiplier) or 2
-        local critCount = (self.left and self.left.critThisTurn) or 0
-        if critCount > 0 then
-          turnScore = turnScore * (mult ^ critCount)
-        end
-        local armor = self.left and self.left.armorThisTurn or 0
-        if self.right and self.right.onPlayerTurnEnd then
-          self.right:onPlayerTurnEnd(turnScore, armor)
-        end
-        self._leftTurnForwarded = true
-        self._leftForwardTimer = nil
-      end
-    else
-      self._leftForwardTimer = self._leftForwardTimer - dt
-    end
+    -- End the turn using TurnManager
+    self:endPlayerTurnWithTurnManager()
   end
 
   -- Feed live score to battle jackpot while the player is aiming/shot is active

@@ -12,8 +12,11 @@ function Bar:draw(x, y, w, h, current, max, color)
   if max > 0 then ratio = math.max(0, math.min(1, current / max)) end
   love.graphics.setColor(0, 0, 0, 0.35)
   love.graphics.rectangle("fill", x, y, w, h, 6, 6)
-  love.graphics.setColor(color[1], color[2], color[3], 1)
-  love.graphics.rectangle("fill", x, y, w * ratio, h, 6, 6)
+  -- Only draw colored bar if HP > 0
+  if ratio > 0 then
+    love.graphics.setColor(color[1], color[2], color[3], 1)
+    love.graphics.rectangle("fill", x, y, w * ratio, h, 6, 6)
+  end
   -- Draw dark grey border around HP bar
   love.graphics.setColor(0.25, 0.25, 0.25, 1) -- dark grey
   love.graphics.setLineWidth(2)

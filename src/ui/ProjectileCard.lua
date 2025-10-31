@@ -134,7 +134,7 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   
   -- Subtle border/highlight - 10% alpha white, respects fade alpha
   love.graphics.setColor(1, 1, 1, 0.1 * alpha)
-  love.graphics.setLineWidth(1)
+  love.graphics.setLineWidth(2)
   love.graphics.rectangle("line", x, y, cardW, cardH, cornerRadius, cornerRadius)
   
   -- Icon on the left

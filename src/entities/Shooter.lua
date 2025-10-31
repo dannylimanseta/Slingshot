@@ -24,9 +24,13 @@ function Shooter.new(x, y, projectileId)
     turnManager = nil, -- Reference to TurnManager for turn-based display
     ball1Image = nil, -- Cached ball_1.png image
     ball2Image = nil, -- Cached ball_2.png image
+    ballSlotsImage = nil, -- Cached ball_slots.png image
+    arrowImage = nil, -- Cached arrow_1.png image
     -- Ball position tracking for tweening
     ball1X = ball1InitialX, -- Current position of ball 1
     ball2X = ball2InitialX, -- Current position of ball 2
+    slotsX = x + rightShift, -- Current position of slots image (tweened)
+    arrowX = ball1InitialX, -- Current position of arrow (tweened, follows active ball)
     ball1Size = currentBallSize, -- Current size of ball 1 (starts as current ball)
     ball2Size = ballSize, -- Current size of ball 2 (starts as other ball)
     lastTurnNumber = 1, -- Track turn number to detect changes
@@ -85,6 +89,16 @@ function Shooter:loadBallImages()
   local ball2Path = (config.assets and config.assets.images and config.assets.images.ball_2) or "assets/images/ball_2.png"
   local ok2, img2 = pcall(love.graphics.newImage, ball2Path)
   if ok2 then self.ball2Image = img2 end
+  
+  -- Load ball_slots.png
+  local ballSlotsPath = "assets/images/ball_slots.png"
+  local ok3, img3 = pcall(love.graphics.newImage, ballSlotsPath)
+  if ok3 then self.ballSlotsImage = img3 end
+  
+  -- Load arrow_1.png
+  local arrowPath = "assets/images/arrow_1.png"
+  local ok4, img4 = pcall(love.graphics.newImage, arrowPath)
+  if ok4 then self.arrowImage = img4 end
 end
 
 function Shooter:update(dt, bounds)
@@ -143,11 +157,17 @@ function Shooter:update(dt, bounds)
   -- Target positions relative to shooter center
   local ball1TargetX = self.x + ball1Offset
   local ball2TargetX = self.x + ball2Offset
+  local slotsTargetX = self.x + rightShift
+  
+  -- Active ball is on the left: ball1 for regular turns, ball2 for spread turns
+  local arrowTargetX = isSpreadTurn and ball2TargetX or ball1TargetX
   
   -- Tween ball positions toward targets (both for position swap and shooter movement)
   local k = math.min(1, self.tweenSpeed * dt)
   local ball1Delta = ball1TargetX - self.ball1X
   local ball2Delta = ball2TargetX - self.ball2X
+  local slotsDelta = slotsTargetX - self.slotsX
+  local arrowDelta = arrowTargetX - self.arrowX
   
   if math.abs(ball1Delta) > 0.01 then
     self.ball1X = self.ball1X + ball1Delta * k
@@ -159,6 +179,20 @@ function Shooter:update(dt, bounds)
     self.ball2X = self.ball2X + ball2Delta * k
   else
     self.ball2X = ball2TargetX
+  end
+  
+  -- Tween slots position toward target (syncs with ball movement)
+  if math.abs(slotsDelta) > 0.01 then
+    self.slotsX = self.slotsX + slotsDelta * k
+  else
+    self.slotsX = slotsTargetX
+  end
+  
+  -- Tween arrow position toward active ball (syncs with ball movement)
+  if math.abs(arrowDelta) > 0.01 then
+    self.arrowX = self.arrowX + arrowDelta * k
+  else
+    self.arrowX = arrowTargetX
   end
   
   -- Tween ball sizes toward targets
@@ -191,32 +225,73 @@ function Shooter:getMuzzle()
   -- Current ball is on the left: ball1 for regular turns, ball2 for spread turns
   local currentBallX = isSpreadTurn and self.ball2X or self.ball1X
   local r = config.shooter.radius
-  return currentBallX, self.y - r * 0.5
+  -- Account for 20px upward shift in draw
+  return currentBallX, (self.y - 20) - r * 0.5
 end
 
 function Shooter:draw()
   love.graphics.setColor(1, 1, 1, 1)
   
+  -- Shift entire shooter up by 20px
+  local drawY = self.y - 20
+  
+  -- Draw ball slots image beneath the balls (lower z-order)
+  if self.ballSlotsImage then
+    local r = config.shooter.radius
+    local ballSpacing = r * 0.6
+    local ballSize = r * 0.7
+    local currentBallSize = ballSize * 1.2
+    local rightShift = currentBallSize * 0.5
+    
+    -- Calculate the width needed to cover both ball positions
+    local slotsWidth = ballSpacing + ballSize * 2 + currentBallSize
+    local iw, ih = self.ballSlotsImage:getWidth(), self.ballSlotsImage:getHeight()
+    local scale = (slotsWidth / math.max(iw, ih)) * 6
+    
+    -- Use tweened slots position (synced with ball movement)
+    love.graphics.draw(self.ballSlotsImage, self.slotsX, drawY, 0, scale, scale, iw * 0.5, ih * 0.5)
+  end
+  
   -- Draw ball 1 at its current tweened position and size
   if self.ball1Image then
     local iw, ih = self.ball1Image:getWidth(), self.ball1Image:getHeight()
     local scale = (self.ball1Size * 2) / math.max(iw, ih)
-    love.graphics.draw(self.ball1Image, self.ball1X, self.y, 0, scale, scale, iw * 0.5, ih * 0.5)
+    love.graphics.draw(self.ball1Image, self.ball1X, drawY, 0, scale, scale, iw * 0.5, ih * 0.5)
   else
     -- Fallback circle for ball 1
     love.graphics.setColor(0.9, 0.9, 0.9, 1)
-    love.graphics.circle("fill", self.ball1X, self.y, self.ball1Size)
+    love.graphics.circle("fill", self.ball1X, drawY, self.ball1Size)
   end
   
   -- Draw ball 2 at its current tweened position and size
   if self.ball2Image then
     local iw, ih = self.ball2Image:getWidth(), self.ball2Image:getHeight()
     local scale = (self.ball2Size * 2) / math.max(iw, ih)
-    love.graphics.draw(self.ball2Image, self.ball2X, self.y, 0, scale, scale, iw * 0.5, ih * 0.5)
+    love.graphics.draw(self.ball2Image, self.ball2X, drawY, 0, scale, scale, iw * 0.5, ih * 0.5)
   else
     -- Fallback circle for ball 2
     love.graphics.setColor(0.7, 0.7, 0.7, 1)
-    love.graphics.circle("fill", self.ball2X, self.y, self.ball2Size)
+    love.graphics.circle("fill", self.ball2X, drawY, self.ball2Size)
+  end
+  
+  -- Draw arrow below the active ball
+  if self.arrowImage then
+    -- Determine which ball is active based on turn (for size reference)
+    local turnNumber = 1
+    if self.turnManager and self.turnManager.getTurnNumber then
+      turnNumber = self.turnManager:getTurnNumber()
+    end
+    local isSpreadTurn = (turnNumber % 2 == 0)
+    local activeBallSize = isSpreadTurn and self.ball2Size or self.ball1Size
+    
+    -- Position arrow below the active ball using tweened position
+    local r = config.shooter.radius
+    local arrowY = drawY + activeBallSize + r * 0.3 + 3
+    
+    -- Scale arrow to match ball size
+    local iw, ih = self.arrowImage:getWidth(), self.arrowImage:getHeight()
+    local scale = (activeBallSize * 1.5) / math.max(iw, ih) * 1.5
+    love.graphics.draw(self.arrowImage, self.arrowX, arrowY, 0, scale, scale, iw * 0.5, ih * 0.5)
   end
   
   love.graphics.setColor(1, 1, 1, 1)

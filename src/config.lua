@@ -116,7 +116,7 @@ config.blocks = {
   pulse = {
     enabled = true,
     speed = 1.2, -- pulse speed (cycles per second)
-    brightnessVariation = 0.15, -- +/- 15% brightness variation
+    brightnessVariation = 0.08, -- +/- 10% brightness variation
   },
 }
 
@@ -221,6 +221,12 @@ config.battle = {
   -- Idle bob (vertical-only stretch)
   idleBobScaleY = 0.03, -- +3% max additional height
   idleBobSpeed = 1.2,   -- cycles per second
+  -- Pulse animation: subtle brightness pulsing for characters
+  pulse = {
+    enabled = true,
+    speed = 1.2, -- pulse speed (cycles per second)
+    brightnessVariation = 0.08, -- +/- 8% brightness variation
+  },
   -- Impact animation
   impactFps = 70, -- frames per second for impact sprite animation
   impactScale = 1.3, -- scale multiplier for impact sprite (reduced by 40% from 1.6)
@@ -249,6 +255,15 @@ config.battle = {
     thickness = 0.25,        -- thickness of disintegration edge
     lineColor = {1.0, 0.3, 0.1, 1.0}, -- RGBA color of disintegration lines (orange)
     colorIntensity = 2.0,    -- intensity multiplier for line color
+  },
+  -- Foreground fog effect
+  fog = {
+    enabled = true,          -- enable/disable fog effect
+    cloudDensity = 0.8,     -- overall density [0, 1] (reduced from 1.0 to prevent white screen)
+    noisiness = 0.5,        -- overall strength of the noise effect [0, 1]
+    speed = 0.13,             -- controls the animation speed [0, 0.1 ish)
+    cloudHeight = 20.0,       -- (inverse) height of the input gradient [0, ...)
+    startY = 0.0,           -- normalized Y (0=top, 1=bottom) where fog starts
   },
 }
 
