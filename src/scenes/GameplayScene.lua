@@ -214,9 +214,11 @@ function GameplayScene:update(dt, bounds)
   end
 end
 
--- Public: respawn blocks equal to those destroyed in the last player turn minus 1
+-- Public: respawn blocks equal to those destroyed in the last player turn minus 1-3 (random)
 function GameplayScene:respawnDestroyedBlocks(bounds)
-  local toSpawn = math.max(0, (self.destroyedThisTurn or 0) - 1)
+  local destroyed = self.destroyedThisTurn or 0
+  local reduction = love.math.random(1, 3) -- Random reduction of 1, 2, or 3 blocks
+  local toSpawn = math.max(0, destroyed - reduction)
   if toSpawn <= 0 then return end
   if not (self.blocks and self.blocks.addRandomBlocks) then return end
   local width = (bounds and bounds.w) or love.graphics.getWidth()
