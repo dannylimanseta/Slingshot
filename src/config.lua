@@ -169,11 +169,11 @@ config.shooter = {
   carousel = {
     enabled = true,
     scrollSpeed = 8, -- tween speed for smooth scrolling
-    fadeStart = 2.5, -- distance from center where fade begins (in slot units)
-    fadeEnd = 3.5, -- distance from center where fully transparent (in slot units)
-    depthFade = 0.15, -- 0..1, how much to dim slots based on distance (Option B)
-    renderBuffer = 4, -- extra slots to render beyond visible range
-    maxVisibleSlots = 6, -- maximum slots visible at once
+    fadeStart = 1, -- distance from center where fade begins (in slot units)
+    fadeEnd = 1.5, -- distance from center where fully transparent (in slot units)
+    depthFade = 0.2, -- 0..1, how much to dim slots based on distance (Option B)
+    renderBuffer = 0.5, -- extra slots to render beyond visible range (for smooth fading)
+    maxVisibleSlots = 3, -- maximum slots visible at once (shows only unique projectiles, no repetition)
     ballSpacingMultiplier = 2, -- multiplier for spacing between balls (shooter.radius * this)
   },
 }
