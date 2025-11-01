@@ -60,8 +60,9 @@ function FormationEditorScene:load()
   local LayoutManager = require("managers.LayoutManager")
   local layoutManager = LayoutManager.new()
   
-  -- Use love.graphics.getDimensions() to match SplitScene exactly
-  local w, h = love.graphics.getDimensions()
+  -- Always use virtual resolution from config (matches canvas size)
+  local w = (config.video and config.video.virtualWidth) or 1280
+  local h = (config.video and config.video.virtualHeight) or 720
   local margin = config.playfield.margin
   
   -- Get center rect using LayoutManager (matches SplitScene exactly)
@@ -117,7 +118,9 @@ function FormationEditorScene:update(dt)
 end
 
 function FormationEditorScene:draw()
-  local width, height = love.graphics.getDimensions()
+  -- Always use virtual resolution from config (matches canvas size)
+  local width = (config.video and config.video.virtualWidth) or 1280
+  local height = (config.video and config.video.virtualHeight) or 720
   
   -- Background
   love.graphics.setColor(0.05, 0.05, 0.08, 1)

@@ -73,11 +73,11 @@ Blocks spawn with 1 HP and are destroyed in one hit. There are three types:
 - **Visual Features**:
   - Player and Enemy sprites (with fallback circles if sprites missing)
   - HP bars with color coding (Player: pink, Enemy: green)
-  - **Jackpot Damage Display**: Large accumulating damage number above enemy that updates in real-time as blocks are hit. Falls toward enemy when turn ends and shatters into fragments on impact. Crit hits cause the number to shake.
   - Armor indicator next to player HP bar (shows current armor value with icon)
   - Glowing border around player HP bar when armor is active
   - Border shatter fragments when armor breaks
   - Hit flashes with additive blending
+  - Staggered impact slashes on hit
   - Damage/armor popups with bounce animation
   - Lunge animations on attack
   - Knockback animations on hit
@@ -85,9 +85,9 @@ Blocks spawn with 1 HP and are destroyed in one hit. There are three types:
   - Idle bob animation (vertical stretch)
   
 - **Combat Flow**:
-  - Player turn ends → player damage applied to enemy (with lunge animation)
+  - Player turn ends → damage is applied to enemy (with lunge + impact VFX)
   - Armor popup shows (if armor gained)
-  - After delay, enemy attacks player
+  - After delay, enemy attacks the player
   - Damage mitigated by armor (armor popup shows reduction)
   - Armor resets to 0 after enemy turn
   - Win/lose states: enemy HP ≤ 0 (win), player HP ≤ 0 (lose)
@@ -102,7 +102,7 @@ Blocks spawn with 1 HP and are destroyed in one hit. There are three types:
 ## Visual Effects
 - **Ball**: Trail with shader-based soft edges, glow with pulse effect
 - **Blocks**: Spawn animations, hit flashes, sprite support (attack/defend/crit)
-- **Battle**: Lunge/knockback animations, screenshake, hit flashes, popups with icons, jackpot damage display with fall animation and shatter fragments
+- **Battle**: Lunge/knockback animations, staggered impact slashes, screenshake, hit flashes, popups with icons
 - **UI**: Dotted aim guide with bounce prediction, fade in/out based on canShoot state
 - **Background**: Full-screen background image support
 
@@ -149,7 +149,6 @@ All tunables live in `src/config.lua`:
 - `battle.knockbackDistance`, `knockbackDuration`, `knockbackReturnDuration`
 - `battle.shakeMagnitude`, `shakeDuration`
 - `battle.idleBobScaleY`, `idleBobSpeed`
-- `battle.jackpot.*` (offsetY, fallDelay, fallDuration, fallDistanceFactor, shatterFragments, fragmentLifetime, fragmentSpeed, critScale, shakeAmplitude, shakeSpeed, bobAmplitude, bobDuration)
 
 ### Shooter
 - `shooter.speed`, `radius`, `spawnYFromBottom`
@@ -172,16 +171,25 @@ src/
     TurnManager.lua        # Turn state machine & event system
   scenes/
     SplitScene.lua         # Left/Right panes container
-    GameplayScene.lua     # Breakout gameplay (center pane)
-    BattleScene.lua       # RPG battle (background)
+    GameplayScene.lua      # Breakout gameplay (center pane)
+    BattleScene.lua        # RPG battle (background)
+    MapScene.lua           # World map exploration (initial scene)
+    FormationEditorScene.lua # Block formation editor
     EmptyScene.lua
+    battle/
+      ImpactSystem.lua     # Impact slashes, flash/knockback events
+      Animations.lua       # Lunge/knockback timers, rotation, streaks
+      Visuals.lua          # Battle draw pipeline (bars, sprites, fog, popups)
   entities/
     Ball.lua              # Physics ball with trail/glow
     Block.lua             # Damage/Armor/Crit blocks (1 HP, sprite support)
     Shooter.lua           # Player-controlled shooter
   managers/
     BlockManager.lua      # Spawning, respawning, spatial hash
+    MapManager.lua        # Procedural map generation & movement
     ParticleManager.lua   # Particle effects
+    LayoutManager.lua     # Split layout tweening and battle types
+    ProjectileManager.lua # Data access for projectiles
   systems/
     TurnActions.lua       # Turn action implementations (command pattern)
   utils/
@@ -190,6 +198,7 @@ src/
     trail.lua             # Ball trail rendering
   ui/
     Bar.lua               # HP bar component
+    ProjectileCard.lua    # Tooltip for current projectile
 docs/
   TURN_MANAGEMENT_DESIGN.md      # Turn system architecture documentation
   TURN_MANAGEMENT_INTEGRATION.md # Integration guide
