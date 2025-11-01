@@ -4,6 +4,7 @@ local Bar = require("ui.Bar")
 local SpriteAnimation = require("utils.SpriteAnimation")
 local DisintegrationShader = require("utils.DisintegrationShader")
 local FogShader = require("utils.FogShader")
+local ImpactSystem = require("scenes.battle.ImpactSystem")
 local TurnManager = require("core.TurnManager")
 
 local BattleScene = {}
@@ -262,95 +263,8 @@ function BattleScene:update(dt, bounds)
   if self.enemyFlash > 0 then self.enemyFlash = math.max(0, self.enemyFlash - dt) end
   if self.playerFlash > 0 then self.playerFlash = math.max(0, self.playerFlash - dt) end
   
-  -- Update staggered flash events
-  local activeFlashEvents = {}
-  local flashDuration = (config.battle and config.battle.hitFlashDuration) or 0.5
-  for _, event in ipairs(self.enemyFlashEvents) do
-    event.delay = math.max(0, event.delay - dt)
-    if event.delay <= 0 then
-      -- Trigger flash when delay expires
-      if not event.triggered then
-        event.triggered = true
-        event.startTime = 0
-        self.enemyFlash = math.max(self.enemyFlash, flashDuration)
-        -- Apply random rotation (1-3 degrees) when hit
-        local rotationDegrees = love.math.random(1, 3)
-        local rotationRadians = math.rad(rotationDegrees)
-        -- Randomly choose positive or negative rotation
-        if love.math.random() < 0.5 then
-          rotationRadians = -rotationRadians
-        end
-        -- Add rotation to current rotation (will tween back to 0)
-        self.enemyRotation = self.enemyRotation + rotationRadians
-      end
-      -- Track elapsed time for this flash
-      event.startTime = (event.startTime or 0) + dt
-      -- Keep event active until flash duration expires
-      if event.startTime < flashDuration then
-        table.insert(activeFlashEvents, event)
-      end
-    else
-      table.insert(activeFlashEvents, event)
-    end
-  end
-  self.enemyFlashEvents = activeFlashEvents
-  
-  -- Update staggered knockback events
-  local activeKnockbackEvents = {}
-  for _, event in ipairs(self.enemyKnockbackEvents) do
-    event.delay = math.max(0, event.delay - dt)
-    if event.delay <= 0 then
-      -- Start knockback timer if not already started
-      if not event.startTime then
-        event.startTime = 0
-      end
-      event.startTime = event.startTime + dt
-      local kbTotal = (config.battle.knockbackDuration or 0) + (config.battle.knockbackReturnDuration or 0)
-      if event.startTime < kbTotal then
-        table.insert(activeKnockbackEvents, event)
-      end
-    else
-      table.insert(activeKnockbackEvents, event)
-    end
-  end
-  self.enemyKnockbackEvents = activeKnockbackEvents
-  
-  -- Update impact animation instances (with staggered delays)
-  if self.impactAnimation then
-    local activeInstances = {}
-    local staggerDelay = (config.battle and config.battle.impactStaggerDelay) or 0.05
-    for _, instance in ipairs(self.impactInstances) do
-      instance.delay = math.max(0, instance.delay - dt)
-      if instance.delay <= 0 then
-        -- Start playing if not already active
-        if not instance.anim.playing and instance.anim.play then
-          instance.anim:play(false)
-        end
-        -- Update animation
-        if instance.anim.update then
-          instance.anim:update(dt)
-        end
-        -- Keep instance if still active
-        if instance.anim.active then
-          table.insert(activeInstances, instance)
-        end
-      else
-        -- Still waiting for delay, keep instance
-        table.insert(activeInstances, instance)
-      end
-    end
-    self.impactInstances = activeInstances
-    
-    -- Check if impact animations finished and disintegration is pending
-    if self.pendingDisintegration and #self.impactInstances == 0 then
-      -- All impact animations finished, start disintegration
-      if not self.enemyDisintegrating then
-        self.enemyDisintegrating = true
-        self.enemyDisintegrationTime = 0
-      end
-      self.pendingDisintegration = false
-    end
-  end
+  -- Update impact system (slashes, flashes, knockback)
+  ImpactSystem.update(self, dt)
   
   -- Tween HP bars toward actual HP values
   local hpTweenSpeed = (config.battle and config.battle.hpBarTweenSpeed) or 8
@@ -1200,20 +1114,8 @@ function BattleScene:draw(bounds)
     love.graphics.setColor(1, 1, 1, 1)
   end
   
-  -- Draw impact animation instances at enemy hit point (above sprites, below jackpot)
-  if self.impactAnimation and #self.impactInstances > 0 then
-    love.graphics.push("all")
-    love.graphics.setBlendMode("add")
-    love.graphics.setColor(1, 1, 1, 1)
-    local scale = (config.battle and config.battle.impactScale) or 0.96
-    for _, instance in ipairs(self.impactInstances) do
-      -- Only draw if delay has passed and animation is active
-      if instance.delay <= 0 and instance.anim.active then
-        instance.anim:draw(instance.x + (instance.offsetX or 0), instance.y + (instance.offsetY or 0), instance.rotation, scale, scale)
-      end
-    end
-    love.graphics.pop()
-  end
+  -- Draw impact animations (slashes)
+  ImpactSystem.draw(self)
 
   -- (Jackpot UI removed)
 
@@ -1512,76 +1414,7 @@ end
 -- Internal helper to actually create impact instances (called after delay)
 function BattleScene:_createImpactInstances(blockCount, isCrit)
   if not self.impactAnimation then return end
-  blockCount = blockCount or 1
-  isCrit = isCrit or false
-  
-  -- If crit, always spawn 5 slashes; otherwise cap at 4 sprites max
-  local spriteCount = isCrit and 5 or math.min(blockCount, 4)
-  
-  local w = (self._lastBounds and self._lastBounds.w) or love.graphics.getWidth()
-  local h = (self._lastBounds and self._lastBounds.h) or love.graphics.getHeight()
-  local center = self._lastBounds and self._lastBounds.center or nil
-  local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
-  local centerW = center and center.w or math.floor(w * 0.5)
-  local hitX, hitY = self:getEnemyHitPoint({ x = 0, y = 0, w = w, h = h, center = { x = centerX, w = centerW, h = h } })
-  
-  local staggerDelay = (config.battle and config.battle.impactStaggerDelay) or 0.05
-  local fps = (config.battle and config.battle.impactFps) or 30
-  local impactPath = (config.assets and config.assets.images and config.assets.images.impact) or nil
-  
-  -- Create multiple impact instances with staggered delays
-  -- Reuse the base animation's image and quads to avoid reloading
-  local baseImage = self.impactAnimation and self.impactAnimation.image
-  local baseQuads = self.impactAnimation and self.impactAnimation.quads
-  
-  for i = 1, spriteCount do
-    -- Create a lightweight animation instance that shares the image and quads
-    local anim = {
-      image = baseImage,
-      quads = baseQuads,
-      frameW = 512,
-      frameH = 512,
-      fps = fps,
-      time = 0,
-      index = 1,
-      playing = false,
-      loop = false,
-      active = false
-    }
-    setmetatable(anim, SpriteAnimation)
-    
-    local delay = (i - 1) * staggerDelay
-    local rotation = love.math.random() * 2 * math.pi
-    -- Add slight position offset for visual separation (randomized per instance)
-    local offsetX = (love.math.random() - 0.5) * 20
-    local offsetY = (love.math.random() - 0.5) * 20
-    
-    table.insert(self.impactInstances, {
-      anim = anim,
-      x = hitX,
-      y = hitY,
-      rotation = rotation,
-      delay = delay,
-      offsetX = offsetX,
-      offsetY = offsetY
-    })
-  end
-  
-  -- Trigger staggered flash and knockback events (one per impact sprite)
-  local flashDuration = (config.battle and config.battle.hitFlashDuration) or 0.5
-  for i = 1, spriteCount do
-    local delay = (i - 1) * staggerDelay
-    -- Add flash event
-    table.insert(self.enemyFlashEvents, {
-      delay = delay,
-      duration = flashDuration
-    })
-    -- Add knockback event
-    table.insert(self.enemyKnockbackEvents, {
-      delay = delay,
-      startTime = nil -- Will be set when delay expires
-    })
-  end
+  ImpactSystem.create(self, blockCount or 1, isCrit or false)
 end
 
 return BattleScene
