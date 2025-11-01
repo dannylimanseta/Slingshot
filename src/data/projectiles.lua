@@ -36,63 +36,6 @@ projectiles.data = {
     description = "A basic projectile that grows stronger with each block it hits."
   },
   {
-    id = "fire_ball",
-    name = "Fire Ball",
-    rarity = projectiles.Rarity.RARE,
-    level = 1,
-    baseDamage = 4,
-    icon = "assets/images/ball_1.png", -- placeholder
-    stats = {
-      "+2 damage per block",
-      "Lasts 6 bounces",
-      "10% chance to crit"
-    },
-    description = "A blazing projectile that burns through blocks."
-  },
-  {
-    id = "ice_spike",
-    name = "Ice Spike",
-    rarity = projectiles.Rarity.RARE,
-    level = 1,
-    baseDamage = 3,
-    icon = "assets/images/ball_1.png", -- placeholder
-    stats = {
-      "+1 damage per block",
-      "Lasts 7 bounces",
-      "Slows enemy attacks"
-    },
-    description = "A frosty projectile that freezes enemies in their tracks."
-  },
-  {
-    id = "lightning_bolt",
-    name = "Lightning Bolt",
-    rarity = projectiles.Rarity.EPIC,
-    level = 1,
-    baseDamage = 5,
-    icon = "assets/images/ball_1.png", -- placeholder
-    stats = {
-      "+3 damage per block",
-      "Lasts 4 bounces",
-      "Chain damage to nearby blocks"
-    },
-    description = "Electric energy that arcs between targets."
-  },
-  {
-    id = "void_orb",
-    name = "Void Orb",
-    rarity = projectiles.Rarity.LEGENDARY,
-    level = 1,
-    baseDamage = 6,
-    icon = "assets/images/ball_1.png", -- placeholder
-    stats = {
-      "+5 damage per block",
-      "Lasts 8 bounces",
-      "Absorbs block HP as damage",
-      "Pierces through blocks"
-    },
-    description = "A dark void that consumes everything in its path."
-  },
-  {
     id = "spread_shot",
     name = "Multi Strike",
     rarity = projectiles.Rarity.UNCOMMON,

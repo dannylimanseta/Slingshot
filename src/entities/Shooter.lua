@@ -12,10 +12,6 @@ function Shooter.new(x, y, projectileId)
   local currentBallSize = ballSize * 1.2 -- Current ball is 20% larger
   local rightShift = currentBallSize * 0.5 -- Shift right by half the current ball's radius
   
-  -- Initial positions: slot1 on left (current, turn 1), slot2 on right
-  local slot1InitialX = x - ballSpacing * 0.5 - ballSize + rightShift
-  local slot2InitialX = x + ballSpacing * 0.5 + ballSize + rightShift
-  
   local self = setmetatable({ 
     x = x, 
     y = y,
@@ -26,18 +22,15 @@ function Shooter.new(x, y, projectileId)
     -- Dynamic projectile slots system
     projectileSlots = {}, -- Array of all available projectiles with cached images
     numProjectiles = 0, -- Total number of projectiles
-    -- Slot position tracking for tweening (always 2 visible slots)
-    slot1X = slot1InitialX, -- Current position of slot 1 (left, current)
-    slot2X = slot2InitialX, -- Current position of slot 2 (right, next)
-    slotsX = x + rightShift, -- Current position of slots image (tweened)
-    arrowX = slot1InitialX, -- Current position of arrow (tweened, follows active ball)
-    slot1Size = currentBallSize, -- Current size of slot 1 (starts as current ball)
-    slot2Size = ballSize, -- Current size of slot 2 (starts as next ball)
-    slot1Index = 0, -- Index of projectile in slot 1 (current)
-    slot2Index = 1, -- Index of projectile in slot 2 (next)
+    -- Infinite carousel system
+    carousel = {
+      offset = 0, -- Current scroll position (continuous float)
+      targetOffset = 0, -- Target scroll position (tweened toward)
+    },
+    -- Slot rendering cache (dynamically sized based on what's visible)
+    slotRenderCache = {}, -- { [slotIndex] = {x, size, alpha, depthAlpha, projectileIndex} }
+    arrowOffsetX = 0, -- Relative offset from shooter center (tweened)
     lastTurnNumber = 1, -- Track turn number to detect changes
-    tweenSpeed = 8, -- Speed of position tween
-    sizeTweenSpeed = 12, -- Speed of size tween (faster for visual feedback)
   }, Shooter)
   
   -- Load all projectiles dynamically
@@ -66,7 +59,7 @@ function Shooter:loadProjectiles()
       -- Load image if icon path is provided
       if slot.icon then
         local ok, img = pcall(love.graphics.newImage, slot.icon)
-        if ok then
+    if ok then
           slot.image = img
         end
       end
@@ -76,7 +69,7 @@ function Shooter:loadProjectiles()
     end
   end
   
-  -- Ensure we have at least 2 projectiles for rotation
+  -- Ensure we have at least 1 projectile
   if self.numProjectiles == 0 then
     -- Fallback: add default projectile
     local defaultSlot = {
@@ -89,21 +82,6 @@ function Shooter:loadProjectiles()
     table.insert(self.projectileSlots, defaultSlot)
     self.numProjectiles = 1
   end
-  
-  -- If only one projectile, duplicate it for display
-  if self.numProjectiles == 1 then
-    local duplicate = {
-      id = self.projectileSlots[1].id,
-      icon = self.projectileSlots[1].icon,
-      image = self.projectileSlots[1].image,
-    }
-    table.insert(self.projectileSlots, duplicate)
-    self.numProjectiles = 2
-  end
-  
-  -- Initialize slot indices (turn 1: first projectile, turn 2: second projectile)
-  self.slot1Index = 0
-  self.slot2Index = 1
 end
 
 -- Set TurnManager reference
@@ -124,12 +102,61 @@ function Shooter:loadUIImages()
   if ok2 then self.arrowImage = img2 end
 end
 
--- Get projectile image for a slot index (wraps around)
-function Shooter:getProjectileImage(slotIndex)
+-- Get projectile for a slot index (wraps around infinitely)
+function Shooter:getProjectileAtSlot(slotIndex)
   if self.numProjectiles == 0 then return nil end
   local index = ((slotIndex % self.numProjectiles) + self.numProjectiles) % self.numProjectiles + 1
-  local slot = self.projectileSlots[index]
-  return slot and slot.image or nil
+  return self.projectileSlots[index]
+end
+
+-- Calculate edge fade alpha based on distance from center
+function Shooter:calculateEdgeFade(relativePosition)
+  local carouselCfg = config.shooter.carousel
+  local distanceFromCenter = math.abs(relativePosition)
+  
+  if distanceFromCenter < carouselCfg.fadeStart then
+    return 1 -- Fully visible
+  elseif distanceFromCenter > carouselCfg.fadeEnd then
+    return 0 -- Fully transparent
+  else
+    -- Smooth linear fade between fadeStart and fadeEnd
+    local fadeProgress = (distanceFromCenter - carouselCfg.fadeStart) / (carouselCfg.fadeEnd - carouselCfg.fadeStart)
+    return 1 - fadeProgress
+  end
+end
+
+-- Calculate depth fade (Option B: dim based on distance)
+function Shooter:calculateDepthFade(relativePosition)
+  local carouselCfg = config.shooter.carousel
+  local distanceFromCenter = math.abs(relativePosition)
+  -- Reduce alpha by depthFade amount per unit distance
+  return math.max(0, 1 - (distanceFromCenter * carouselCfg.depthFade))
+end
+
+-- Calculate slot size based on position (center is larger)
+function Shooter:calculateSlotSize(relativePosition)
+  local r = config.shooter.radius
+  local ballSize = r * 0.7
+  local activeBallSize = ballSize * 1.2
+  
+  local distanceFromCenter = math.abs(relativePosition)
+  
+  if distanceFromCenter < 0.5 then
+    -- Within half a slot of center = active size
+    return activeBallSize
+  else
+    -- Smoothly interpolate from active to normal size
+    local t = math.min(1, (distanceFromCenter - 0.5) / 0.5)
+    return activeBallSize * (1 - t) + ballSize * t
+  end
+end
+
+-- Calculate screen X position for a slot at relative position
+function Shooter:calculateSlotScreenX(relativePosition)
+  local r = config.shooter.radius
+  local carouselCfg = config.shooter.carousel
+  local ballSpacing = r * carouselCfg.ballSpacingMultiplier
+  return self.x + (relativePosition * ballSpacing)
 end
 
 -- Set the projectile ID (for backward compatibility, but doesn't affect rotation)
@@ -156,106 +183,101 @@ function Shooter:update(dt, bounds)
     turnNumber = self.turnManager:getTurnNumber()
   end
   
-  -- Update slot indices based on turn number (cycle through all projectiles)
-  -- Turn 1: projectile 0 (index 0), Turn 2: projectile 1 (index 1), etc.
-  local targetSlot1Index = (turnNumber - 1) % self.numProjectiles
-  local targetSlot2Index = turnNumber % self.numProjectiles
-  
-  -- Detect turn change and update slot indices
+  -- Detect turn change and update target offset
   if turnNumber ~= self.lastTurnNumber then
+    -- Advance carousel by the difference in turns
+    local turnDelta = turnNumber - self.lastTurnNumber
+    self.carousel.targetOffset = self.carousel.targetOffset + turnDelta
     self.lastTurnNumber = turnNumber
-    self.slot1Index = targetSlot1Index
-    self.slot2Index = targetSlot2Index
   end
   
-  -- Calculate target positions based on current turn
-  local r = config.shooter.radius
-  local ballSpacing = r * 0.6
-  local ballSize = r * 0.7
-  local currentBallSize = ballSize * 1.2 -- Current ball is 20% larger
-  local rightShift = currentBallSize * 0.5 -- Shift right by half the current ball's radius
-  
-  -- Slot 1 (left, current) is always the active projectile for this turn
-  -- Slot 2 (right, next) shows the next projectile
-  local slot1Offset = -ballSpacing * 0.5 - ballSize + rightShift
-  local slot2Offset = ballSpacing * 0.5 + ballSize + rightShift
-  
-  -- Target positions relative to shooter center
-  local slot1TargetX = self.x + slot1Offset
-  local slot2TargetX = self.x + slot2Offset
-  local slotsTargetX = self.x + rightShift
-  
-  -- Active ball is always slot 1 (left)
-  local arrowTargetX = slot1TargetX
-  
-  -- Tween slot positions toward targets (both for position swap and shooter movement)
-  local k = math.min(1, self.tweenSpeed * dt)
-  local slot1Delta = slot1TargetX - self.slot1X
-  local slot2Delta = slot2TargetX - self.slot2X
-  local slotsDelta = slotsTargetX - self.slotsX
-  local arrowDelta = arrowTargetX - self.arrowX
-  
-  if math.abs(slot1Delta) > 0.01 then
-    self.slot1X = self.slot1X + slot1Delta * k
+  -- Tween carousel offset toward target (smooth scrolling)
+  local carouselCfg = config.shooter.carousel
+  local offsetDelta = self.carousel.targetOffset - self.carousel.offset
+  if math.abs(offsetDelta) > 0.001 then
+    local k = math.min(1, carouselCfg.scrollSpeed * dt)
+    self.carousel.offset = self.carousel.offset + offsetDelta * k
   else
-    self.slot1X = slot1TargetX
+    self.carousel.offset = self.carousel.targetOffset
   end
   
-  if math.abs(slot2Delta) > 0.01 then
-    self.slot2X = self.slot2X + slot2Delta * k
-  else
-    self.slot2X = slot2TargetX
+  -- Clear render cache for this frame
+  self.slotRenderCache = {}
+  
+  -- Calculate which slots to render (extra buffer for smooth scrolling)
+  local renderMin = math.floor(self.carousel.offset - carouselCfg.renderBuffer)
+  local renderMax = math.ceil(self.carousel.offset + carouselCfg.maxVisibleSlots + carouselCfg.renderBuffer)
+  
+  local arrowTargetOffsetX = 0 -- Arrow offset relative to shooter center
+  
+  -- Render all slots in range
+  for slotIndex = renderMin, renderMax do
+    -- Calculate position relative to carousel offset
+    local relativePosition = slotIndex - self.carousel.offset
+    
+    -- Calculate fade alphas
+    local edgeFade = self:calculateEdgeFade(relativePosition)
+    local depthFade = self:calculateDepthFade(relativePosition)
+    
+    -- Skip if fully transparent
+    if edgeFade > 0 then
+      -- Calculate screen position
+      local slotX = self:calculateSlotScreenX(relativePosition)
+      
+      -- Calculate size
+      local slotSize = self:calculateSlotSize(relativePosition)
+      
+      -- Get projectile for this slot (with infinite wrapping)
+      local projectileIndex = ((slotIndex % self.numProjectiles) + self.numProjectiles) % self.numProjectiles + 1
+      
+      -- Store in render cache
+      self.slotRenderCache[slotIndex] = {
+        x = slotX,
+        size = slotSize,
+        edgeFade = edgeFade,
+        depthFade = depthFade,
+        projectileIndex = projectileIndex,
+        relativePosition = relativePosition,
+      }
+      
+      -- Arrow follows the center slot (closest to offset)
+      if math.abs(relativePosition) < 0.5 then
+        -- Calculate offset relative to shooter center
+        local ballSpacing = r * carouselCfg.ballSpacingMultiplier
+        arrowTargetOffsetX = relativePosition * ballSpacing
+      end
+    end
   end
   
-  -- Tween slots position toward target (syncs with ball movement)
-  if math.abs(slotsDelta) > 0.01 then
-    self.slotsX = self.slotsX + slotsDelta * k
-  else
-    self.slotsX = slotsTargetX
-  end
-  
-  -- Tween arrow position toward active ball (syncs with ball movement)
+  -- Tween arrow offset toward active ball (relative to shooter position)
+  local k = math.min(1, carouselCfg.scrollSpeed * dt)
+  local arrowDelta = arrowTargetOffsetX - self.arrowOffsetX
   if math.abs(arrowDelta) > 0.01 then
-    self.arrowX = self.arrowX + arrowDelta * k
+    self.arrowOffsetX = self.arrowOffsetX + arrowDelta * k
   else
-    self.arrowX = arrowTargetX
-  end
-  
-  -- Tween slot sizes toward targets
-  local sizeK = math.min(1, self.sizeTweenSpeed * dt)
-  local slot1TargetSize = currentBallSize -- Current ball (left)
-  local slot2TargetSize = ballSize -- Next ball (right)
-  local slot1SizeDelta = slot1TargetSize - self.slot1Size
-  local slot2SizeDelta = slot2TargetSize - self.slot2Size
-  
-  if math.abs(slot1SizeDelta) > 0.01 then
-    self.slot1Size = self.slot1Size + slot1SizeDelta * sizeK
-  else
-    self.slot1Size = slot1TargetSize
-  end
-  
-  if math.abs(slot2SizeDelta) > 0.01 then
-    self.slot2Size = self.slot2Size + slot2SizeDelta * sizeK
-  else
-    self.slot2Size = slot2TargetSize
+    self.arrowOffsetX = arrowTargetOffsetX
   end
 end
 
 function Shooter:getMuzzle()
-  -- Shoot from the current ball (slot 1, left) position, slightly above
+  -- Shoot from the current ball (active slot at carousel center) position
   local r = config.shooter.radius
+  
+  -- Find the slot closest to center (carousel.offset)
+  local centerSlotIndex = math.floor(self.carousel.offset + 0.5)
+  local cachedSlot = self.slotRenderCache[centerSlotIndex]
+  local currentSlotX = cachedSlot and cachedSlot.x or self.x
+  
   -- Account for 20px upward shift in draw
-  return self.slot1X, (self.y - 20) - r * 0.5
+  return currentSlotX, (self.y - 20) - r * 0.5
 end
 
--- Get the current projectile ID based on turn number
+-- Get the current projectile ID based on carousel position
 function Shooter:getCurrentProjectileId()
-  local turnNumber = 1
-  if self.turnManager and self.turnManager.getTurnNumber then
-    turnNumber = self.turnManager:getTurnNumber()
-  end
-  local index = ((turnNumber - 1) % self.numProjectiles) + 1
-  local slot = self.projectileSlots[index]
+  -- Active projectile is at the carousel center (rounded)
+  local centerSlotIndex = math.floor(self.carousel.offset + 0.5)
+  local projectileIndex = ((centerSlotIndex % self.numProjectiles) + self.numProjectiles) % self.numProjectiles + 1
+  local slot = self.projectileSlots[projectileIndex]
   return slot and slot.id or "qi_orb"
 end
 
@@ -265,69 +287,72 @@ function Shooter:draw()
   -- Shift entire shooter up by 20px
   local drawY = self.y - 20
   
-  -- Draw ball slots image beneath the balls (lower z-order)
+  -- Draw ball slots background image (optional - can be removed or adapted)
   if self.ballSlotsImage then
     local r = config.shooter.radius
-    local ballSpacing = r * 0.6
-    local ballSize = r * 0.7
-    local currentBallSize = ballSize * 1.2
-    local rightShift = currentBallSize * 0.5
+    local carouselCfg = config.shooter.carousel
+    local ballSpacing = r * carouselCfg.ballSpacingMultiplier
     
-    -- Calculate the width needed to cover both ball positions
-    local slotsWidth = ballSpacing + ballSize * 2 + currentBallSize
+    -- Calculate width to cover visible slots
+    local slotsWidth = carouselCfg.maxVisibleSlots * ballSpacing
     local iw, ih = self.ballSlotsImage:getWidth(), self.ballSlotsImage:getHeight()
-    local scale = (slotsWidth / math.max(iw, ih)) * 6
+    local scale = (slotsWidth / math.max(iw, ih)) * 2 -- Reduced by 3x (was * 6)
     
-    -- Use tweened slots position (synced with ball movement)
-    love.graphics.draw(self.ballSlotsImage, self.slotsX, drawY, 0, scale, scale, iw * 0.5, ih * 0.5)
+    -- Center the background on shooter position
+    love.graphics.draw(self.ballSlotsImage, self.x, drawY, 0, scale, scale, iw * 0.5, ih * 0.5)
   end
   
-  -- Get current turn number to determine which projectiles to show
-  local turnNumber = 1
-  if self.turnManager and self.turnManager.getTurnNumber then
-    turnNumber = self.turnManager:getTurnNumber()
+  -- Draw all slots from render cache
+  -- Sort by slot index to draw left-to-right
+  local sortedSlots = {}
+  for slotIndex, slotData in pairs(self.slotRenderCache) do
+    table.insert(sortedSlots, {index = slotIndex, data = slotData})
+  end
+  table.sort(sortedSlots, function(a, b) return a.index < b.index end)
+  
+  for _, entry in ipairs(sortedSlots) do
+    local slotData = entry.data
+    local slot = self.projectileSlots[slotData.projectileIndex]
+    local slotImage = slot and slot.image or nil
+    
+    -- Combine edge fade and depth fade
+    local finalAlpha = slotData.edgeFade * slotData.depthFade
+    
+    -- Draw projectile image or fallback circle
+    if slotImage then
+      love.graphics.setColor(1, 1, 1, finalAlpha)
+      local iw, ih = slotImage:getWidth(), slotImage:getHeight()
+      local scale = (slotData.size * 2) / math.max(iw, ih)
+      love.graphics.draw(slotImage, slotData.x, drawY, 0, scale, scale, iw * 0.5, ih * 0.5)
+    else
+      -- Fallback circle
+      love.graphics.setColor(0.8, 0.8, 0.8, finalAlpha)
+      love.graphics.circle("fill", slotData.x, drawY, slotData.size)
+    end
   end
   
-  -- Calculate which projectiles are in each slot
-  local slot1ProjectileIndex = ((turnNumber - 1) % self.numProjectiles) + 1
-  local slot2ProjectileIndex = (turnNumber % self.numProjectiles) + 1
+  -- Reset color
+  love.graphics.setColor(1, 1, 1, 1)
   
-  -- Get projectile images for current slots
-  local slot1Image = self.projectileSlots[slot1ProjectileIndex] and self.projectileSlots[slot1ProjectileIndex].image or nil
-  local slot2Image = self.projectileSlots[slot2ProjectileIndex] and self.projectileSlots[slot2ProjectileIndex].image or nil
-  
-  -- Draw slot 1 (left, current) at its current tweened position and size
-  if slot1Image then
-    local iw, ih = slot1Image:getWidth(), slot1Image:getHeight()
-    local scale = (self.slot1Size * 2) / math.max(iw, ih)
-    love.graphics.draw(slot1Image, self.slot1X, drawY, 0, scale, scale, iw * 0.5, ih * 0.5)
-  else
-    -- Fallback circle for slot 1
-    love.graphics.setColor(0.9, 0.9, 0.9, 1)
-    love.graphics.circle("fill", self.slot1X, drawY, self.slot1Size)
-  end
-  
-  -- Draw slot 2 (right, next) at its current tweened position and size
-  if slot2Image then
-    local iw, ih = slot2Image:getWidth(), slot2Image:getHeight()
-    local scale = (self.slot2Size * 2) / math.max(iw, ih)
-    love.graphics.draw(slot2Image, self.slot2X, drawY, 0, scale, scale, iw * 0.5, ih * 0.5)
-  else
-    -- Fallback circle for slot 2
-    love.graphics.setColor(0.7, 0.7, 0.7, 1)
-    love.graphics.circle("fill", self.slot2X, drawY, self.slot2Size)
-  end
-  
-  -- Draw arrow below the active ball (slot 1)
+  -- Draw arrow below the active ball (center slot)
   if self.arrowImage then
-    -- Position arrow below the active ball using tweened position
     local r = config.shooter.radius
-    local arrowY = drawY + self.slot1Size + r * 0.3 + 3
     
-    -- Scale arrow to match ball size
-    local iw, ih = self.arrowImage:getWidth(), self.arrowImage:getHeight()
-    local scale = (self.slot1Size * 1.5) / math.max(iw, ih) * 1.5
-    love.graphics.draw(self.arrowImage, self.arrowX, arrowY, 0, scale, scale, iw * 0.5, ih * 0.5)
+    -- Find center slot for arrow positioning
+    local centerSlotIndex = math.floor(self.carousel.offset + 0.5)
+    local centerSlot = self.slotRenderCache[centerSlotIndex]
+    
+    if centerSlot then
+      local arrowY = drawY + centerSlot.size + r * 0.3 + 3
+      
+      -- Arrow position synced with shooter movement (relative offset)
+      local arrowX = self.x + self.arrowOffsetX
+      
+      -- Scale arrow to match ball size
+      local iw, ih = self.arrowImage:getWidth(), self.arrowImage:getHeight()
+      local scale = (centerSlot.size * 1.5) / math.max(iw, ih) * 1.5
+      love.graphics.draw(self.arrowImage, arrowX, arrowY, 0, scale, scale, iw * 0.5, ih * 0.5)
+    end
   end
   
   love.graphics.setColor(1, 1, 1, 1)

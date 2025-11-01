@@ -646,45 +646,45 @@ function GameplayScene:mousereleased(x, y, button, bounds)
         -- Spread shot: spawn multiple projectiles
         local spreadConfig = config.ball.spreadShot
         if spreadConfig and spreadConfig.enabled then
-          self.ball = nil -- Clear single ball
-          self.balls = {}
-          local count = spreadConfig.count or 3
-          local spreadAngle = spreadConfig.spreadAngle or 0.15
-          local radiusScale = spreadConfig.radiusScale or 0.7
+        self.ball = nil -- Clear single ball
+        self.balls = {}
+        local count = spreadConfig.count or 3
+        local spreadAngle = spreadConfig.spreadAngle or 0.15
+        local radiusScale = spreadConfig.radiusScale or 0.7
           if not spritePath then
             spritePath = spreadConfig.sprite or (config.assets.images.ball_2)
           end
-          local maxBounces = spreadConfig.maxBounces or 3
+        local maxBounces = spreadConfig.maxBounces or 3
+        
+        -- Calculate base angle from aim direction
+        local baseAngle = math.atan2(ndy, ndx)
+        
+        -- Spawn projectiles in a spread pattern
+        for i = 1, count do
+          -- Calculate offset angle (centered around base angle)
+          local offset = 0
+          if count > 1 then
+            offset = (i - (count + 1) / 2) * (spreadAngle / (count - 1))
+          end
+          local angle = baseAngle + offset
+          local projDx = math.cos(angle)
+          local projDy = math.sin(angle)
           
-          -- Calculate base angle from aim direction
-          local baseAngle = math.atan2(ndy, ndx)
-          
-          -- Spawn projectiles in a spread pattern
-          for i = 1, count do
-            -- Calculate offset angle (centered around base angle)
-            local offset = 0
-            if count > 1 then
-              offset = (i - (count + 1) / 2) * (spreadAngle / (count - 1))
+          local ball = Ball.new(self.world, self.aimStartX, self.aimStartY, projDx, projDy, {
+            radius = config.ball.radius * radiusScale,
+            maxBounces = maxBounces,
+            spritePath = spritePath,
+            trailConfig = spreadConfig.trail, -- Use spread shot trail config (green, smaller width)
+            onLastBounce = function(ball)
+              -- Ball reached max bounces, destroy it - turn will end automatically
+              ball:destroy()
             end
-            local angle = baseAngle + offset
-            local projDx = math.cos(angle)
-            local projDy = math.sin(angle)
-            
-            local ball = Ball.new(self.world, self.aimStartX, self.aimStartY, projDx, projDy, {
-              radius = config.ball.radius * radiusScale,
-              maxBounces = maxBounces,
-              spritePath = spritePath,
-              trailConfig = spreadConfig.trail, -- Use spread shot trail config (green, smaller width)
-              onLastBounce = function(ball)
-                -- Ball reached max bounces, destroy it - turn will end automatically
-                ball:destroy()
-              end
-            })
-            
-            if ball then
-              ball.score = (config.score and config.score.baseSeed) or 0
-              self.score = self.score + ball.score
-              table.insert(self.balls, ball)
+          })
+          
+          if ball then
+            ball.score = (config.score and config.score.baseSeed) or 0
+            self.score = self.score + ball.score
+            table.insert(self.balls, ball)
             end
           end
         else

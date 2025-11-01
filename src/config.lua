@@ -165,6 +165,17 @@ config.shooter = {
     alphaEnd = 0.0,
     fadeSpeed = 6, -- how quickly guide fades in/out when canShoot toggles
   },
+  -- Infinite carousel for projectile slots
+  carousel = {
+    enabled = true,
+    scrollSpeed = 8, -- tween speed for smooth scrolling
+    fadeStart = 2.5, -- distance from center where fade begins (in slot units)
+    fadeEnd = 3.5, -- distance from center where fully transparent (in slot units)
+    depthFade = 0.15, -- 0..1, how much to dim slots based on distance (Option B)
+    renderBuffer = 4, -- extra slots to render beyond visible range
+    maxVisibleSlots = 6, -- maximum slots visible at once
+    ballSpacingMultiplier = 2, -- multiplier for spacing between balls (shooter.radius * this)
+  },
 }
 
 -- Gameplay effects

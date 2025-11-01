@@ -503,9 +503,9 @@ function SplitScene:draw()
     -- Get projectile ID from shooter if available (uses dynamic rotation)
     if self.left and self.left.shooter and self.left.shooter.getCurrentProjectileId then
       projectileIdToShow = self.left.shooter:getCurrentProjectileId()
-    else
+      else
       -- Fallback to stored projectile ID
-      projectileIdToShow = self.currentProjectileId or "qi_orb"
+        projectileIdToShow = self.currentProjectileId or "qi_orb"
     end
     
     if projectileIdToShow then
@@ -689,7 +689,7 @@ function SplitScene:update(dt)
     projectileIdToShow = self.left.shooter:getCurrentProjectileId()
   else
     -- Fallback to stored projectile ID
-    projectileIdToShow = self.currentProjectileId or "qi_orb"
+      projectileIdToShow = self.currentProjectileId or "qi_orb"
   end
   
   -- Check if projectile changed
