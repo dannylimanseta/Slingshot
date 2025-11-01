@@ -668,15 +668,9 @@ function SplitScene:update(dt)
   end
   local hasBall = hasSingleBall or hasMultipleBalls
   
-  -- Detect shot start (transition from inactive to active) for jackpot display
+  -- Detect shot start (transition from inactive to active)
   self._prevShotActive = self._prevShotActive or false
   local shotActive = (canShoot == false and hasBall)
-  if shotActive and not self._prevShotActive then
-    -- Start jackpot display on the right once per shot
-    if self.right and self.right.startJackpotDisplay then
-      self.right:startJackpotDisplay()
-    end
-  end
   self._prevShotActive = shotActive
 
   -- Turn ended: player turn active, shot was fired, and no balls remain
@@ -693,17 +687,7 @@ function SplitScene:update(dt)
     self:endPlayerTurnWithTurnManager()
   end
 
-  -- Feed live score to battle jackpot while the player is aiming/shot is active
-  if shotActive and self.right and self.right.setJackpotTarget then
-    local liveScore = (self.left and self.left.score) or 0
-    local critCount = (self.left and self.left.critThisTurn) or 0
-    local mult = (config.score and config.score.critMultiplier) or 2
-    local displayScore = liveScore * (critCount > 0 and (mult ^ critCount) or 1)
-    self.right:setJackpotTarget(displayScore)
-    if self.right.setJackpotCrit then
-      self.right:setJackpotCrit(critCount > 0)
-    end
-  end
+  -- (Jackpot feed removed)
 
   -- Ensure TurnManager processes its action queue each frame
   if self.turnManager and self.turnManager.update then

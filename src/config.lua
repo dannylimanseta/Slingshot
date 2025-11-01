@@ -389,7 +389,7 @@ config.map = {
     -- Event placement (more common than treasures)
     eventDensity = 0.08, -- percentage of valid positions to place events (higher than treasures)
     minEventDistance = 5, -- minimum distance from start to place event
-    minEventSpacing = 5, -- minimum spacing between events (grid distance) - increased to prevent clustering
+    minEventSpacing = 10, -- minimum spacing between events (grid distance) - doubled to prevent clustering
     minEvents = 6, -- minimum number of events on map
     maxEvents = 8, -- maximum number of events on map
   },

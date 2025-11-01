@@ -48,25 +48,11 @@ function BattleScene.new()
     borderFadeInTime = 0, -- Fade-in animation timer for border
     armorIconFlashTimer = 0, -- Timer for armor icon flash when damage is fully blocked
     borderFadeInDuration = 0.2, -- Fade-in duration in seconds
-    -- Jackpot damage display state
-    jackpotActive = false,
-    jackpotTarget = 0,
-    jackpotDisplay = 0,
-    jackpotFalling = false,
-    jackpotFallDelayT = 0,
-    jackpotFallT = 0,
-    jackpotFragments = {},
-    jackpotCrit = false,
-    jackpotShakeT = 0,
-    jackpotBobT = 0,
     _lastBounds = nil,
     -- Turn indicator state
     turnIndicator = nil, -- { text = "PLAYER'S TURN" or "ENEMY'S TURN", t = lifetime }
     turnIndicatorDelay = 0, -- Delay timer before showing turn indicator
     _pendingTurnIndicator = nil, -- Queued turn indicator waiting for delay
-    -- Pending damage for jackpot sync
-    pendingDamage = 0, -- Damage to apply when jackpot crashes down
-    pendingArmorFromTurn = 0, -- Armor to apply after damage (delayed for jackpot sync)
     -- Impact animation
     impactAnimation = nil, -- Base animation instance
     impactInstances = {}, -- Array of active impact instances {anim, x, y, rotation, delay, offsetX, offsetY}
@@ -252,47 +238,20 @@ function BattleScene:onPlayerTurnEnd(turnScore, armor)
   if turnScore and turnScore > 0 then
     local dmg = math.floor(turnScore)
     
-    -- If jackpot is active, end jackpot display immediately but delay damage effects
-    if self.jackpotActive then
-      -- End jackpot display immediately
-      self.jackpotActive = false
-      self.jackpotTarget = 0
-      self.jackpotDisplay = 0
-      self.jackpotFalling = false
-      self.jackpotFragments = {}
-      
-      -- Store damage info to apply after delay (merge with pending impact params if any)
-      self._pendingPlayerAttackDamage = {
-        damage = dmg,
-        armor = armor or 0,
-        wasJackpot = true,
-        impactBlockCount = (self._pendingImpactParams and self._pendingImpactParams.blockCount) or 1,
-        impactIsCrit = (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false
-      }
-      self._pendingImpactParams = nil -- Clear after merging
-      -- Trigger player attack sequence after delay
-      self._playerAttackDelayTimer = (config.battle and config.battle.playerAttackDelay) or 1.0
-      
-      -- Queue incoming armor for TurnManager to handle (this happens immediately, visual effects are delayed)
-      self.pendingArmor = armor or 0
-      self.armorPopupShown = false
-    else
-      -- No jackpot: store damage info to apply after delay (merge with pending impact params if any)
-      self._pendingPlayerAttackDamage = {
-        damage = dmg,
-        armor = armor or 0,
-        wasJackpot = false,
-        impactBlockCount = (self._pendingImpactParams and self._pendingImpactParams.blockCount) or 1,
-        impactIsCrit = (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false
-      }
-      self._pendingImpactParams = nil -- Clear after merging
-      -- Trigger player attack sequence after delay
-      self._playerAttackDelayTimer = (config.battle and config.battle.playerAttackDelay) or 1.0
-      
-      -- Queue incoming armor for TurnManager to handle (this happens immediately, visual effects are delayed)
-      self.pendingArmor = armor or 0
-      self.armorPopupShown = false
-    end
+    -- Store damage info to apply after delay (merge with pending impact params if any)
+    self._pendingPlayerAttackDamage = {
+      damage = dmg,
+      armor = armor or 0,
+      impactBlockCount = (self._pendingImpactParams and self._pendingImpactParams.blockCount) or 1,
+      impactIsCrit = (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false
+    }
+    self._pendingImpactParams = nil -- Clear after merging
+    -- Trigger player attack sequence after delay
+    self._playerAttackDelayTimer = (config.battle and config.battle.playerAttackDelay) or 1.0
+    
+    -- Queue incoming armor for TurnManager to handle (this happens immediately, visual effects are delayed)
+    self.pendingArmor = armor or 0
+    self.armorPopupShown = false
   end
 end
 
@@ -762,63 +721,6 @@ function BattleScene:update(dt, bounds)
     end
   end
 
-  -- Update jackpot display tick toward target (dynamic speed based on damage delta)
-  if self.jackpotActive then
-    local scoreConfig = require("config").score or {}
-    local baseSpeed = scoreConfig.tickerSpeed or 10
-    local delta = (self.jackpotTarget - (self.jackpotDisplay or 0))
-    
-    -- Dynamic speed: faster for larger deltas
-    local dynamicSpeed = baseSpeed
-    local dynamicTicker = scoreConfig.dynamicTicker
-    if dynamicTicker and (dynamicTicker.enabled ~= false) then
-      local speedMultiplier = dynamicTicker.speedMultiplier or 3
-      local threshold = dynamicTicker.threshold or 20
-      local maxSpeed = dynamicTicker.maxSpeed or 60
-      
-      if math.abs(delta) > threshold then
-        -- Scale speed based on delta (capped at maxSpeed)
-        local speedScale = math.min(maxSpeed / baseSpeed, 1 + (math.abs(delta) - threshold) / threshold * (speedMultiplier - 1))
-        dynamicSpeed = baseSpeed * speedScale
-      end
-    end
-    
-    local step = math.min(1, math.max(-1, dynamicSpeed * dt))
-    self.jackpotDisplay = (self.jackpotDisplay or 0) + delta * step
-    if math.abs(self.jackpotTarget - self.jackpotDisplay) < 0.01 then
-      self.jackpotDisplay = self.jackpotTarget
-    end
-    -- Advance crit shake timer if active
-    if self.jackpotCrit then
-      self.jackpotShakeT = (self.jackpotShakeT or 0) + dt
-    end
-    -- Advance bob timer
-    if self.jackpotBobT and self.jackpotBobT > 0 then
-      local dur = ((require("config").battle and require("config").battle.jackpot and require("config").battle.jackpot.bobDuration) or 0.18)
-      self.jackpotBobT = self.jackpotBobT + dt
-      if self.jackpotBobT >= dur then
-        self.jackpotBobT = 0
-      end
-    end
-  end
-
-
-  -- Update jackpot fragment physics and fade
-  if self.jackpotFragments and #self.jackpotFragments > 0 then
-    local alive = {}
-    for _, frag in ipairs(self.jackpotFragments) do
-      frag.lifetime = frag.lifetime - dt
-      if frag.lifetime > 0 then
-        local t = frag.lifetime / math.max(0.0001, frag.maxLifetime)
-        local velScale = 0.3 + t * 0.7
-        frag.x = frag.x + frag.vx * dt * velScale
-        frag.y = frag.y + frag.vy * dt * velScale
-        frag.rotation = frag.rotation + frag.rotationSpeed * dt
-        table.insert(alive, frag)
-      end
-    end
-    self.jackpotFragments = alive
-  end
 end
 
 function BattleScene:triggerShake(mag, dur)
@@ -1313,74 +1215,7 @@ function BattleScene:draw(bounds)
     love.graphics.pop()
   end
 
-  -- Jackpot number (accumulating damage display above enemy) - HIDDEN
-  do
-    if false and (self.jackpotActive or (self.jackpotFragments and #self.jackpotFragments > 0)) then
-      local cfg = config.battle and config.battle.jackpot or {}
-      local startYBase = baselineY - enemyHalfH - (cfg.offsetY or 120)
-      local hitX = w * 0.5 -- Center horizontally across screen
-      local y = startYBase
-      if self.jackpotActive then
-        local font = self.jackpotCrit and (theme.fonts.jackpot or theme.fonts.large) or theme.fonts.large
-        love.graphics.setFont(font)
-        local text = tostring(math.floor(self.jackpotDisplay or 0))
-        local dx, dy = 0, 0
-        if self.jackpotCrit then
-          local jc = cfg
-          local amp = jc.shakeAmplitude or 3
-          local sp = jc.shakeSpeed or 42
-          local t = (self.jackpotShakeT or 0)
-          dx = math.sin(t * sp) * amp
-          dy = math.cos(t * sp * 0.9) * amp
-        end
-        -- Apply small bob upward when number increments
-        do
-          local dur = (cfg.bobDuration or 0.18)
-          local amp = (cfg.bobAmplitude or 8)
-          local t = self.jackpotBobT or 0
-          if t > 0 and dur > 0 then
-            local p = math.min(1, t / math.max(0.0001, dur))
-            local bob = math.sin(p * math.pi) -- up then down
-            dy = dy - amp * bob
-          end
-        end
-        
-        love.graphics.push()
-        love.graphics.translate(hitX + dx, y + dy)
-        local textW = font:getWidth(text)
-        -- Keep jackpot number at full opacity at all times
-        local alpha = 1.0
-        theme.drawTextWithOutline(text, -textW * 0.5, -40, 1, 1, 1, alpha, 3)
-        love.graphics.pop()
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.setFont(theme.fonts.base)
-      end
-      -- Draw shatter fragments
-      if self.jackpotFragments and #self.jackpotFragments > 0 then
-        love.graphics.setColor(1, 1, 1, 1)
-        for _, frag in ipairs(self.jackpotFragments) do
-          local prog = math.max(0, frag.lifetime / math.max(0.0001, frag.maxLifetime))
-          local alpha = prog * prog
-          if alpha > 0 then
-            love.graphics.push()
-            love.graphics.translate(frag.x, frag.y)
-            love.graphics.rotate(frag.rotation)
-            love.graphics.setColor(1, 1, 1, alpha)
-            local L = frag.length or 10
-            local W = frag.width or 5
-            -- Draw an isosceles triangle pointing forward along +X
-            love.graphics.polygon("fill",
-              0, 0,             -- tip
-              -L,  W * 0.5,     -- base top
-              -L, -W * 0.5      -- base bottom
-            )
-            love.graphics.pop()
-          end
-        end
-        love.graphics.setColor(1, 1, 1, 1)
-      end
-    end
-  end
+  -- (Jackpot UI removed)
 
   -- Popups (with fade; single smooth bounce upward)
   love.graphics.setFont(theme.fonts.large)
@@ -1449,42 +1284,7 @@ function BattleScene:draw(bounds)
   -- Combat log removed
 end
 
--- External API: start jackpot display at beginning of player shot
-function BattleScene:startJackpotDisplay()
-  self.jackpotActive = true
-  self.jackpotTarget = 0
-  self.jackpotDisplay = 0
-  self.jackpotFalling = false
-  self.jackpotFallDelayT = 0
-  self.jackpotFallT = 0
-  self.jackpotCrit = false
-  self.jackpotShakeT = 0
-  self.jackpotBobT = 0
-  -- Clear any pending damage from previous turn
-  self.pendingDamage = 0
-  self.pendingArmorFromTurn = 0
-  self.impactEffectsPlayed = false
-end
-
--- External API: update jackpot target (live score)
-function BattleScene:setJackpotTarget(value)
-  if not self.jackpotActive then return end
-  local v = tonumber(value) or 0
-  if v < 0 then v = 0 end
-  if v > (self.jackpotTarget or 0) then
-    -- Start a bob cycle when number increases
-    self.jackpotBobT = 1e-6
-  end
-  self.jackpotTarget = math.floor(v)
-end
-
--- External API: mark jackpot as crit (enables shake/scale)
-function BattleScene:setJackpotCrit(isCrit)
-  self.jackpotCrit = not not isCrit
-  if self.jackpotCrit and (self.jackpotShakeT or 0) == 0 then
-    self.jackpotShakeT = 0
-  end
-end
+-- (Jackpot API removed)
 
 -- External API: show player turn indicator
 function BattleScene:showPlayerTurn()
