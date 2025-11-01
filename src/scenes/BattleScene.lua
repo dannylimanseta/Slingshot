@@ -5,6 +5,7 @@ local SpriteAnimation = require("utils.SpriteAnimation")
 local DisintegrationShader = require("utils.DisintegrationShader")
 local FogShader = require("utils.FogShader")
 local ImpactSystem = require("scenes.battle.ImpactSystem")
+local Animations = require("scenes.battle.Animations")
 local TurnManager = require("core.TurnManager")
 
 local BattleScene = {}
@@ -487,153 +488,8 @@ function BattleScene:update(dt, bounds)
     end
   end
 
-  -- Advance lunge timers (hold at peak until impact FX finish)
-  do
-    local d = (config.battle and config.battle.lungeDuration) or 0
-    local rdur = (config.battle and config.battle.lungeReturnDuration) or 0
-    local totalPlayer = d + rdur
-    if self.playerLungeTime > 0 then
-      local t = self.playerLungeTime
-      local impactsActive = (self.impactInstances and #self.impactInstances > 0)
-      local inForward = t < d
-      local inReturn = t >= d and t < d + rdur
-      local shouldHold = (not inForward) and inReturn and impactsActive
-      if not shouldHold then
-        self.playerLungeTime = self.playerLungeTime + dt
-        if self.playerLungeTime > totalPlayer then self.playerLungeTime = 0 end
-      end
-    end
-  end
-  local totalEnemy = (config.battle.lungeDuration or 0) + (config.battle.lungeReturnDuration or 0)
-  if self.enemyLungeTime > 0 then
-    self.enemyLungeTime = self.enemyLungeTime + dt
-    if self.enemyLungeTime > totalEnemy then self.enemyLungeTime = 0 end
-  end
-  -- Advance knockback timers
-  local kbTotalPlayer = (config.battle.knockbackDuration or 0) + (config.battle.knockbackReturnDuration or 0)
-  if self.playerKnockbackTime > 0 then
-    self.playerKnockbackTime = self.playerKnockbackTime + dt
-    if self.playerKnockbackTime > kbTotalPlayer then self.playerKnockbackTime = 0 end
-  end
-  local kbTotalEnemy = (config.battle.knockbackDuration or 0) + (config.battle.knockbackReturnDuration or 0)
-  if self.enemyKnockbackTime > 0 then
-    self.enemyKnockbackTime = self.enemyKnockbackTime + dt
-    if self.enemyKnockbackTime > kbTotalEnemy then self.enemyKnockbackTime = 0 end
-  end
-  
-  -- Tween rotation back to 0
-  local rotationTweenSpeed = 8 -- Speed of rotation tween (similar to HP bar tween)
-  -- Player rotation always tweens toward 0
-  if math.abs(self.playerRotation) > 0.001 then
-    local k = math.min(1, rotationTweenSpeed * dt)
-    self.playerRotation = self.playerRotation * (1 - k)
-    if math.abs(self.playerRotation) < 0.001 then
-      self.playerRotation = 0
-    end
-  end
-  -- Enemy rotation always tweens toward 0
-  if math.abs(self.enemyRotation) > 0.001 then
-    local k = math.min(1, rotationTweenSpeed * dt)
-    self.enemyRotation = self.enemyRotation * (1 - k)
-    if math.abs(self.enemyRotation) < 0.001 then
-      self.enemyRotation = 0
-    end
-  end
-  -- Update fog time for animation
-  self.fogTime = (self.fogTime or 0) + dt
-  
-  -- Advance screenshake timer
-  if self.shakeTime > 0 then
-    self.shakeTime = self.shakeTime - dt
-    if self.shakeTime <= 0 then
-      self.shakeTime = 0
-      self.shakeDuration = 0
-      self.shakeMagnitude = 0
-    end
-  end
-  -- Idle bob time
-  self.idleT = (self.idleT or 0) + dt
-  
-  -- Update pulse animation timers
-  local pulseConfig = config.battle.pulse
-  if pulseConfig and (pulseConfig.enabled ~= false) then
-    local speed = pulseConfig.speed or 1.2
-    self.playerPulseTime = (self.playerPulseTime or 0) + dt * speed * 2 * math.pi
-    self.enemyPulseTime = (self.enemyPulseTime or 0) + dt * speed * 2 * math.pi
-  end
-
-  -- Emit and update lunge speed streaks during forward phase
-  do
-    local cfg = config.battle and config.battle.speedStreaks
-    if cfg and cfg.enabled then
-      local t = self.playerLungeTime or 0
-      local d = (config.battle and config.battle.lungeDuration) or 0
-      local pause = (config.battle and config.battle.lungePauseDuration) or 0
-      if t > 0 and t < d then
-        -- Determine player position and vertical span
-        local w = (self._lastBounds and self._lastBounds.w) or love.graphics.getWidth()
-        local h = (self._lastBounds and self._lastBounds.h) or love.graphics.getHeight()
-        local center = self._lastBounds and self._lastBounds.center or nil
-        local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
-        local centerW = center and center.w or math.floor(w * 0.5)
-        local leftWidth = math.max(0, centerX)
-        local pad = 12
-        local r = 24
-        local yOffset = (config.battle and config.battle.positionOffsetY) or 0
-        local baselineY = h * 0.55 + r + yOffset
-        local playerX = (leftWidth > 0) and (leftWidth * 0.5) or (pad + r)
-        -- Current lunge offset
-        local curPlayerX = playerX + (config.battle.lungeDistance or 0) * (t / math.max(0.0001, d))
-        -- Determine player sprite half dimensions for placement
-        local playerHalfH = r
-        local playerHalfW = r
-        do
-          local scaleCfg = (config.battle and (config.battle.playerSpriteScale or config.battle.spriteScale)) or 1
-          if self.playerImg then
-            local iw, ih = self.playerImg:getWidth(), self.playerImg:getHeight()
-            local s = ((2 * r) / math.max(1, ih)) * scaleCfg * (self.playerScaleMul or 1)
-            playerHalfH = (ih * s) * 0.5
-            playerHalfW = (iw * s) * 0.5
-          end
-        end
-        -- Emit at configured rate
-        self.lungeStreakAcc = (self.lungeStreakAcc or 0) + dt * (cfg.emitRate or 60)
-        while self.lungeStreakAcc >= 1 do
-          self.lungeStreakAcc = self.lungeStreakAcc - 1
-          -- Distribute vertically across full sprite height
-          local yTop = baselineY - playerHalfH * 2
-          local fullH = playerHalfH * 2
-          local y = yTop + love.math.random() * fullH
-          local len = (cfg.lengthMin or 24) + love.math.random() * math.max(0, (cfg.lengthMax or 60) - (cfg.lengthMin or 24))
-          local vx = (cfg.speedMin or -900) + love.math.random() * math.max(0, (cfg.speedMax or -600) - (cfg.speedMin or -900))
-          local life = (cfg.lifetimeMin or 0.12) + love.math.random() * math.max(0, (cfg.lifetimeMax or 0.22) - (cfg.lifetimeMin or 0.12))
-          table.insert(self.lungeStreaks, {
-            -- Start at (or slightly ahead of) the player's front edge so streaks cover the sprite
-            x = curPlayerX + playerHalfW + 4,
-            y = y,
-            vx = vx,
-            life = life,
-            maxLife = life,
-            len = len,
-          })
-        end
-      end
-    end
-  end
-  -- Update streaks
-  do
-    if self.lungeStreaks and #self.lungeStreaks > 0 then
-      local alive = {}
-      for _, s in ipairs(self.lungeStreaks) do
-        s.life = s.life - dt
-        if s.life > 0 then
-          s.x = s.x + s.vx * dt
-          table.insert(alive, s)
-        end
-      end
-      self.lungeStreaks = alive
-    end
-  end
+  -- Delegate animation timers and streaks
+  Animations.update(self, dt)
 
 end
 
