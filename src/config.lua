@@ -169,12 +169,14 @@ config.shooter = {
   carousel = {
     enabled = true,
     scrollSpeed = 8, -- tween speed for smooth scrolling
-    fadeStart = 1, -- distance from center where fade begins (in slot units)
-    fadeEnd = 1.5, -- distance from center where fully transparent (in slot units)
-    depthFade = 0.2, -- 0..1, how much to dim slots based on distance (Option B)
-    renderBuffer = 0.5, -- extra slots to render beyond visible range (for smooth fading)
-    maxVisibleSlots = 3, -- maximum slots visible at once (shows only unique projectiles, no repetition)
+    -- Dynamic fade distances (calculated per projectile count)
+    fadeStartOffset = 0.3, -- distance beyond last slot where fade begins (tight, prevents duplicates)
+    fadeEndOffset = 0.6, -- distance beyond last slot where fully transparent
+    fadeInStartOffset = 0.5, -- distance before last slot where incoming ball starts fading in (tight to prevent +1)
+    fadeInEndOffset = 0.2, -- distance before last slot where incoming ball becomes fully visible
+    depthFade = 0.15, -- 0..1, how much to dim slots based on distance (Option B)
     ballSpacingMultiplier = 2, -- multiplier for spacing between balls (shooter.radius * this)
+    -- maxVisibleSlots is now AUTO-CALCULATED from equippedProjectiles length
   },
 }
 
@@ -281,6 +283,17 @@ config.battle = {
     speed = 0.13,             -- controls the animation speed [0, 0.1 ish)
     cloudHeight = 20.0,       -- (inverse) height of the input gradient [0, ...)
     startY = 0.0,           -- normalized Y (0=top, 1=bottom) where fog starts
+  },
+}
+
+-- Player loadout: which projectiles are equipped (in rotation order)
+config.player = {
+  -- Array of projectile IDs that appear in the shooter carousel
+  -- Order matters: this is the sequence they rotate through
+  equippedProjectiles = {
+    "qi_orb",        -- Strike
+    "spread_shot",   -- Multi Strike
+    "twin_strike",   -- Twin Strike
   },
 }
 

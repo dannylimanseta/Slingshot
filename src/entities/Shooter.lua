@@ -42,13 +42,18 @@ function Shooter.new(x, y, projectileId)
   return self
 end
 
--- Load all projectiles dynamically from ProjectileManager
+-- Load projectiles from player's equipped inventory
 function Shooter:loadProjectiles()
-  local allProjectiles = ProjectileManager.getAllProjectiles()
   self.projectileSlots = {}
   self.numProjectiles = 0
   
-  for _, projectile in ipairs(allProjectiles) do
+  -- Get equipped projectiles from player loadout (config)
+  local equippedIds = (config.player and config.player.equippedProjectiles) or { "qi_orb" }
+  
+  for _, projectileId in ipairs(equippedIds) do
+    -- Get projectile data from master database
+    local projectile = ProjectileManager.getProjectile(projectileId)
+    
     if projectile and projectile.id then
       local slot = {
         id = projectile.id,
@@ -82,6 +87,28 @@ function Shooter:loadProjectiles()
     table.insert(self.projectileSlots, defaultSlot)
     self.numProjectiles = 1
   end
+  
+  -- Calculate dynamic carousel parameters based on number of projectiles
+  self:calculateCarouselParameters()
+end
+
+-- Dynamically calculate carousel fade distances based on projectile count
+function Shooter:calculateCarouselParameters()
+  local carouselCfg = config.shooter.carousel
+  
+  -- Max visible slots = number of projectiles (show all without repetition)
+  self.maxVisibleSlots = self.numProjectiles
+  
+  -- Calculate fade distances dynamically
+  -- Center is at 0, slots are at -2, -1, 0, 1, 2, etc.
+  -- For N slots: visible range is roughly from -(N-1)/2 to +(N-1)/2
+  local halfRange = (self.numProjectiles - 1) / 2
+  
+  -- Fade starts just beyond the last visible slot
+  self.fadeStart = halfRange + (carouselCfg.fadeStartOffset or 0.4)
+  
+  -- Fade ends a bit further out
+  self.fadeEnd = halfRange + (carouselCfg.fadeEndOffset or 0.8)
 end
 
 -- Set TurnManager reference
@@ -110,18 +137,42 @@ function Shooter:getProjectileAtSlot(slotIndex)
 end
 
 -- Calculate edge fade alpha based on distance from center
+-- Asymmetric: tighter fade-out on left (duplicates), earlier fade-in on right (incoming)
 function Shooter:calculateEdgeFade(relativePosition)
   local carouselCfg = config.shooter.carousel
   local distanceFromCenter = math.abs(relativePosition)
+  local halfRange = (self.maxVisibleSlots - 1) / 2
+  local isRightSide = relativePosition > 0
   
-  if distanceFromCenter < carouselCfg.fadeStart then
-    return 1 -- Fully visible
-  elseif distanceFromCenter > carouselCfg.fadeEnd then
-    return 0 -- Fully transparent
+  if isRightSide then
+    -- Right side (incoming ball): fade IN as it approaches visible range
+    -- Start fading in earlier (before it reaches halfRange)
+    local fadeInStart = halfRange + (carouselCfg.fadeInStartOffset or 0.5)  -- Where fade-in begins (far)
+    local fadeInEnd = halfRange - (carouselCfg.fadeInEndOffset or 0.2)      -- Where fully visible (close, within range)
+    
+    if relativePosition >= fadeInStart then
+      return 0 -- Fully transparent (too far right)
+    elseif relativePosition <= fadeInEnd then
+      return 1 -- Fully visible (within visible range)
+    else
+      -- Fading in: 0 (transparent) -> 1 (visible) as position decreases
+      local fadeProgress = (relativePosition - fadeInEnd) / (fadeInStart - fadeInEnd)
+      return 1 - fadeProgress
+    end
   else
-    -- Smooth linear fade between fadeStart and fadeEnd
-    local fadeProgress = (distanceFromCenter - carouselCfg.fadeStart) / (carouselCfg.fadeEnd - carouselCfg.fadeStart)
-    return 1 - fadeProgress
+    -- Left side (duplicate): aggressive fade-out to prevent showing duplicates
+    local fadeStart = halfRange + (carouselCfg.fadeStartOffset or 0.3)
+    local fadeEnd = halfRange + (carouselCfg.fadeEndOffset or 0.6)
+    
+    if distanceFromCenter < fadeStart then
+      return 1 -- Fully visible
+    elseif distanceFromCenter > fadeEnd then
+      return 0 -- Fully transparent
+    else
+      -- Fading out: 1 (visible) -> 0 (transparent) as distance increases
+      local fadeProgress = (distanceFromCenter - fadeStart) / (fadeEnd - fadeStart)
+      return 1 - fadeProgress
+    end
   end
 end
 
@@ -156,6 +207,8 @@ function Shooter:calculateSlotScreenX(relativePosition)
   local r = config.shooter.radius
   local carouselCfg = config.shooter.carousel
   local ballSpacing = r * carouselCfg.ballSpacingMultiplier
+  
+  -- Position is already centered since we render from -halfRange to +halfRange
   return self.x + (relativePosition * ballSpacing)
 end
 
@@ -204,9 +257,15 @@ function Shooter:update(dt, bounds)
   -- Clear render cache for this frame
   self.slotRenderCache = {}
   
-  -- Calculate which slots to render (extra buffer for smooth scrolling)
-  local renderMin = math.floor(self.carousel.offset - carouselCfg.renderBuffer)
-  local renderMax = math.ceil(self.carousel.offset + carouselCfg.maxVisibleSlots + carouselCfg.renderBuffer)
+  -- Calculate which slots to render CENTERED around the active slot
+  -- Render exactly N slots visible, plus 1 buffer on right for smooth fade-in
+  local halfRange = (self.maxVisibleSlots - 1) / 2
+  
+  -- Left side: -ceil(halfRange)-1 (duplicate, will be aggressively faded out)
+  -- Right side: floor(halfRange)+1 (incoming ball, will fade in smoothly)
+  -- This renders N+1 slots total, but only N will be visible due to fade settings
+  local renderMin = math.floor(self.carousel.offset - math.ceil(halfRange) - 1)
+  local renderMax = math.floor(self.carousel.offset + math.floor(halfRange) + 1)
   
   local arrowTargetOffsetX = 0 -- Arrow offset relative to shooter center
   
@@ -293,8 +352,8 @@ function Shooter:draw()
     local carouselCfg = config.shooter.carousel
     local ballSpacing = r * carouselCfg.ballSpacingMultiplier
     
-    -- Calculate width to cover visible slots
-    local slotsWidth = carouselCfg.maxVisibleSlots * ballSpacing
+    -- Calculate width to cover visible slots (using dynamic maxVisibleSlots)
+    local slotsWidth = self.maxVisibleSlots * ballSpacing
     local iw, ih = self.ballSlotsImage:getWidth(), self.ballSlotsImage:getHeight()
     local scale = (slotsWidth / math.max(iw, ih)) * 2 -- Reduced by 3x (was * 6)
     
@@ -313,26 +372,26 @@ function Shooter:draw()
   for _, entry in ipairs(sortedSlots) do
     local slotData = entry.data
     local slot = self.projectileSlots[slotData.projectileIndex]
-    local slotImage = slot and slot.image or nil
-    
+      local slotImage = slot and slot.image or nil
+      
     -- Combine edge fade and depth fade
     local finalAlpha = slotData.edgeFade * slotData.depthFade
-    
-    -- Draw projectile image or fallback circle
-    if slotImage then
+      
+      -- Draw projectile image or fallback circle
+      if slotImage then
       love.graphics.setColor(1, 1, 1, finalAlpha)
-      local iw, ih = slotImage:getWidth(), slotImage:getHeight()
+        local iw, ih = slotImage:getWidth(), slotImage:getHeight()
       local scale = (slotData.size * 2) / math.max(iw, ih)
       love.graphics.draw(slotImage, slotData.x, drawY, 0, scale, scale, iw * 0.5, ih * 0.5)
-    else
+  else
       -- Fallback circle
       love.graphics.setColor(0.8, 0.8, 0.8, finalAlpha)
       love.graphics.circle("fill", slotData.x, drawY, slotData.size)
     end
-  end
-  
-  -- Reset color
-  love.graphics.setColor(1, 1, 1, 1)
+      end
+      
+      -- Reset color
+      love.graphics.setColor(1, 1, 1, 1)
   
   -- Draw arrow below the active ball (center slot)
   if self.arrowImage then
@@ -347,9 +406,9 @@ function Shooter:draw()
       
       -- Arrow position synced with shooter movement (relative offset)
       local arrowX = self.x + self.arrowOffsetX
-      
-      -- Scale arrow to match ball size
-      local iw, ih = self.arrowImage:getWidth(), self.arrowImage:getHeight()
+    
+    -- Scale arrow to match ball size
+    local iw, ih = self.arrowImage:getWidth(), self.arrowImage:getHeight()
       local scale = (centerSlot.size * 1.5) / math.max(iw, ih) * 1.5
       love.graphics.draw(self.arrowImage, arrowX, arrowY, 0, scale, scale, iw * 0.5, ih * 0.5)
     end
