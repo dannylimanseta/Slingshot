@@ -302,7 +302,7 @@ config.player = {
 -- Map exploration meta game config
 config.map = {
   gridSize = 64, -- pixels per grid cell
-  movesPerDay = 5, -- maximum moves per day
+  movesPerDay = 12, -- maximum moves per day
   playerMoveSpeed = 200, -- pixels per second for movement animation
   -- Visual settings
   nodeRadius = 20, -- visual radius of nodes (legacy, may be removed)
@@ -354,6 +354,7 @@ config.map = {
     -- Enemy placement
     enemyDensity = 0.15, -- percentage of valid positions to place enemies
     minEnemyDistance = 8, -- minimum distance from start to place enemy
+    minEnemySpacing = 3, -- minimum spacing between enemies (grid distance)
     maxEnemies = 20, -- maximum number of enemies on map
     -- Rest node placement
     restDensity = 0.01, -- attempts per tile to place rest nodes (sparse)

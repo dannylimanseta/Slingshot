@@ -652,18 +652,38 @@ function MapManager:placeEnemies()
     candidatePositions[i], candidatePositions[j] = candidatePositions[j], candidatePositions[i]
   end
   
-  -- Place enemies
+  -- Place enemies with minimum spacing
   local enemyCount = math.min(
     math.floor(#candidatePositions * genConfig.enemyDensity),
     genConfig.maxEnemies
   )
   
   local placedEnemies = {}
-  for i = 1, enemyCount do
-    if candidatePositions[i] then
-      local x, y = candidatePositions[i][1], candidatePositions[i][2]
-      local tile = self:getTile(x, y)
-      if tile then
+  local minEnemySpacing = genConfig.minEnemySpacing or 3
+  
+  for i = 1, #candidatePositions do
+    if #placedEnemies >= enemyCount then
+      break
+    end
+    
+    local x, y = candidatePositions[i][1], candidatePositions[i][2]
+    local tile = self:getTile(x, y)
+    
+    if tile and tile.type == MapManager.TileType.GROUND then
+      -- Check minimum spacing from other enemies
+      local tooClose = false
+      if minEnemySpacing > 0 then
+        for _, enemyPos in ipairs(placedEnemies) do
+          local ex, ey = enemyPos[1], enemyPos[2]
+          local dist = math.abs(x - ex) + math.abs(y - ey)
+          if dist < minEnemySpacing then
+            tooClose = true
+            break
+          end
+        end
+      end
+      
+      if not tooClose then
         tile.type = MapManager.TileType.ENEMY
         table.insert(placedEnemies, {x, y})
       end
