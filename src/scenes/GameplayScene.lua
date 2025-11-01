@@ -357,6 +357,13 @@ function GameplayScene:draw(bounds)
       local fade = guide.fade ~= false
       local aStart = (guide.alphaStart ~= nil) and guide.alphaStart or 1.0
       local aEnd = (guide.alphaEnd ~= nil) and guide.alphaEnd or 0.0
+      
+      -- Check if current projectile is twin_strike
+      local isTwinStrike = false
+      if self.shooter and self.shooter.getCurrentProjectileId then
+        local projectileId = self.shooter:getCurrentProjectileId()
+        isTwinStrike = (projectileId == "twin_strike")
+      end
 
       -- Compute first bounce against blocks and top/left/right walls (ignore bottom sensor)
       local function firstBounce(originX, originY, dirX, dirY)
@@ -462,58 +469,72 @@ function GameplayScene:draw(bounds)
         return tHit, hitX, hitY, nX, nY
       end
 
-      local remaining = length
-      local ox, oy = self.aimStartX, self.aimStartY
-      local drawnSteps = 0
+      -- Function to draw a single aim guide trajectory
+      local function drawAimGuide(dirX, dirY)
+        local remaining = length
+        local ox, oy = self.aimStartX, self.aimStartY
+        local drawnSteps = 0
 
-      local hitT, hx, hy, nx, ny = firstBounce(ox, oy, ndx, ndy)
-      local leg1 = remaining
-      if hitT and hitT > 0 then leg1 = math.min(remaining, hitT) end
+        local hitT, hx, hy, nx, ny = firstBounce(ox, oy, dirX, dirY)
+        local leg1 = remaining
+        if hitT and hitT > 0 then leg1 = math.min(remaining, hitT) end
 
-      -- Draw first leg dotted
-      do
-        local steps = math.floor(leg1 / spacing)
-        for i = 1, steps do
-          local t = i * spacing
-          local px = ox + ndx * t
-          local py = oy + ndy * t
-          local idx = drawnSteps + i
-          local alpha = 1
-          if fade then
-            local frac = idx / totalSteps
-            alpha = aStart + (aEnd - aStart) * math.min(1, math.max(0, frac))
+        -- Draw first leg dotted
+        do
+          local steps = math.floor(leg1 / spacing)
+          for i = 1, steps do
+            local t = i * spacing
+            local px = ox + dirX * t
+            local py = oy + dirY * t
+            local idx = drawnSteps + i
+            local alpha = 1
+            if fade then
+              local frac = idx / totalSteps
+              alpha = aStart + (aEnd - aStart) * math.min(1, math.max(0, frac))
+            end
+            alpha = alpha * (self.guideAlpha or 1)
+            love.graphics.setColor(1, 1, 1, alpha)
+            love.graphics.circle("fill", px, py, r)
           end
-          alpha = alpha * (self.guideAlpha or 1)
-          love.graphics.setColor(1, 1, 1, alpha)
-          love.graphics.circle("fill", px, py, r)
+          drawnSteps = drawnSteps + steps
         end
-        drawnSteps = drawnSteps + steps
-      end
-      remaining = math.max(0, remaining - leg1)
+        remaining = math.max(0, remaining - leg1)
 
-      -- Draw reflected second leg if we hit a wall and have remaining length
-      if hitT and remaining > 0 then
-        local rx, ry = ndx, ndy
-        -- Reflect direction across normal: r = v - 2*(v·n)*n
-        local dot = rx * nx + ry * ny
-        rx = rx - 2 * dot * nx
-        ry = ry - 2 * dot * ny
-        local steps = math.floor(remaining / spacing)
-        for i = 1, steps do
-          local t = i * spacing
-          local px = hx + rx * t
-          local py = hy + ry * t
-          local idx = drawnSteps + i
-          local alpha = 1
-          if fade then
-            local frac = idx / totalSteps
-            alpha = aStart + (aEnd - aStart) * math.min(1, math.max(0, frac))
+        -- Draw reflected second leg if we hit a wall and have remaining length
+        if hitT and remaining > 0 then
+          local rx, ry = dirX, dirY
+          -- Reflect direction across normal: r = v - 2*(v·n)*n
+          local dot = rx * nx + ry * ny
+          rx = rx - 2 * dot * nx
+          ry = ry - 2 * dot * ny
+          local steps = math.floor(remaining / spacing)
+          for i = 1, steps do
+            local t = i * spacing
+            local px = hx + rx * t
+            local py = hy + ry * t
+            local idx = drawnSteps + i
+            local alpha = 1
+            if fade then
+              local frac = idx / totalSteps
+              alpha = aStart + (aEnd - aStart) * math.min(1, math.max(0, frac))
+            end
+            alpha = alpha * (self.guideAlpha or 1)
+            love.graphics.setColor(1, 1, 1, alpha)
+            love.graphics.circle("fill", px, py, r)
           end
-          alpha = alpha * (self.guideAlpha or 1)
-          love.graphics.setColor(1, 1, 1, alpha)
-          love.graphics.circle("fill", px, py, r)
         end
       end
+      
+      -- Draw aim guide(s)
+      if isTwinStrike then
+        -- Twin Strike: draw both mirrored trajectories
+        drawAimGuide(ndx, ndy)      -- Original direction
+        drawAimGuide(-ndx, ndy)     -- Mirrored on x-axis
+      else
+        -- Normal: single trajectory
+        drawAimGuide(ndx, ndy)
+      end
+      
       love.graphics.setColor(1, 1, 1, 1)
     end
   end

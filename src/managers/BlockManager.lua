@@ -318,9 +318,6 @@ function BlockManager:loadPredefinedFormation(world, width, height, predefined)
   self.playfieldWidth = width
   self.playfieldHeight = height
   
-  -- Debug: verify formation was stored
-  print("DEBUG: Stored predefined formation with", #self.predefinedFormation, "slots at", width, "x", height)
-  
   self.blocks = {}
   self.firstClusterCenter = nil
   self.soulBlockSpawned = false
@@ -534,24 +531,16 @@ function BlockManager:addRandomBlocks(world, width, height, count)
 
   -- If we have a predefined formation, try to fill empty formation slots first
   if self.predefinedFormation and type(self.predefinedFormation) == "table" and #self.predefinedFormation > 0 then
-    -- Debug: print to verify formation is detected
-    print("DEBUG: Formation detected with", #self.predefinedFormation, "slots")
-    
     -- Use stored playfield dimensions if available (more reliable than current width/height)
     -- Otherwise fall back to current dimensions
     local formationWidth = self.playfieldWidth or width
     local formationHeight = self.playfieldHeight or height
-    
-    print("DEBUG: Formation dimensions:", formationWidth, "x", formationHeight, "Current:", width, "x", height)
     
     -- Calculate playfield bounds (matching loadPredefinedFormation exactly)
     local playfieldX = margin
     local playfieldY = margin
     local playfieldW = formationWidth - 2 * margin
     local playfieldH = formationHeight * 0.6 - margin
-    
-    print("DEBUG: Playfield bounds:", playfieldX, playfieldY, playfieldW, "x", playfieldH)
-    print("DEBUG: Alive blocks count:", #self:aliveBlocks())
     
     -- Tolerance for checking if a position matches a formation slot (in normalized coordinates)
     local tolerance = 0.02 -- 2% of playfield size (roughly ~25 pixels)
@@ -642,11 +631,6 @@ function BlockManager:addRandomBlocks(world, width, height, count)
         occupiedCount = occupiedCount + 1
       end
     end
-    print("DEBUG: Occupied slots:", occupiedCount, "Empty slots:", #emptySlots)
-    
-    -- Debug: print empty slots found
-    print("DEBUG: Found", #emptySlots, "empty slots out of", #self.predefinedFormation, "total slots")
-    print("DEBUG: Need to spawn", remaining, "blocks")
     
     -- Shuffle empty slots for random order
     for i = #emptySlots, 2, -1 do
@@ -656,7 +640,6 @@ function BlockManager:addRandomBlocks(world, width, height, count)
     
     -- Fill empty formation slots (up to remaining count)
     local slotsToFill = math.min(remaining, #emptySlots)
-    print("DEBUG: Will fill", slotsToFill, "formation slots")
     for i = 1, slotsToFill do
       local slot = emptySlots[i]
       local worldX = playfieldX + slot.x * playfieldW
@@ -732,9 +715,6 @@ function BlockManager:addRandomBlocks(world, width, height, count)
         table.insert(newBlocks, block)
         addToGrid(block)
         remaining = remaining - 1
-        print("DEBUG: Placed block at formation slot", i, "position", worldX, worldY, "kind", kind)
-      else
-        print("DEBUG: WARNING - Overlap detected at slot", i, "position", worldX, worldY, "slot norm:", slotNormX, slotNormY)
       end
     end
   end
