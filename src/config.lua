@@ -314,6 +314,22 @@ config.map = {
   playerGlow = {
     tileScale = 16.8, -- size in tiles (previous 11.2 * 1.5)
   },
+  -- Distance fog/fading effect
+  distanceFog = {
+    enabled = true, -- enable distance-based fading
+    fadeStartRadius = 200, -- radius in pixels where fading begins (fully visible inside)
+    fadeEndRadius = 400, -- radius in pixels where fading ends (minimum alpha reached)
+    minAlpha = 0.03, -- minimum alpha value for objects at max distance (0% = fully transparent)
+  },
+  -- Rest site lighting effect
+  restLighting = {
+    enabled = true, -- enable rest site lighting
+    glowRadius = 150, -- radius in pixels where objects are lit up
+    lightIntensity = 0.5, -- additional alpha boost for objects near rest sites (0.0 to 1.0)
+    pulsateSpeed = 1.0, -- pulsation speed (oscillations per second) - reduced for slower campfire effect
+    pulsateSizeVariation = 0.15, -- size variation (15% larger/smaller)
+    pulsateAlphaVariation = 0.2, -- alpha variation (20% brighter/dimmer)
+  },
   -- Tree sway animation
   treeSway = {
     speed = 0.5, -- sway speed (oscillations per second)

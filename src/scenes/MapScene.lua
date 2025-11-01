@@ -53,6 +53,12 @@ function MapScene:load()
     if ok then self.playerGlow = glow end
   end
   
+  -- Load orange glow for rest sites (optional)
+  do
+    local ok, glow = pcall(love.graphics.newImage, "assets/images/map/orange_glow.png")
+    if ok then self.restGlow = glow end
+  end
+  
   -- Generate map on first load only; preserve state when returning from battle
   local genConfig = config.map.generation
   if not self._initialized then
@@ -263,10 +269,86 @@ function MapScene:draw()
   
   -- Collect all drawable objects for depth sorting
   local drawQueue = {}
+  local px, py = self.playerWorldX, self.playerWorldY
   
-  -- Helper function to add drawable objects to queue
-  local function addToQueue(worldY, drawFunc)
-    table.insert(drawQueue, { y = worldY, draw = drawFunc })
+  -- Collect rest site positions for lighting calculation
+  local restSites = {}
+  for y = minTileY, maxTileY do
+    for x = minTileX, maxTileX do
+      local tile = self.mapManager:getTile(x, y)
+      if tile and tile.type == MapManager.TileType.REST then
+        local worldX = self.offsetX + (x - 1) * gridSize
+        local worldY = self.offsetY + (y - 1) * gridSize
+        table.insert(restSites, {x = worldX, y = worldY})
+      end
+    end
+  end
+  
+  -- Calculate distance-based alpha for fog effect with rest site lighting
+  local fogConfig = config.map.distanceFog
+  local lightingConfig = config.map.restLighting
+  local function calculateAlpha(worldX, worldY)
+    local baseAlpha = 1.0
+    
+    -- Apply fog effect
+    if fogConfig.enabled then
+      local dx = worldX - px
+      local dy = worldY - py
+      local distance = math.sqrt(dx * dx + dy * dy)
+      
+      if distance <= fogConfig.fadeStartRadius then
+        baseAlpha = 1.0 -- Fully visible within start radius
+      elseif distance >= fogConfig.fadeEndRadius then
+        baseAlpha = fogConfig.minAlpha -- Minimum alpha at max distance
+      else
+        -- Linear interpolation between fadeStartRadius and fadeEndRadius
+        local fadeRange = fogConfig.fadeEndRadius - fogConfig.fadeStartRadius
+        local fadeProgress = (distance - fogConfig.fadeStartRadius) / fadeRange
+        baseAlpha = 1.0 - fadeProgress * (1.0 - fogConfig.minAlpha)
+      end
+    end
+    
+    -- Apply rest site lighting boost
+    if lightingConfig.enabled then
+      local maxLightBoost = 0
+      for _, restSite in ipairs(restSites) do
+        local dx = worldX - restSite.x
+        local dy = worldY - restSite.y
+        local distance = math.sqrt(dx * dx + dy * dy)
+        
+        if distance <= lightingConfig.glowRadius then
+          -- Calculate light intensity based on distance (fade from center)
+          local lightStrength = 1.0 - (distance / lightingConfig.glowRadius)
+          local lightBoost = lightStrength * lightingConfig.lightIntensity
+          maxLightBoost = math.max(maxLightBoost, lightBoost)
+        end
+      end
+      -- Add lighting boost to alpha (clamp to 1.0)
+      baseAlpha = math.min(1.0, baseAlpha + maxLightBoost)
+    end
+    
+    return baseAlpha
+  end
+  
+  -- Helper function to add drawable objects to queue with fog support
+  local function addToQueue(worldY, worldX, drawFunc, isPlayer)
+    local alpha = isPlayer and 1.0 or calculateAlpha(worldX, worldY)
+    table.insert(drawQueue, { 
+      y = worldY, 
+      draw = function()
+        -- Store original setColor function
+        local originalSetColor = love.graphics.setColor
+        -- Override setColor to multiply alpha
+        love.graphics.setColor = function(r, g, b, a)
+          a = a or 1.0
+          originalSetColor(r, g, b, a * alpha)
+        end
+        -- Call drawFunc with modified setColor
+        drawFunc()
+        -- Restore original setColor
+        love.graphics.setColor = originalSetColor
+      end
+    })
   end
   
   -- Collect tile objects
@@ -283,14 +365,14 @@ function MapScene:draw()
           if tile.spriteVariant then
             local sprite = sprites.ground[tile.spriteVariant]
             if sprite then
-              addToQueue(worldY, function()
+              addToQueue(worldY, worldX, function()
                 love.graphics.setColor(1, 1, 1, 1)
                 local sx = (gridSize * oversize) / sprite:getWidth()
                 local sy = (gridSize * oversize) / sprite:getHeight()
                 local ox = (gridSize * (oversize - 1)) * 0.5
                 local oy = (gridSize * (oversize - 1)) * 0.5
                 love.graphics.draw(sprite, worldX - ox, worldY - oy, 0, sx, sy)
-              end)
+              end, false)
             end
           end
           
@@ -298,7 +380,7 @@ function MapScene:draw()
           if tile.type == MapManager.TileType.ENEMY then
             local sprite = sprites.enemy
             if sprite then
-              addToQueue(worldY, function()
+              addToQueue(worldY, worldX, function()
                 love.graphics.setColor(1, 1, 1, 1)
                 local baseSx = (gridSize * oversize) / sprite:getWidth()
                 local baseSy = (gridSize * oversize) / sprite:getHeight()
@@ -319,15 +401,60 @@ function MapScene:draw()
                 local pivotWorldX = worldX - ox + spriteW * 0.5 * baseSx
                 local pivotWorldY = worldY - oy + spriteH * baseSy
                 love.graphics.draw(sprite, pivotWorldX, pivotWorldY, 0, sx, sy, pivotX, pivotY)
-              end)
+              end, false)
             end
           elseif tile.type == MapManager.TileType.REST then
             local sprite = sprites.rest
             if sprite then
-              addToQueue(worldY, function()
+              -- Calculate rest sprite center position for alignment
+              local baseSx = (gridSize * oversize) / sprite:getWidth()
+              local baseSy = (gridSize * oversize) / sprite:getHeight()
+              local ox = (gridSize * (oversize - 1)) * 0.5
+              local oy = (gridSize * (oversize - 1)) * 0.5
+              local spriteW, spriteH = sprite:getDimensions()
+              local pivotX = spriteW * 0.5
+              local pivotY = spriteH
+              -- Center position aligns with rest sprite's bottom center pivot
+              local centerWorldX = worldX - ox + spriteW * 0.5 * baseSx
+              local centerWorldY = worldY - oy + spriteH * baseSy
+              
+              -- Calculate vertical center of rest sprite (centered with the sprite's visual center)
+              local spriteCenterY = worldY + gridSize * 0.5 -- Center of tile vertically
+              
+              -- Draw orange glow beneath rest site (drawn after ground tiles, but before other objects)
+              if self.restGlow then
+                local lightingConfig = config.map.restLighting
+                local phaseOffset = (x + y * 100) * 0.5 -- unique phase per rest site
+                local pulsateTime = self._treeSwayTime * lightingConfig.pulsateSpeed * 2 * math.pi + phaseOffset
+                
+                -- Pulsation: size and alpha vary with sine wave
+                local sizeMultiplier = 1.0 + math.sin(pulsateTime) * lightingConfig.pulsateSizeVariation
+                local baseAlpha = 0.8
+                local alphaVariation = math.sin(pulsateTime * 0.7) * lightingConfig.pulsateAlphaVariation -- slightly different frequency for more organic feel
+                local glowAlpha = math.max(0.3, math.min(1.0, baseAlpha + alphaVariation))
+                
+                -- Draw glow after ground tiles but before trees and rest sprite
+                -- Use worldY - 0.01 to ensure it draws after ground (same Y, added later) but before trees/rest (same Y, added later)
+                -- Trees and rest sprite are at worldY, so glow needs to be slightly lower to draw before them
+                addToQueue(worldY - 0.01, centerWorldX, function()
+                  -- Set additive blend mode for glow effect
+                  local prevBlendMode = love.graphics.getBlendMode()
+                  love.graphics.setBlendMode("add")
+                  love.graphics.setColor(1, 1, 1, glowAlpha)
+                  local baseGlowSize = lightingConfig.glowRadius * 2
+                  local glowSize = baseGlowSize * sizeMultiplier
+                  local glowW, glowH = self.restGlow:getDimensions()
+                  local glowScale = glowSize / math.max(glowW, glowH)
+                  -- Draw at sprite center vertically (centered with rest sprite)
+                  love.graphics.draw(self.restGlow, centerWorldX, spriteCenterY, 0, glowScale, glowScale, glowW * 0.5, glowH * 0.5)
+                  -- Restore previous blend mode
+                  love.graphics.setBlendMode(prevBlendMode)
+                end, false)
+              end
+              
+              -- Draw rest site sprite
+              addToQueue(worldY, worldX, function()
                 love.graphics.setColor(1, 1, 1, 1)
-                local baseSx = (gridSize * oversize) / sprite:getWidth()
-                local baseSy = (gridSize * oversize) / sprite:getHeight()
                 
                 local bobConfig = config.map.restBob
                 local phaseOffset = (x + y * 100) * bobConfig.phaseVariation
@@ -337,22 +464,14 @@ function MapScene:draw()
                 
                 local sx = baseSx
                 local sy = baseSy * heightScale
-                local ox = (gridSize * (oversize - 1)) * 0.5
-                local oy = (gridSize * (oversize - 1)) * 0.5
-                
-                local spriteW, spriteH = sprite:getDimensions()
-                local pivotX = spriteW * 0.5
-                local pivotY = spriteH
-                local pivotWorldX = worldX - ox + spriteW * 0.5 * baseSx
-                local pivotWorldY = worldY - oy + spriteH * baseSy
                 
                 love.graphics.push()
-                love.graphics.translate(pivotWorldX, pivotWorldY)
+                love.graphics.translate(centerWorldX, centerWorldY)
                 love.graphics.shear(skewX, 0)
                 love.graphics.translate(-pivotX * sx, -pivotY * sy)
                 love.graphics.draw(sprite, 0, 0, 0, sx, sy)
                 love.graphics.pop()
-              end)
+              end, false)
             end
           end
         end
@@ -361,24 +480,24 @@ function MapScene:draw()
         if tile.type == MapManager.TileType.STONE then
           local sprite = sprites.stone[tile.decorationVariant or 1]
           if sprite then
-            addToQueue(worldY, function()
+            addToQueue(worldY, worldX, function()
               love.graphics.setColor(1, 1, 1, 1)
               local sx = (gridSize * oversize) / sprite:getWidth()
               local sy = (gridSize * oversize) / sprite:getHeight()
               local ox = (gridSize * (oversize - 1)) * 0.5
               local oy = (gridSize * (oversize - 1)) * 0.5
               love.graphics.draw(sprite, worldX - ox, worldY - oy, 0, sx, sy)
-            end)
+            end, false)
           else
-            addToQueue(worldY, function()
+            addToQueue(worldY, worldX, function()
               love.graphics.setColor(0.3, 0.3, 0.3, 1)
               love.graphics.rectangle("fill", worldX, worldY, gridSize, gridSize)
-            end)
+            end, false)
           end
         elseif tile.type == MapManager.TileType.TREE then
           local sprite = sprites.tree[tile.decorationVariant or 1]
           if sprite then
-            addToQueue(worldY, function()
+            addToQueue(worldY, worldX, function()
               love.graphics.setColor(1, 1, 1, 1)
               local sx = (gridSize * oversize) / sprite:getWidth()
               local sy = (gridSize * oversize) / sprite:getHeight()
@@ -402,21 +521,20 @@ function MapScene:draw()
               love.graphics.translate(-pivotX * sx, -pivotY * sy)
               love.graphics.draw(sprite, 0, 0, 0, sx, sy)
               love.graphics.pop()
-            end)
+            end, false)
           else
-            addToQueue(worldY, function()
+            addToQueue(worldY, worldX, function()
               love.graphics.setColor(0.2, 0.4, 0.2, 1)
               love.graphics.rectangle("fill", worldX, worldY, gridSize, gridSize)
-            end)
+            end, false)
           end
         end
       end
     end
   end
   
-  -- Add player to draw queue
-  local px, py = self.playerWorldX, self.playerWorldY
-  addToQueue(py, function()
+  -- Add player to draw queue (always fully visible, no fog)
+  addToQueue(py, px, function()
     if self.playerSprite then
       local spriteSize = self.gridSize * 0.8 * 1.5
       local spriteW, spriteH = self.playerSprite:getDimensions()
@@ -430,7 +548,7 @@ function MapScene:draw()
       love.graphics.setColor(0, 0, 0, 1)
       love.graphics.circle("line", px, py, 12)
     end
-  end)
+  end, true)
   
   -- Sort draw queue by y position (lower y = drawn first, higher y = drawn last/on top)
   table.sort(drawQueue, function(a, b) return a.y < b.y end)
