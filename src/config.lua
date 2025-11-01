@@ -314,6 +314,26 @@ config.map = {
   playerGlow = {
     tileScale = 16.8, -- size in tiles (previous 11.2 * 1.5)
   },
+  -- Tree sway animation
+  treeSway = {
+    speed = 0.5, -- sway speed (oscillations per second)
+    maxAngle = 0.03, -- maximum rotation angle in radians (about 1.7 degrees) - reduced intensity
+    maxShear = 0.05, -- maximum horizontal shear for skewing effect
+    phaseVariation = 2.0, -- variation in phase offset between trees
+  },
+  -- Enemy bobbing animation
+  enemyBob = {
+    speed = 1.2, -- bobbing speed (oscillations per second)
+    heightVariation = 0.03, -- vertical scale variation as fraction (3%)
+    phaseVariation = 1.5, -- variation in phase offset between enemies
+  },
+  -- Rest node bobbing and skewing animation
+  restBob = {
+    speed = 1.0, -- bobbing speed (oscillations per second)
+    heightVariation = 0.03, -- vertical scale variation as fraction (3%)
+    maxShear = 0.04, -- maximum horizontal shear for skewing effect (reduced intensity)
+    phaseVariation = 1.5, -- variation in phase offset between rest nodes
+  },
   -- Map generation parameters
   generation = {
     width = 40, -- grid width in tiles

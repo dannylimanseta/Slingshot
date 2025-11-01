@@ -30,6 +30,7 @@ function MapScene.new()
     _initialized = false,
     _returnGridX = nil,
     _returnGridY = nil,
+    _treeSwayTime = 0, -- accumulated time for tree sway animation
   }, MapScene)
 end
 
@@ -106,6 +107,9 @@ function MapScene:load()
 end
 
 function MapScene:update(deltaTime)
+  -- Update tree sway animation time
+  self._treeSwayTime = self._treeSwayTime + deltaTime
+  
   -- Update camera follow
   local cameraSpeed = config.map.cameraFollowSpeed
   local dx = self.targetCameraX - self.cameraX
@@ -239,7 +243,7 @@ function MapScene:draw()
   -- Draw grid tiles
   local gridSize = self.gridSize
   local sprites = self.mapManager.sprites
-  local oversize = 1.15 -- 15% larger than tile
+  local oversize = 1.3 -- 25% larger than tile
   
   -- Calculate visible tile range (with padding for smooth scrolling)
   local padding = gridSize * 2
@@ -275,21 +279,62 @@ function MapScene:draw()
             local sprite = sprites.enemy
             if sprite then
               love.graphics.setColor(1, 1, 1, 1)
-              local sx = (gridSize * oversize) / sprite:getWidth()
-              local sy = (gridSize * oversize) / sprite:getHeight()
+              local baseSx = (gridSize * oversize) / sprite:getWidth()
+              local baseSy = (gridSize * oversize) / sprite:getHeight()
+              
+              -- Calculate bobbing animation for this enemy
+              local bobConfig = config.map.enemyBob
+              local phaseOffset = (x + y * 100) * bobConfig.phaseVariation -- unique phase per enemy
+              local heightScale = 1 + math.sin(self._treeSwayTime * bobConfig.speed * 2 * math.pi + phaseOffset) * bobConfig.heightVariation
+              
+              local sx = baseSx
+              local sy = baseSy * heightScale -- scale height by ±3%
               local ox = (gridSize * (oversize - 1)) * 0.5
               local oy = (gridSize * (oversize - 1)) * 0.5
-              love.graphics.draw(sprite, worldX - ox, worldY - oy, 0, sx, sy)
+              
+              -- Draw with height scaling, keeping bottom Y position fixed
+              local spriteW, spriteH = sprite:getDimensions()
+              local pivotX = spriteW * 0.5
+              local pivotY = spriteH -- pivot at bottom center
+              -- Position pivot at the bottom center of the tile to keep Y-axis fixed
+              local pivotWorldX = worldX - ox + spriteW * 0.5 * baseSx
+              local pivotWorldY = worldY - oy + spriteH * baseSy -- bottom of sprite before scaling
+              love.graphics.draw(sprite, pivotWorldX, pivotWorldY, 0, sx, sy, pivotX, pivotY)
             end
           elseif tile.type == MapManager.TileType.REST then
             local sprite = sprites.rest
             if sprite then
               love.graphics.setColor(1, 1, 1, 1)
-              local sx = (gridSize * oversize) / sprite:getWidth()
-              local sy = (gridSize * oversize) / sprite:getHeight()
+              local baseSx = (gridSize * oversize) / sprite:getWidth()
+              local baseSy = (gridSize * oversize) / sprite:getHeight()
+              
+              -- Calculate bobbing and skewing animation for this rest node
+              local bobConfig = config.map.restBob
+              local phaseOffset = (x + y * 100) * bobConfig.phaseVariation -- unique phase per rest node
+              local time = self._treeSwayTime * bobConfig.speed * 2 * math.pi + phaseOffset
+              local heightScale = 1 + math.sin(time) * bobConfig.heightVariation
+              local skewX = math.sin(time) * bobConfig.maxShear -- horizontal skew
+              
+              local sx = baseSx
+              local sy = baseSy * heightScale -- scale height by ±3%
               local ox = (gridSize * (oversize - 1)) * 0.5
               local oy = (gridSize * (oversize - 1)) * 0.5
-              love.graphics.draw(sprite, worldX - ox, worldY - oy, 0, sx, sy)
+              
+              -- Draw with height scaling and skewing, keeping bottom Y position fixed
+              local spriteW, spriteH = sprite:getDimensions()
+              local pivotX = spriteW * 0.5
+              local pivotY = spriteH -- pivot at bottom center
+              -- Position pivot at the bottom center of the tile to keep Y-axis fixed
+              local pivotWorldX = worldX - ox + spriteW * 0.5 * baseSx
+              local pivotWorldY = worldY - oy + spriteH * baseSy -- bottom of sprite before scaling
+              
+              -- Apply skew and rotation transformations
+              love.graphics.push()
+              love.graphics.translate(pivotWorldX, pivotWorldY)
+              love.graphics.shear(skewX, 0) -- horizontal skew
+              love.graphics.translate(-pivotX * sx, -pivotY * sy)
+              love.graphics.draw(sprite, 0, 0, 0, sx, sy)
+              love.graphics.pop()
             end
           end
         end
@@ -317,7 +362,27 @@ function MapScene:draw()
             local sy = (gridSize * oversize) / sprite:getHeight()
             local ox = (gridSize * (oversize - 1)) * 0.5
             local oy = (gridSize * (oversize - 1)) * 0.5
-            love.graphics.draw(sprite, worldX - ox, worldY - oy, 0, sx, sy)
+            
+            -- Calculate sway animation for this tree
+            local swayConfig = config.map.treeSway
+            local phaseOffset = (x + y * 100) * swayConfig.phaseVariation -- unique phase per tree
+            local time = self._treeSwayTime * swayConfig.speed * 2 * math.pi + phaseOffset
+            local swayAngle = math.sin(time) * swayConfig.maxAngle
+            local skewX = math.sin(time) * swayConfig.maxShear -- horizontal skew for natural wind effect
+            
+            -- Draw tree with rotation and skew around bottom center (pivot at base)
+            local spriteW, spriteH = sprite:getDimensions()
+            local pivotX = spriteW * 0.5
+            local pivotY = spriteH -- pivot at bottom center
+            
+            -- Apply skew transformation
+            love.graphics.push()
+            love.graphics.translate(worldX - ox + pivotX * sx, worldY - oy + pivotY * sy)
+            love.graphics.shear(skewX, 0) -- horizontal skew
+            love.graphics.rotate(swayAngle)
+            love.graphics.translate(-pivotX * sx, -pivotY * sy)
+            love.graphics.draw(sprite, 0, 0, 0, sx, sy)
+            love.graphics.pop()
           else
             -- Fallback rendering
             love.graphics.setColor(0.2, 0.4, 0.2, 1)
