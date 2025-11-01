@@ -14,7 +14,7 @@ config.playfield = {
 
 config.ball = {
   radius = 7, -- reduced for smaller visual/physics size
-  speed = 1000, -- pixels per second (reduced by 30%)
+  speed = 700, -- pixels per second (reduced by 30% from 1000)
   maxBounces = 5,
   spawnYFromBottom = 40, -- launch position offset from bottom
   -- Spread shot projectile (alternates every turn)
@@ -94,7 +94,7 @@ config.blocks = {
   armorSpawnRatio = 0.25, -- 25% of spawned blocks are armor blocks (rest are damage)
   spriteScale = 2, -- visual scale multiplier for block sprites
   -- Placement controls
-  minGap = 4, -- minimum pixels of space between blocks (prevents touching)
+  minGap = -11, -- minimum pixels of space between blocks (prevents touching)
   -- Spawn animation for newly added blocks
   spawnAnim = {
     duration = 0.35, -- seconds

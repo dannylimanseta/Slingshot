@@ -7,6 +7,7 @@ local TurnManager = require("core.TurnManager")
 local TurnActions = require("systems.TurnActions")
 local ProjectileCard = require("ui.ProjectileCard")
 local LayoutManager = require("managers.LayoutManager")
+local battle_profiles = require("data.battle_profiles")
 
 -- Utility: radial gradient image for glow (alpha falls off toward edge)
 -- Shared with Ball entity for consistency
@@ -67,7 +68,12 @@ function SplitScene:load()
   local centerRect = self.layoutManager:getCenterRect(w, h)
   self.left = GameplayScene.new()
   self.right = BattleScene.new()
-  self.left:load({ x = 0, y = 0, w = centerRect.w, h = h }, self.currentProjectileId)
+  
+  -- Get current battle profile and pass to GameplayScene for block formation
+  local currentBattleType = self.layoutManager:getBattleType()
+  local battleProfile = battle_profiles.getProfile(currentBattleType)
+  
+  self.left:load({ x = 0, y = 0, w = centerRect.w, h = h }, self.currentProjectileId, battleProfile)
   self.right:load({ x = centerRect.w, y = 0, w = w - centerRect.w, h = h })
   self._lastCenterW = centerRect.w
 

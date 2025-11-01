@@ -109,9 +109,10 @@ end
 
 -- Try to place a cluster of blocks
 -- Returns: {blocks = array, centerX = number, centerY = number} if successful, nil if failed
-local function tryPlaceCluster(world, width, height, clusterSize, forNearby, addToGrid, margin, visSize, pad, maxFrac, animateSpawn, getSpawnDelay)
+local function tryPlaceCluster(world, width, height, clusterSize, forNearby, addToGrid, margin, visSize, pad, maxFrac, animateSpawn, getSpawnDelay, overrideRatios)
   animateSpawn = animateSpawn or false
   getSpawnDelay = getSpawnDelay or function() return 0 end
+  overrideRatios = overrideRatios or {}
   local rows, cols, offsets = generateClusterLayout(clusterSize)
   local clusterAttempts = (config.blocks.clustering and config.blocks.clustering.clusterAttempts) or 12
   
@@ -176,8 +177,10 @@ local function tryPlaceCluster(world, width, height, clusterSize, forNearby, add
         local kind
         do
           local r = love.math.random()
-          local critR = math.max(0, math.min(1, (config.blocks and config.blocks.critSpawnRatio) or 0))
-          local armorR = math.max(0, math.min(1, (config.blocks and config.blocks.armorSpawnRatio) or 0))
+          local critR = overrideRatios.critSpawnRatio or (config.blocks and config.blocks.critSpawnRatio) or 0
+          local armorR = overrideRatios.armorSpawnRatio or (config.blocks and config.blocks.armorSpawnRatio) or 0
+          critR = math.max(0, math.min(1, critR))
+          armorR = math.max(0, math.min(1, armorR))
           if r < critR then
             kind = "crit"
           elseif r < critR + armorR then
@@ -203,16 +206,19 @@ local function tryPlaceCluster(world, width, height, clusterSize, forNearby, add
 end
 
 -- Place a single block (fallback when clustering fails or disabled)
-local function placeSingleBlock(world, width, height, forNearby, addToGrid, margin, visSize, pad, attemptsPerBlock, maxFrac, animateSpawn, getSpawnDelay)
+local function placeSingleBlock(world, width, height, forNearby, addToGrid, margin, visSize, pad, attemptsPerBlock, maxFrac, animateSpawn, getSpawnDelay, overrideRatios)
   animateSpawn = animateSpawn or false
   getSpawnDelay = getSpawnDelay or function() return 0 end
+  overrideRatios = overrideRatios or {}
   for attempt = 1, attemptsPerBlock do
     local hp = 1
     local kind
     do
       local r = love.math.random()
-      local critR = math.max(0, math.min(1, (config.blocks and config.blocks.critSpawnRatio) or 0))
-      local armorR = math.max(0, math.min(1, (config.blocks and config.blocks.armorSpawnRatio) or 0))
+      local critR = overrideRatios.critSpawnRatio or (config.blocks and config.blocks.critSpawnRatio) or 0
+      local armorR = overrideRatios.armorSpawnRatio or (config.blocks and config.blocks.armorSpawnRatio) or 0
+      critR = math.max(0, math.min(1, critR))
+      armorR = math.max(0, math.min(1, armorR))
       if r < critR then
         kind = "crit"
       elseif r < critR + armorR then
@@ -261,7 +267,114 @@ local function placeSingleBlock(world, width, height, forNearby, addToGrid, marg
   return nil
 end
 
-function BlockManager:randomize(world, width, height)
+-- Load block formation from battle profile
+-- @param world: physics world
+-- @param width: playfield width
+-- @param height: playfield height
+-- @param formationConfig: formation config from battle profile (or nil for default random)
+function BlockManager:loadFormation(world, width, height, formationConfig)
+  if not formationConfig or not formationConfig.type or formationConfig.type == "random" then
+    -- Use random formation with optional overrides
+    self:randomize(world, width, height, formationConfig and formationConfig.random)
+  elseif formationConfig.type == "predefined" then
+    -- Use predefined formation
+    self:loadPredefinedFormation(world, width, height, formationConfig.predefined)
+  else
+    -- Fallback to random if unknown type
+    self:randomize(world, width, height)
+  end
+end
+
+-- Load predefined block formation from array of positions
+-- @param world: physics world
+-- @param width: playfield width
+-- @param height: playfield height
+-- @param predefined: array of {x, y, kind, hp} where x,y are normalized (0-1) coordinates
+function BlockManager:loadPredefinedFormation(world, width, height, predefined)
+  if not predefined or type(predefined) ~= "table" or #predefined == 0 then
+    -- Fallback to random if no predefined formation provided
+    self:randomize(world, width, height)
+    return
+  end
+  
+  self.blocks = {}
+  self.firstClusterCenter = nil
+  self.soulBlockSpawned = false
+  
+  local margin = config.playfield.margin
+  local scaleMul = math.max(1, (config.blocks and config.blocks.spriteScale) or 1)
+  local size = config.blocks.baseSize
+  local visSize = size * scaleMul
+  
+  -- Calculate playfield bounds (accounting for margin)
+  local playfieldX = margin
+  local playfieldY = margin
+  local playfieldW = width - 2 * margin
+  local playfieldH = height * 0.6 - margin -- Use same maxFrac as random placement
+  
+  local staggerDelay = (config.blocks.spawnAnim and config.blocks.spawnAnim.staggerDelay) or 0.03
+  local blockIndex = 0
+  
+  -- Helper to get next spawn delay for staggering
+  local function getNextSpawnDelay()
+    local delay = blockIndex * staggerDelay
+    blockIndex = blockIndex + 1
+    return delay
+  end
+  
+  -- Track center for soul block placement (use first block's position if no soul block defined)
+  local centerX, centerY = nil, nil
+  local soulBlockIndex = nil
+  
+  -- Place predefined blocks
+  for i, blockDef in ipairs(predefined) do
+    if blockDef and type(blockDef) == "table" and blockDef.x and blockDef.y then
+      -- Convert normalized coordinates to world coordinates
+      local worldX = playfieldX + blockDef.x * playfieldW
+      local worldY = playfieldY + blockDef.y * playfieldH
+      
+      -- Clamp to ensure blocks stay within bounds
+      local halfVis = visSize * 0.5
+      worldX = math.max(margin + halfVis, math.min(width - margin - halfVis, worldX))
+      worldY = math.max(margin + halfVis, math.min(height * 0.6 - halfVis, worldY))
+      
+      -- Determine block kind and HP
+      local kind = blockDef.kind or "damage"
+      local hp = blockDef.hp or 1
+      
+      -- Track soul block for center calculation
+      if kind == "soul" then
+        soulBlockIndex = i
+        centerX = worldX
+        centerY = worldY
+      elseif not centerX then
+        -- Use first block as center if no soul block yet
+        centerX = worldX
+        centerY = worldY
+      end
+      
+      -- Create block
+      local spawnDelay = getNextSpawnDelay()
+      local block = Block.new(world, worldX, worldY, hp, kind, { animateSpawn = true, spawnDelay = spawnDelay })
+      table.insert(self.blocks, block)
+    end
+  end
+  
+  -- If no soul block was predefined, spawn one at the center
+  if not soulBlockIndex and centerX and centerY then
+    self.firstClusterCenter = {x = centerX, y = centerY}
+    if not self.soulBlockSpawned then
+      local soulBlock = self:spawnSoulBlock(world)
+      if soulBlock then
+        self.soulBlockSpawned = true
+      end
+    end
+  else
+    self.soulBlockSpawned = true -- Already has soul block
+  end
+end
+
+function BlockManager:randomize(world, width, height, overrideConfig)
   self.blocks = {}
   self.firstClusterCenter = nil  -- Reset cluster center tracking
   local margin = config.playfield.margin
@@ -276,11 +389,38 @@ function BlockManager:randomize(world, width, height)
   local visSize = size * scaleMul
   local maxFrac = 0.6
   
+  -- Apply override config if provided
   local clusteringEnabled = (config.blocks.clustering and config.blocks.clustering.enabled) or false
   local clusterSizes = (config.blocks.clustering and config.blocks.clustering.clusterSizes) or {9, 12}
   local minRemainingForCluster = (config.blocks.clustering and config.blocks.clustering.minRemainingForCluster) or 9
+  
+  -- Extract override ratios for block kind selection
+  local overrideRatios = {}
+  if overrideConfig then
+    if overrideConfig.critSpawnRatio ~= nil then
+      overrideRatios.critSpawnRatio = overrideConfig.critSpawnRatio
+    end
+    if overrideConfig.armorSpawnRatio ~= nil then
+      overrideRatios.armorSpawnRatio = overrideConfig.armorSpawnRatio
+    end
+    
+    if overrideConfig.clustering then
+      if overrideConfig.clustering.enabled ~= nil then
+        clusteringEnabled = overrideConfig.clustering.enabled
+      end
+      if overrideConfig.clustering.clusterSizes ~= nil then
+        clusterSizes = overrideConfig.clustering.clusterSizes
+      end
+      if overrideConfig.clustering.clusterAttempts ~= nil then
+        -- Store for use in tryPlaceCluster (would need to pass through)
+      end
+      if overrideConfig.clustering.minRemainingForCluster ~= nil then
+        minRemainingForCluster = overrideConfig.clustering.minRemainingForCluster
+      end
+    end
+  end
 
-  local remaining = config.blocks.count
+  local remaining = (overrideConfig and overrideConfig.count ~= nil) and overrideConfig.count or config.blocks.count
   local staggerDelay = (config.blocks.spawnAnim and config.blocks.spawnAnim.staggerDelay) or 0.03
   local blockIndex = 0
   
@@ -305,7 +445,7 @@ function BlockManager:randomize(world, width, height)
       if #validSizes == 0 then break end
       
       local clusterSize = validSizes[love.math.random(#validSizes)]
-      local clusterResult = tryPlaceCluster(world, width, height, clusterSize, forNearby, addToGrid, margin, visSize, pad, maxFrac, true, getNextSpawnDelay)
+      local clusterResult = tryPlaceCluster(world, width, height, clusterSize, forNearby, addToGrid, margin, visSize, pad, maxFrac, true, getNextSpawnDelay, overrideRatios)
       
       if clusterResult and clusterResult.blocks then
         for _, block in ipairs(clusterResult.blocks) do
@@ -325,7 +465,7 @@ function BlockManager:randomize(world, width, height)
 
   -- Place remaining blocks individually
   for _ = 1, remaining do
-    local block = placeSingleBlock(world, width, height, forNearby, addToGrid, margin, visSize, pad, attemptsPerBlock, maxFrac, true, getNextSpawnDelay)
+    local block = placeSingleBlock(world, width, height, forNearby, addToGrid, margin, visSize, pad, attemptsPerBlock, maxFrac, true, getNextSpawnDelay, overrideRatios)
     if block then
       table.insert(self.blocks, block)
     end
@@ -640,7 +780,18 @@ function BlockManager:spawnSoulBlock(world)
 end
 
 function BlockManager:draw()
-  for _, b in ipairs(self.blocks) do b:draw() end
+  -- Sort blocks by Y position (ascending) so blocks with lower Y are drawn first,
+  -- and blocks with higher Y (lower on screen) are drawn last (on top)
+  local sortedBlocks = {}
+  for _, b in ipairs(self.blocks) do
+    if b and b.alive then
+      table.insert(sortedBlocks, b)
+    end
+  end
+  table.sort(sortedBlocks, function(a, b)
+    return (a.cy or 0) < (b.cy or 0)
+  end)
+  for _, b in ipairs(sortedBlocks) do b:draw() end
 end
 
 function BlockManager:update(dt)

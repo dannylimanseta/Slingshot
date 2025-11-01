@@ -47,7 +47,7 @@ function GameplayScene.new()
   }, GameplayScene)
 end
 
-function GameplayScene:load(bounds, projectileId)
+function GameplayScene:load(bounds, projectileId, battleProfile)
   local width = (bounds and bounds.w) or love.graphics.getWidth()
   local height = (bounds and bounds.h) or love.graphics.getHeight()
   self.world = love.physics.newWorld(0, 0, true)
@@ -73,7 +73,9 @@ function GameplayScene:load(bounds, projectileId)
   self.wallFixtures = { left = fL, right = fR, top = fT, bottom = fB }
 
   self.blocks = BlockManager.new()
-  self.blocks:randomize(self.world, width, height)
+  -- Load formation from battle profile (or use default random)
+  local formationConfig = (battleProfile and battleProfile.blockFormation) or nil
+  self.blocks:loadFormation(self.world, width, height, formationConfig)
   self.shooter = Shooter.new(width * 0.5, height - config.shooter.spawnYFromBottom, projectileId)
   -- Give shooter access to TurnManager for turn-based display
   if self.shooter and self.shooter.setTurnManager and self.turnManager then
