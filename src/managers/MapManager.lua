@@ -666,8 +666,8 @@ function MapManager:placeEnemies()
       break
     end
     
-    local x, y = candidatePositions[i][1], candidatePositions[i][2]
-    local tile = self:getTile(x, y)
+      local x, y = candidatePositions[i][1], candidatePositions[i][2]
+      local tile = self:getTile(x, y)
     
     if tile and tile.type == MapManager.TileType.GROUND then
       -- Check minimum spacing from other enemies

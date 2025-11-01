@@ -30,6 +30,9 @@ function MapScene.new()
     _initialized = false,
     _returnGridX = nil,
     _returnGridY = nil,
+    _enemyTileX = nil, -- Enemy tile position (where player moved to for battle)
+    _enemyTileY = nil,
+    _battleVictory = false, -- Whether the last battle was a victory
     _treeSwayTime = 0, -- accumulated time for tree sway animation
     playerFacingRight = true, -- track player facing direction for sprite flipping
   }, MapScene)
@@ -93,14 +96,29 @@ function MapScene:load()
     end
   end
   
-  -- If coming back from battle and we saved a return position, restore it
-  if self._returnGridX and self._returnGridY then
+  -- Handle return from battle
+  if self._battleVictory and self._enemyTileX and self._enemyTileY then
+    -- Victory: player stays on enemy tile, convert it to ground
+    self.mapManager.playerGridX = self._enemyTileX
+    self.mapManager.playerGridY = self._enemyTileY
+    -- Convert enemy tile to ground
+    self.mapManager:setTile(self._enemyTileX, self._enemyTileY, {
+      type = MapManager.TileType.GROUND,
+      spriteVariant = nil,
+      decoration = nil,
+    })
+    -- Clear enemy tile tracking
+    self._enemyTileX, self._enemyTileY = nil, nil
+    self._battleVictory = false
+  elseif self._returnGridX and self._returnGridY then
+    -- Defeat: restore player to return position
     self.mapManager.playerGridX = self._returnGridX
     self.mapManager.playerGridY = self._returnGridY
-    self.mapManager.playerTargetGridX = nil
-    self.mapManager.playerTargetGridY = nil
     self._returnGridX, self._returnGridY = nil, nil
+    self._enemyTileX, self._enemyTileY = nil, nil
   end
+  self.mapManager.playerTargetGridX = nil
+  self.mapManager.playerTargetGridY = nil
   local px, py = self.mapManager:getPlayerWorldPosition(self.gridSize, self.offsetX, self.offsetY)
   self.playerWorldX = px
   self.playerWorldY = py
@@ -149,6 +167,9 @@ function MapScene:update(deltaTime)
           -- Save return position to the tile where movement started
           self._returnGridX = self.mapManager.previousGridX or self.mapManager.playerGridX
           self._returnGridY = self.mapManager.previousGridY or self.mapManager.playerGridY
+          -- Store enemy tile position (where player is now, which is the enemy tile)
+          self._enemyTileX = self.mapManager.playerGridX
+          self._enemyTileY = self.mapManager.playerGridY
           self._battleTransitionDelay = 0.5 -- 0.5 second delay before battle
         end
       else
@@ -366,12 +387,12 @@ function MapScene:draw()
             local sprite = sprites.ground[tile.spriteVariant]
             if sprite then
               addToQueue(worldY, worldX, function()
-                love.graphics.setColor(1, 1, 1, 1)
-                local sx = (gridSize * oversize) / sprite:getWidth()
-                local sy = (gridSize * oversize) / sprite:getHeight()
-                local ox = (gridSize * (oversize - 1)) * 0.5
-                local oy = (gridSize * (oversize - 1)) * 0.5
-                love.graphics.draw(sprite, worldX - ox, worldY - oy, 0, sx, sy)
+              love.graphics.setColor(1, 1, 1, 1)
+              local sx = (gridSize * oversize) / sprite:getWidth()
+              local sy = (gridSize * oversize) / sprite:getHeight()
+              local ox = (gridSize * (oversize - 1)) * 0.5
+              local oy = (gridSize * (oversize - 1)) * 0.5
+              love.graphics.draw(sprite, worldX - ox, worldY - oy, 0, sx, sy)
               end, false)
             end
           end
@@ -381,7 +402,7 @@ function MapScene:draw()
             local sprite = sprites.enemy
             if sprite then
               addToQueue(worldY, worldX, function()
-                love.graphics.setColor(1, 1, 1, 1)
+              love.graphics.setColor(1, 1, 1, 1)
                 local baseSx = (gridSize * oversize) / sprite:getWidth()
                 local baseSy = (gridSize * oversize) / sprite:getHeight()
                 
@@ -392,8 +413,8 @@ function MapScene:draw()
                 
                 local sx = baseSx
                 local sy = baseSy * heightScale
-                local ox = (gridSize * (oversize - 1)) * 0.5
-                local oy = (gridSize * (oversize - 1)) * 0.5
+              local ox = (gridSize * (oversize - 1)) * 0.5
+              local oy = (gridSize * (oversize - 1)) * 0.5
                 
                 local spriteW, spriteH = sprite:getDimensions()
                 local pivotX = spriteW * 0.5
@@ -429,9 +450,9 @@ function MapScene:draw()
                 
                 -- Pulsation: size and alpha vary with sine wave
                 local sizeMultiplier = 1.0 + math.sin(pulsateTime) * lightingConfig.pulsateSizeVariation
-                local baseAlpha = 0.8
+                local baseAlpha = 0.4 -- reduced opacity for subtler glow
                 local alphaVariation = math.sin(pulsateTime * 0.7) * lightingConfig.pulsateAlphaVariation -- slightly different frequency for more organic feel
-                local glowAlpha = math.max(0.3, math.min(1.0, baseAlpha + alphaVariation))
+                local glowAlpha = math.max(0.2, math.min(0.6, baseAlpha + alphaVariation)) -- adjusted min/max to match reduced base
                 
                 -- Draw glow after ground tiles but before trees and rest sprite
                 -- Use worldY - 0.01 to ensure it draws after ground (same Y, added later) but before trees/rest (same Y, added later)
@@ -481,28 +502,28 @@ function MapScene:draw()
           local sprite = sprites.stone[tile.decorationVariant or 1]
           if sprite then
             addToQueue(worldY, worldX, function()
-              love.graphics.setColor(1, 1, 1, 1)
-              local sx = (gridSize * oversize) / sprite:getWidth()
-              local sy = (gridSize * oversize) / sprite:getHeight()
-              local ox = (gridSize * (oversize - 1)) * 0.5
-              local oy = (gridSize * (oversize - 1)) * 0.5
-              love.graphics.draw(sprite, worldX - ox, worldY - oy, 0, sx, sy)
+            love.graphics.setColor(1, 1, 1, 1)
+            local sx = (gridSize * oversize) / sprite:getWidth()
+            local sy = (gridSize * oversize) / sprite:getHeight()
+            local ox = (gridSize * (oversize - 1)) * 0.5
+            local oy = (gridSize * (oversize - 1)) * 0.5
+            love.graphics.draw(sprite, worldX - ox, worldY - oy, 0, sx, sy)
             end, false)
           else
             addToQueue(worldY, worldX, function()
-              love.graphics.setColor(0.3, 0.3, 0.3, 1)
-              love.graphics.rectangle("fill", worldX, worldY, gridSize, gridSize)
+            love.graphics.setColor(0.3, 0.3, 0.3, 1)
+            love.graphics.rectangle("fill", worldX, worldY, gridSize, gridSize)
             end, false)
           end
         elseif tile.type == MapManager.TileType.TREE then
           local sprite = sprites.tree[tile.decorationVariant or 1]
           if sprite then
             addToQueue(worldY, worldX, function()
-              love.graphics.setColor(1, 1, 1, 1)
-              local sx = (gridSize * oversize) / sprite:getWidth()
-              local sy = (gridSize * oversize) / sprite:getHeight()
-              local ox = (gridSize * (oversize - 1)) * 0.5
-              local oy = (gridSize * (oversize - 1)) * 0.5
+            love.graphics.setColor(1, 1, 1, 1)
+            local sx = (gridSize * oversize) / sprite:getWidth()
+            local sy = (gridSize * oversize) / sprite:getHeight()
+            local ox = (gridSize * (oversize - 1)) * 0.5
+            local oy = (gridSize * (oversize - 1)) * 0.5
               
               local swayConfig = config.map.treeSway
               local phaseOffset = (x + y * 100) * swayConfig.phaseVariation
@@ -524,8 +545,8 @@ function MapScene:draw()
             end, false)
           else
             addToQueue(worldY, worldX, function()
-              love.graphics.setColor(0.2, 0.4, 0.2, 1)
-              love.graphics.rectangle("fill", worldX, worldY, gridSize, gridSize)
+            love.graphics.setColor(0.2, 0.4, 0.2, 1)
+            love.graphics.rectangle("fill", worldX, worldY, gridSize, gridSize)
             end, false)
           end
         end
@@ -535,18 +556,18 @@ function MapScene:draw()
   
   -- Add player to draw queue (always fully visible, no fog)
   addToQueue(py, px, function()
-    if self.playerSprite then
+  if self.playerSprite then
       local spriteSize = self.gridSize * 0.8 * 1.5
-      local spriteW, spriteH = self.playerSprite:getDimensions()
-      local scale = spriteSize / math.max(spriteW, spriteH)
-      love.graphics.setColor(1, 1, 1, 1)
+    local spriteW, spriteH = self.playerSprite:getDimensions()
+    local scale = spriteSize / math.max(spriteW, spriteH)
+    love.graphics.setColor(1, 1, 1, 1)
       local scaleX = self.playerFacingRight and scale or -scale
       love.graphics.draw(self.playerSprite, px, py, 0, scaleX, scale, spriteW * 0.5, spriteH * 0.5)
-    else
-      love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.circle("fill", px, py, 12)
-      love.graphics.setColor(0, 0, 0, 1)
-      love.graphics.circle("line", px, py, 12)
+  else
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.circle("fill", px, py, 12)
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.circle("line", px, py, 12)
     end
   end, true)
   

@@ -232,10 +232,12 @@ function TurnManager:startEnemyTurn()
   
   -- Transition to enemy turn and queue actions
   -- Armor popup was already handled by BattleScene's timing logic
+  local config = require("config")
+  local enemyAttackDelay = (config.battle and config.battle.enemyAttackDelay) or 1.0
   local success = self:transitionTo(TurnManager.States.ENEMY_TURN_START, {
     actions = {
       { type = "show_indicator", text = "ENEMY'S TURN", indicatorDuration = 1.0 },
-      { type = "wait", duration = 0.8 },
+      { type = "wait", duration = enemyAttackDelay },
       { type = "enemy_attack" },
       { type = "check_defeat" },
       { type = "spawn_blocks", count = self.turnData.blocksDestroyed or 0 },

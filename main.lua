@@ -48,13 +48,29 @@ function love.update(deltaTime)
       previousScene = mapScene
       -- Switch to battle (SplitScene)
       sceneManager:set(SplitScene.new())
-    elseif result == "return_to_map" then
+    elseif type(result) == "table" and result.type == "return_to_map" then
       -- Return to map scene from battle (victory/defeat)
       if mapScene then
+        -- Set victory status before switching
+        if result.victory then
+          mapScene._battleVictory = true
+        end
         sceneManager:set(mapScene)
         previousScene = nil
       else
         -- Create new map scene if none exists
+        mapScene = MapScene.new()
+        if result.victory then
+          mapScene._battleVictory = true
+        end
+        sceneManager:set(mapScene)
+      end
+    elseif result == "return_to_map" then
+      -- Backward compatibility: handle string return
+      if mapScene then
+        sceneManager:set(mapScene)
+        previousScene = nil
+      else
         mapScene = MapScene.new()
         sceneManager:set(mapScene)
       end

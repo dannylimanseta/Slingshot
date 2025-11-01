@@ -783,11 +783,14 @@ function SplitScene:update(dt)
   if self._returnToMapTimer and self._returnToMapTimer > 0 then
     self._returnToMapTimer = self._returnToMapTimer - dt
     if self._returnToMapTimer <= 0 then
+      -- Store victory status before resetting flags
+      local wasVictory = self._victoryDetected
       -- Reset flags
       self._victoryDetected = false
       self._defeatDetected = false
       self._returnToMapTimer = 0
-      return "return_to_map"
+      -- Return victory status along with return signal
+      return { type = "return_to_map", victory = wasVictory }
     end
   end
   

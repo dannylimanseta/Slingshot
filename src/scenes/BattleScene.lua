@@ -23,6 +23,10 @@ function BattleScene.new()
     log = {},
     state = "idle", -- idle | win | lose (deprecated, use TurnManager state)
     _enemyTurnDelay = nil, -- Delay timer for enemy turn start (after armor popup)
+    _pendingEnemyTurnStart = false, -- Flag to track if enemy turn is waiting for player attack to complete
+    _playerAttackDelayTimer = nil, -- Delay timer for player attack animation (after ball despawn)
+    _pendingPlayerAttackDamage = nil, -- { damage, armor, wasJackpot, impactBlockCount, impactIsCrit } - stored when turn ends, applied after delay
+    _pendingImpactParams = nil, -- { blockCount, isCrit } - stored by playImpact, merged into pending damage
     playerImg = nil,
     enemyImg = nil,
     playerScaleMul = 1,
@@ -248,7 +252,7 @@ function BattleScene:onPlayerTurnEnd(turnScore, armor)
   if turnScore and turnScore > 0 then
     local dmg = math.floor(turnScore)
     
-    -- If jackpot is active, apply damage immediately and end jackpot display
+    -- If jackpot is active, end jackpot display immediately but delay damage effects
     if self.jackpotActive then
       -- End jackpot display immediately
       self.jackpotActive = false
@@ -257,67 +261,35 @@ function BattleScene:onPlayerTurnEnd(turnScore, armor)
       self.jackpotFalling = false
       self.jackpotFragments = {}
       
-      -- Apply damage immediately
-      self.enemyHP = math.max(0, self.enemyHP - dmg)
-      self.enemyFlash = config.battle.hitFlashDuration
-      self.enemyKnockbackTime = 1e-6
-      table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy" })
-      pushLog(self, "You dealt " .. dmg)
-      -- Trigger player lunge animation
-      self.playerLungeTime = 1e-6
-      -- Trigger screenshake
-      self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+      -- Store damage info to apply after delay (merge with pending impact params if any)
+      self._pendingPlayerAttackDamage = {
+        damage = dmg,
+        armor = armor or 0,
+        wasJackpot = true,
+        impactBlockCount = (self._pendingImpactParams and self._pendingImpactParams.blockCount) or 1,
+        impactIsCrit = (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false
+      }
+      self._pendingImpactParams = nil -- Clear after merging
+      -- Trigger player attack sequence after delay
+      self._playerAttackDelayTimer = (config.battle and config.battle.playerAttackDelay) or 1.0
       
-      if self.enemyHP <= 0 then
-        -- Check if impact animations are still playing
-        local impactsActive = (self.impactInstances and #self.impactInstances > 0)
-        if impactsActive then
-          -- Wait for impact animations to finish before starting disintegration
-          self.pendingDisintegration = true
-          pushLog(self, "Enemy defeated!")
-        else
-          -- Start disintegration effect immediately if no impacts
-          if not self.enemyDisintegrating then
-            self.enemyDisintegrating = true
-            self.enemyDisintegrationTime = 0
-            pushLog(self, "Enemy defeated!")
-          end
-        end
-      else
-        -- Queue incoming armor for TurnManager to handle
-        self.pendingArmor = armor or 0
-        self.armorPopupShown = false
-      end
+      -- Queue incoming armor for TurnManager to handle (this happens immediately, visual effects are delayed)
+      self.pendingArmor = armor or 0
+      self.armorPopupShown = false
     else
-      -- No jackpot: apply damage immediately (backward compatibility for non-jackpot path)
-      self.enemyHP = math.max(0, self.enemyHP - dmg)
-      self.enemyFlash = config.battle.hitFlashDuration
-      self.enemyKnockbackTime = 1e-6
-      table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy" })
-      pushLog(self, "You dealt " .. dmg)
-      -- Trigger player lunge animation
-      self.playerLungeTime = 1e-6
-      -- Trigger screenshake
-      self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+      -- No jackpot: store damage info to apply after delay (merge with pending impact params if any)
+      self._pendingPlayerAttackDamage = {
+        damage = dmg,
+        armor = armor or 0,
+        wasJackpot = false,
+        impactBlockCount = (self._pendingImpactParams and self._pendingImpactParams.blockCount) or 1,
+        impactIsCrit = (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false
+      }
+      self._pendingImpactParams = nil -- Clear after merging
+      -- Trigger player attack sequence after delay
+      self._playerAttackDelayTimer = (config.battle and config.battle.playerAttackDelay) or 1.0
       
-      if self.enemyHP <= 0 then
-        -- Check if impact animations are still playing
-        local impactsActive = (self.impactInstances and #self.impactInstances > 0)
-        if impactsActive then
-          -- Wait for impact animations to finish before starting disintegration
-          self.pendingDisintegration = true
-        else
-          -- Start disintegration effect immediately if no impacts
-          if not self.enemyDisintegrating then
-            self.enemyDisintegrating = true
-            self.enemyDisintegrationTime = 0
-          end
-        end
-        -- State will change to "win" after disintegration completes
-        return
-      end
-      
-      -- Queue incoming armor for TurnManager to handle
+      -- Queue incoming armor for TurnManager to handle (this happens immediately, visual effects are delayed)
       self.pendingArmor = armor or 0
       self.armorPopupShown = false
     end
@@ -550,14 +522,95 @@ function BattleScene:update(dt, bounds)
   end
   self.borderFragments = aliveFragments
 
-  -- Handle enemy turn delay (for armor popup timing)
+  -- Handle enemy turn delay (for armor popup timing and player attack completion)
   if self._enemyTurnDelay and self._enemyTurnDelay > 0 then
     self._enemyTurnDelay = self._enemyTurnDelay - dt
+    
+    -- Check if player attack animation is still active
+    local playerAttackActive = (self.playerLungeTime and self.playerLungeTime > 0) or false
+    
+    if playerAttackActive and self._pendingEnemyTurnStart then
+      -- Player attack still playing, calculate remaining time
+      local lungeD = (config.battle and config.battle.lungeDuration) or 0
+      local lungeRD = (config.battle and config.battle.lungeReturnDuration) or 0
+      local lungePause = (config.battle and config.battle.lungePauseDuration) or 0
+      local totalLungeDuration = lungeD + lungePause + lungeRD
+      local remainingTime = totalLungeDuration - (self.playerLungeTime or 0)
+      
+      -- Reset delay to wait for remaining animation time + small buffer
+      if remainingTime > 0 then
+        self._enemyTurnDelay = remainingTime + 0.1
+      end
+    end
+    
     if self._enemyTurnDelay <= 0 then
       self._enemyTurnDelay = nil
+      self._pendingEnemyTurnStart = false
       if self.turnManager then
         self.turnManager:startEnemyTurn()
       end
+    end
+  end
+
+  -- Handle player attack delay (between ball despawn and attack animation)
+  if self._playerAttackDelayTimer and self._playerAttackDelayTimer > 0 then
+    self._playerAttackDelayTimer = self._playerAttackDelayTimer - dt
+    if self._playerAttackDelayTimer <= 0 then
+      self._playerAttackDelayTimer = nil
+      
+      -- Apply pending damage and visual effects
+      if self._pendingPlayerAttackDamage then
+        local dmg = self._pendingPlayerAttackDamage.damage
+        local armor = self._pendingPlayerAttackDamage.armor
+        local impactBlockCount = self._pendingPlayerAttackDamage.impactBlockCount or 1
+        local impactIsCrit = self._pendingPlayerAttackDamage.impactIsCrit or false
+        
+        -- Create impact sprite animations first (before damage effects)
+        if impactBlockCount and impactBlockCount > 0 then
+          self:_createImpactInstances(impactBlockCount, impactIsCrit)
+        end
+        
+        -- Apply damage to enemy HP
+        self.enemyHP = math.max(0, self.enemyHP - dmg)
+        
+        -- Trigger enemy hit visual effects (flash, knockback, popup)
+        self.enemyFlash = config.battle.hitFlashDuration
+        self.enemyKnockbackTime = 1e-6
+        table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy" })
+        pushLog(self, "You dealt " .. dmg)
+        
+        -- Check if enemy is defeated
+        if self.enemyHP <= 0 then
+          -- Check if impact animations are still playing
+          local impactsActive = (self.impactInstances and #self.impactInstances > 0)
+          if impactsActive then
+            -- Wait for impact animations to finish before starting disintegration
+            self.pendingDisintegration = true
+            pushLog(self, "Enemy defeated!")
+          else
+            -- Start disintegration effect immediately if no impacts
+            if not self.enemyDisintegrating then
+              self.enemyDisintegrating = true
+              self.enemyDisintegrationTime = 0
+              pushLog(self, "Enemy defeated!")
+            end
+          end
+        end
+        
+        -- Clear pending damage
+        self._pendingPlayerAttackDamage = nil
+      end
+      
+      -- Also handle case where impact params exist but no damage (shouldn't happen, but be safe)
+      if self._pendingImpactParams then
+        self:_createImpactInstances(self._pendingImpactParams.blockCount, self._pendingImpactParams.isCrit)
+        self._pendingImpactParams = nil
+      end
+      
+      -- Trigger player lunge animation
+      self.playerLungeTime = 1e-6
+      -- Trigger screenshake
+      self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
     end
   end
 
@@ -1444,6 +1497,13 @@ end
 
 -- Perform enemy attack (called by TurnManager)
 function BattleScene:performEnemyAttack(minDamage, maxDamage)
+  -- Don't attack if enemy is already defeated
+  if (self.enemyHP and self.enemyHP <= 0) or 
+     (self.displayEnemyHP and self.displayEnemyHP <= 0.1) or
+     (self.turnManager and self.turnManager:getState() == TurnManager.States.VICTORY) then
+    return
+  end
+  
   minDamage = minDamage or config.battle.enemyDamageMin
   maxDamage = maxDamage or config.battle.enemyDamageMax
   local dmg = love.math.random(minDamage, maxDamage)
@@ -1506,18 +1566,59 @@ function BattleScene:setTurnManager(turnManager)
     
     -- Start enemy turn event - handle armor popup timing, then let TurnManager continue
     turnManager:on("start_enemy_turn", function()
-      -- If we have pending armor, show popup first, then trigger enemy turn after delay
-      if (self.pendingArmor or 0) > 0 and not self.armorPopupShown then
-        self.playerArmor = self.pendingArmor
-        table.insert(self.popups, { x = 0, y = 0, kind = "armor", value = self.pendingArmor, t = config.battle.popupLifetime, who = "player" })
-        self.armorPopupShown = true
-        -- Queue enemy turn start after armor popup duration + delay
-        local delay = (config.battle.popupLifetime or 0.8) + (config.battle.enemyAttackPostArmorDelay or 0.3)
-        -- Use a simple timer to trigger enemy turn after delay
-        self._enemyTurnDelay = delay
+      -- Don't start enemy turn if enemy is already defeated
+      if (self.enemyHP and self.enemyHP <= 0) or 
+         (self.displayEnemyHP and self.displayEnemyHP <= 0.1) or
+         (turnManager:getState() == TurnManager.States.VICTORY) then
+        return
+      end
+      
+      -- Always wait for player attack animation to complete before starting enemy turn
+      -- Calculate total player lunge duration (forward + pause + return)
+      local lungeD = (config.battle and config.battle.lungeDuration) or 0
+      local lungeRD = (config.battle and config.battle.lungeReturnDuration) or 0
+      local lungePause = (config.battle and config.battle.lungePauseDuration) or 0
+      local totalLungeDuration = lungeD + lungePause + lungeRD
+      
+      -- Check if player attack animation is still playing
+      local playerAttackActive = (self.playerLungeTime and self.playerLungeTime > 0) or false
+      
+      if playerAttackActive then
+        -- Player attack still playing, calculate remaining time
+        local remainingTime = totalLungeDuration - (self.playerLungeTime or 0)
+        -- Add a small buffer to ensure animation fully completes
+        local buffer = 0.1
+        local delay = math.max(0, remainingTime + buffer)
+        
+        -- Store pending enemy turn start flag
+        self._pendingEnemyTurnStart = true
+        
+        -- Queue enemy turn start after player attack completes
+        if (self.pendingArmor or 0) > 0 and not self.armorPopupShown then
+          -- Show armor popup first, then wait for player attack + delay
+          self.playerArmor = self.pendingArmor
+          table.insert(self.popups, { x = 0, y = 0, kind = "armor", value = self.pendingArmor, t = config.battle.popupLifetime, who = "player" })
+          self.armorPopupShown = true
+          -- Wait for player attack + armor popup duration + post-armor delay
+          local armorDelay = (config.battle.popupLifetime or 0.8) + (config.battle.enemyAttackPostArmorDelay or 0.3)
+          self._enemyTurnDelay = delay + armorDelay
+        else
+          -- No armor, just wait for player attack to complete
+          self._enemyTurnDelay = delay
+        end
       else
-        -- No armor, start enemy turn immediately
-        turnManager:startEnemyTurn()
+        -- Player attack already complete, proceed normally
+        if (self.pendingArmor or 0) > 0 and not self.armorPopupShown then
+          self.playerArmor = self.pendingArmor
+          table.insert(self.popups, { x = 0, y = 0, kind = "armor", value = self.pendingArmor, t = config.battle.popupLifetime, who = "player" })
+          self.armorPopupShown = true
+          -- Queue enemy turn start after armor popup duration + delay
+          local delay = (config.battle.popupLifetime or 0.8) + (config.battle.enemyAttackPostArmorDelay or 0.3)
+          self._enemyTurnDelay = delay
+        else
+          -- No armor, start enemy turn immediately
+          turnManager:startEnemyTurn()
+        end
       end
     end)
     
@@ -1588,6 +1689,25 @@ function BattleScene:playImpact(blockCount, isCrit)
   blockCount = blockCount or 1
   isCrit = isCrit or false
   
+  -- Store impact parameters to be applied after delay
+  self._pendingImpactParams = {
+    blockCount = blockCount,
+    isCrit = isCrit
+  }
+  
+  -- Set delay timer if not already set (onPlayerTurnEnd will also set it, but this ensures it's set even if onPlayerTurnEnd isn't called)
+  if not self._playerAttackDelayTimer then
+    self._playerAttackDelayTimer = (config.battle and config.battle.playerAttackDelay) or 1.0
+  end
+  self.impactEffectsPlayed = true
+end
+
+-- Internal helper to actually create impact instances (called after delay)
+function BattleScene:_createImpactInstances(blockCount, isCrit)
+  if not self.impactAnimation then return end
+  blockCount = blockCount or 1
+  isCrit = isCrit or false
+  
   -- If crit, always spawn 5 slashes; otherwise cap at 4 sprites max
   local spriteCount = isCrit and 5 or math.min(blockCount, 4)
   
@@ -1654,13 +1774,6 @@ function BattleScene:playImpact(blockCount, isCrit)
       delay = delay,
       startTime = nil -- Will be set when delay expires
     })
-  end
-  
-  -- Trigger player lunge and screenshake immediately (only once)
-  if spriteCount > 0 then
-    self.playerLungeTime = 1e-6
-    self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
-    self.impactEffectsPlayed = true
   end
 end
 
