@@ -3,6 +3,7 @@ local projectiles = {}
 -- Projectile rarity constants
 projectiles.Rarity = {
   COMMON = "COMMON",
+  UNCOMMON = "UNCOMMON",
   RARE = "RARE",
   EPIC = "EPIC",
   LEGENDARY = "LEGENDARY",
@@ -94,7 +95,7 @@ projectiles.data = {
   {
     id = "spread_shot",
     name = "Multi Strike",
-    rarity = projectiles.Rarity.COMMON,
+    rarity = projectiles.Rarity.UNCOMMON,
     level = 1,
     baseDamage = 2,
     icon = "assets/images/ball_2.png", -- spread shot sprite

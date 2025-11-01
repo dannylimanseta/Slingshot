@@ -8,6 +8,7 @@ ProjectileCard.__index = ProjectileCard
 -- Rarity colors (RGBA)
 local RARITY_COLORS = {
   COMMON = { 0.75, 0.75, 0.75, 1 },    -- Light grey
+  UNCOMMON = { 45/255, 159/255, 81/255, 1 }, -- #2D9F51 Green
   RARE = { 0.3, 0.6, 1, 1 },           -- Blue
   EPIC = { 0.8, 0.3, 1, 1 },           -- Purple
   LEGENDARY = { 1, 0.65, 0.2, 1 },     -- Gold/Orange
@@ -99,8 +100,8 @@ function ProjectileCard:calculateHeight(projectile)
   -- Bottom padding
   height = height + padding
   
-  -- Ensure minimum height fits icon (24px + padding, reduced by 50%)
-  local minHeight = 24 + padding * 2
+  -- Ensure minimum height fits icon (24px * 1.3 = 31.2px + padding)
+  local minHeight = 24 * 1.3 + padding * 2
   return math.max(height, minHeight)
 end
 
@@ -124,7 +125,7 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   local cardW = 280
   local cardH = self:calculateHeight(projectile) -- Dynamic height
   local padding = 12
-  local iconSize = 24 -- Reduced by 50% (was 48)
+  local iconSize = 24 * 1.3 -- Increased by 30% (was 24)
   local iconPadding = 12
   local cornerRadius = 8
   
@@ -132,8 +133,16 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   love.graphics.setColor(0, 0, 0, 0.3 * alpha)
   love.graphics.rectangle("fill", x, y, cardW, cardH, cornerRadius, cornerRadius)
   
-  -- Subtle border/highlight - 10% alpha white, respects fade alpha
-  love.graphics.setColor(1, 1, 1, 0.1 * alpha)
+  -- Border/highlight - use rarity color for UNCOMMON, otherwise white with 10% alpha
+  local rarity = projectile.rarity or "COMMON"
+  local rarityColor = RARITY_COLORS[rarity] or RARITY_COLORS.COMMON
+  if rarity == "UNCOMMON" then
+    -- Use rarity color for uncommon border
+    love.graphics.setColor(rarityColor[1], rarityColor[2], rarityColor[3], 0.3 * alpha)
+  else
+    -- Default white border with 10% alpha
+    love.graphics.setColor(1, 1, 1, 0.1 * alpha)
+  end
   love.graphics.setLineWidth(2)
   love.graphics.rectangle("line", x, y, cardW, cardH, cornerRadius, cornerRadius)
   
@@ -160,11 +169,16 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   local textY = y + padding
   local textW = cardW - textStartX - padding
   
-  -- Rarity text (light grey, uppercase, 50% size font) - apply alpha
+  -- Rarity text - use rarity color, uppercase, 50% size font - apply alpha
   local rarity = projectile.rarity or "COMMON"
   local rarityColor = RARITY_COLORS[rarity] or RARITY_COLORS.COMMON
   love.graphics.setFont(self.rarityFont)
-  love.graphics.setColor(0.6, 0.6, 0.6, 0.9 * alpha) -- Light grey for COMMON
+  -- Use rarity color for text, fallback to light grey for COMMON
+  if rarity == "COMMON" then
+    love.graphics.setColor(0.6, 0.6, 0.6, 0.9 * alpha) -- Light grey for COMMON
+  else
+    love.graphics.setColor(rarityColor[1], rarityColor[2], rarityColor[3], 0.9 * alpha)
+  end
   local rarityText = string.upper(rarity)
   local rarityFontH = self.rarityFont:getHeight()
   love.graphics.print(rarityText, textStartX, textY)
