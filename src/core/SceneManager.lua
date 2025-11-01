@@ -17,8 +17,9 @@ end
 
 function SceneManager:update(deltaTime)
   if self.currentScene and self.currentScene.update then
-    self.currentScene:update(deltaTime)
+    return self.currentScene:update(deltaTime)
   end
+  return nil
 end
 
 function SceneManager:draw()

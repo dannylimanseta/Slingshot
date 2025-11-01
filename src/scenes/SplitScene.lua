@@ -60,6 +60,10 @@ function SplitScene.new()
     shakeTime = 0,
     shakeDuration = 0,
     shakeMagnitude = 0,
+    -- Victory/defeat detection flags
+    _victoryDetected = false,
+    _defeatDetected = false,
+    _returnToMapTimer = 0,
   }, SplitScene)
 end
 
@@ -581,6 +585,9 @@ function SplitScene:keypressed(key, scancode, isRepeat)
   if key == "p" then
     -- Signal to open formation editor
     return "open_formation_editor"
+  elseif key == "escape" then
+    -- Return to map (manual exit from battle)
+    return "return_to_map"
   end
   -- Forward keypress to sub-scenes if needed
   if self.left and self.left.keypressed then
@@ -719,6 +726,72 @@ function SplitScene:update(dt)
   if self.tooltipFadeTimer > 0 then
     self.tooltipFadeTimer = math.max(0, self.tooltipFadeTimer - dt)
   end
+  
+  -- Check for victory/defeat and return to map after delay
+  -- Check for victory condition: enemy HP at 0 or BattleScene win state
+  local isVictory = false
+  if self.right then
+    -- Check multiple victory conditions
+    if (self.right.enemyHP and self.right.enemyHP <= 0) or
+       (self.right.displayEnemyHP and self.right.displayEnemyHP <= 0.1) or
+       (self.right.state == "win") then
+      isVictory = true
+    end
+  end
+  
+  if isVictory then
+    -- Only start timer if not already started
+    if not self._victoryDetected then
+      self._victoryDetected = true
+      self._returnToMapTimer = 2.5 -- Wait for disintegration animation to complete
+      -- Ensure TurnManager is in VICTORY state
+      if self.turnManager then
+        local state = self.turnManager:getState()
+        if state ~= TurnManager.States.VICTORY then
+          self.turnManager:transitionTo(TurnManager.States.VICTORY)
+        end
+      end
+    end
+  end
+  
+  -- Check for defeat condition: player HP at 0 or BattleScene lose state
+  local isDefeat = false
+  if self.right then
+    -- Check multiple defeat conditions
+    if (self.right.playerHP and self.right.playerHP <= 0) or
+       (self.right.state == "lose") then
+      isDefeat = true
+    end
+  end
+  
+  if isDefeat then
+    -- Only start timer if not already started
+    if not self._defeatDetected then
+      self._defeatDetected = true
+      self._returnToMapTimer = 2.0 -- Shorter delay for defeat
+      -- Ensure TurnManager is in DEFEAT state
+      if self.turnManager then
+        local state = self.turnManager:getState()
+        if state ~= TurnManager.States.DEFEAT then
+          self.turnManager:transitionTo(TurnManager.States.DEFEAT)
+        end
+      end
+    end
+  end
+  
+  -- Return to map when timer expires
+  if self._returnToMapTimer and self._returnToMapTimer > 0 then
+    self._returnToMapTimer = self._returnToMapTimer - dt
+    if self._returnToMapTimer <= 0 then
+      -- Reset flags
+      self._victoryDetected = false
+      self._defeatDetected = false
+      self._returnToMapTimer = 0
+      return "return_to_map"
+    end
+  end
+  
+  return nil
 end
 
 -- Set the current projectile (updates both tooltip and shooter)

@@ -3,7 +3,8 @@ local config = require("config")
 
 -- Colors in 0..1 range
 theme.colors = {
-  background = { 0.08, 0.09, 0.12, 1 },
+  -- Background: hex #21232E -> {33,35,46}/255
+  background = { 33/255, 35/255, 46/255, 1 },
   uiText = { 1, 1, 1, 0.75 },
   aim = { 0.3, 0.8, 1, 0.7 },
   ball = { 1, 1, 1, 1 },

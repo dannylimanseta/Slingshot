@@ -3,6 +3,7 @@ package.path = package.path .. ";src/?.lua;src/?/init.lua;src/?/?.lua"
 
 local config = require("config")
 local SceneManager = require("core.SceneManager")
+local MapScene = require("scenes.MapScene")
 local SplitScene = require("scenes.SplitScene")
 local FormationEditorScene = require("scenes.FormationEditorScene")
 
@@ -12,6 +13,7 @@ local virtualW, virtualH
 local scaleFactor = 1
 local offsetX, offsetY = 0, 0
 local previousScene = nil -- Store previous scene when switching to formation editor
+local mapScene = nil -- Store map scene to return to after battle
 
 local function updateScreenScale()
   local winW, winH = love.graphics.getDimensions()
@@ -31,11 +33,33 @@ function love.load()
   updateScreenScale()
 
   sceneManager = SceneManager.new()
-  sceneManager:set(SplitScene.new())
+  -- Start with map exploration scene
+  mapScene = MapScene.new()
+  sceneManager:set(mapScene)
 end
 
 function love.update(deltaTime)
-  if sceneManager then sceneManager:update(deltaTime) end
+  if sceneManager then 
+    local result = sceneManager:update(deltaTime)
+    
+    -- Handle battle transition signal from MapScene
+    if result == "enter_battle" then
+      -- Store map scene as previous scene
+      previousScene = mapScene
+      -- Switch to battle (SplitScene)
+      sceneManager:set(SplitScene.new())
+    elseif result == "return_to_map" then
+      -- Return to map scene from battle (victory/defeat)
+      if mapScene then
+        sceneManager:set(mapScene)
+        previousScene = nil
+      else
+        -- Create new map scene if none exists
+        mapScene = MapScene.new()
+        sceneManager:set(mapScene)
+      end
+    end
+  end
 end
 
 function love.draw()
@@ -69,17 +93,35 @@ function love.keypressed(key, scancode, isRepeat)
       editorScene:setPreviousScene(previousScene)
       sceneManager:set(editorScene)
     elseif result == "restart" then
-      -- Return to previous scene (SplitScene) or restart game
+      -- Return to previous scene (could be MapScene or SplitScene) or restart game
       if previousScene then
-        -- Reload blocks with saved formation before switching back
-        if previousScene.reloadBlocks then
-          previousScene:reloadBlocks()
+        -- Check if returning to map scene or battle scene
+        if previousScene == mapScene then
+          -- Returning to map from battle
+          sceneManager:set(previousScene)
+          previousScene = nil
+        else
+          -- Returning to battle scene (from formation editor)
+          if previousScene.reloadBlocks then
+            previousScene:reloadBlocks()
+          end
+          sceneManager:set(previousScene)
+          previousScene = nil
         end
-        sceneManager:set(previousScene)
+      else
+        -- No previous scene, restart with map
+        mapScene = MapScene.new()
+        sceneManager:set(mapScene)
+      end
+    elseif result == "return_to_map" then
+      -- Return to map scene from battle
+      if mapScene then
+        sceneManager:set(mapScene)
         previousScene = nil
       else
-        -- No previous scene, restart with new SplitScene
-        sceneManager:set(SplitScene.new())
+        -- Create new map scene if none exists
+        mapScene = MapScene.new()
+        sceneManager:set(mapScene)
       end
     end
   end

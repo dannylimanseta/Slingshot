@@ -299,6 +299,49 @@ config.player = {
   },
 }
 
+-- Map exploration meta game config
+config.map = {
+  gridSize = 64, -- pixels per grid cell
+  movesPerDay = 5, -- maximum moves per day
+  playerMoveSpeed = 200, -- pixels per second for movement animation
+  -- Visual settings
+  nodeRadius = 20, -- visual radius of nodes (legacy, may be removed)
+  nodeSpacing = 80, -- minimum spacing between nodes (legacy, may be removed)
+  -- Camera/viewport settings
+  cameraFollowSpeed = 8, -- tween speed for camera following player
+  viewportPadding = 100, -- padding around viewport edges
+  -- Player glow visual
+  playerGlow = {
+    tileScale = 16.8, -- size in tiles (previous 11.2 * 1.5)
+  },
+  -- Map generation parameters
+  generation = {
+    width = 40, -- grid width in tiles
+    height = 30, -- grid height in tiles
+    initialGroundChance = 0.55, -- initial probability of ground tile (cellular automata) - increased for more traversable area
+    cellularIterations = 3, -- number of smoothing iterations
+    -- After terrain generation, convert most obstacles to trees (visual bias)
+    stoneToTreeChance = 0.9, -- 90% of obstacle cells become TREE instead of STONE
+    -- Decoration placement (way more trees than stones)
+    treeDensity = 0.50, -- attempts per tile for tree placement (very high - dense forests)
+    stoneDensity = 0.005, -- attempts per tile for stone placement (extremely low - almost none)
+    minTreeSpacing = 0, -- minimum grid distance between trees (no spacing requirement - can be adjacent)
+    minStoneSpacing = 4, -- minimum grid distance between stones (very spread out)
+    treeEdgeChance = 1.0, -- chance to place tree when conditions met (100% - always place if conditions met)
+    stonePlaceChance = 0.1, -- chance to place stone when conditions met (very low)
+    -- Ground sprite decorations (sparingly placed)
+    groundSpriteChance = 0.05, -- 5% chance per ground tile to have decorative sprite
+    -- Enemy placement
+    enemyDensity = 0.15, -- percentage of valid positions to place enemies
+    minEnemyDistance = 8, -- minimum distance from start to place enemy
+    maxEnemies = 20, -- maximum number of enemies on map
+    -- Rest node placement
+    restDensity = 0.01, -- attempts per tile to place rest nodes (sparse)
+    minRestSpacing = 5, -- minimum spacing between rest nodes (grid distance)
+    minRestDistanceFromPlayer = 6, -- keep rests a bit away from start
+  },
+}
+
 -- Asset paths (relative to project root)
 config.assets = {
   images = {
