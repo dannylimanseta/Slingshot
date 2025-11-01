@@ -4,12 +4,14 @@ package.path = package.path .. ";src/?.lua;src/?/init.lua;src/?/?.lua"
 local config = require("config")
 local SceneManager = require("core.SceneManager")
 local SplitScene = require("scenes.SplitScene")
+local FormationEditorScene = require("scenes.FormationEditorScene")
 
 local sceneManager
 local screenCanvas
 local virtualW, virtualH
 local scaleFactor = 1
 local offsetX, offsetY = 0, 0
+local previousScene = nil -- Store previous scene when switching to formation editor
 
 local function updateScreenScale()
   local winW, winH = love.graphics.getDimensions()
@@ -56,7 +58,30 @@ end
 
 function love.keypressed(key, scancode, isRepeat)
   if sceneManager then 
-    sceneManager:keypressed(key, scancode, isRepeat)
+    local result = sceneManager:keypressed(key, scancode, isRepeat)
+    
+    -- Handle scene switching signals
+    if result == "open_formation_editor" then
+      -- Store current scene as previous scene
+      previousScene = sceneManager.currentScene
+      -- Create and switch to formation editor
+      local editorScene = FormationEditorScene.new()
+      editorScene:setPreviousScene(previousScene)
+      sceneManager:set(editorScene)
+    elseif result == "restart" then
+      -- Return to previous scene (SplitScene) or restart game
+      if previousScene then
+        -- Reload blocks with saved formation before switching back
+        if previousScene.reloadBlocks then
+          previousScene:reloadBlocks()
+        end
+        sceneManager:set(previousScene)
+        previousScene = nil
+      else
+        -- No previous scene, restart with new SplitScene
+        sceneManager:set(SplitScene.new())
+      end
+    end
   end
 end
 

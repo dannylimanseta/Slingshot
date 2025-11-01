@@ -1012,6 +1012,17 @@ function BlockManager:update(dt)
   end
 end
 
+-- Clear all existing blocks
+function BlockManager:clearAll()
+  for _, block in ipairs(self.blocks) do
+    if block and block.destroy then
+      block:destroy()
+    end
+  end
+  self.blocks = {}
+  self.predefinedFormation = nil
+end
+
 return BlockManager
 
 

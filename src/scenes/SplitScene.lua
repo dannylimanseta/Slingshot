@@ -577,6 +577,20 @@ function SplitScene:mousemoved(x, y, dx, dy)
   end
 end
 
+function SplitScene:keypressed(key, scancode, isRepeat)
+  if key == "p" then
+    -- Signal to open formation editor
+    return "open_formation_editor"
+  end
+  -- Forward keypress to sub-scenes if needed
+  if self.left and self.left.keypressed then
+    self.left:keypressed(key, scancode, isRepeat)
+  end
+  if self.right and self.right.keypressed then
+    self.right:keypressed(key, scancode, isRepeat)
+  end
+end
+
 -- Bridge: when left turn ends, forward score to right
 -- We detect the transition from canShoot=false to canShoot=true and ball=nil
 function SplitScene:update(dt)
@@ -747,6 +761,29 @@ function SplitScene:triggerShake(magnitude, duration)
   self.shakeMagnitude = magnitude or 10
   self.shakeDuration = duration or 0.25
   self.shakeTime = self.shakeDuration
+end
+
+-- Reload blocks from battle profile (called when returning from formation editor)
+function SplitScene:reloadBlocks()
+  if not self.left then return end
+  
+  -- Reload battle_profiles module to get updated data
+  package.loaded["data.battle_profiles"] = nil
+  battle_profiles = require("data.battle_profiles")
+  
+  -- Get current battle profile
+  local currentBattleType = self.layoutManager:getBattleType()
+  local battleProfile = battle_profiles.getProfile(currentBattleType)
+  
+  -- Get bounds for GameplayScene
+  local w, h = love.graphics.getDimensions()
+  local centerRect = self.layoutManager:getCenterRect(w, h)
+  local bounds = { x = 0, y = 0, w = centerRect.w, h = h }
+  
+  -- Reload blocks in GameplayScene
+  if self.left and self.left.reloadBlocks then
+    self.left:reloadBlocks(battleProfile, bounds)
+  end
 end
 
 return SplitScene

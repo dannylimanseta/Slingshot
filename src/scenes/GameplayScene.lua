@@ -917,6 +917,22 @@ function GameplayScene:setTurnManager(turnManager)
   end
 end
 
+-- Reload blocks from battle profile (called when returning from formation editor)
+function GameplayScene:reloadBlocks(battleProfile, bounds)
+  if not self.blocks or not self.world then return end
+  
+  -- Clear existing blocks
+  self.blocks:clearAll()
+  
+  -- Get bounds (use provided bounds or fallback to screen dimensions)
+  local width = (bounds and bounds.w) or love.graphics.getWidth()
+  local height = (bounds and bounds.h) or love.graphics.getHeight()
+  
+  -- Reload formation from battle profile
+  local formationConfig = (battleProfile and battleProfile.blockFormation) or nil
+  self.blocks:loadFormation(self.world, width, height, formationConfig)
+end
+
 return GameplayScene
 
 
