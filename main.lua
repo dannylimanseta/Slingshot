@@ -4,12 +4,14 @@ package.path = package.path .. ";src/?.lua;src/?/init.lua;src/?/?.lua"
 local config = require("config")
 local SceneManager = require("core.SceneManager")
 local SplitScene = require("scenes.SplitScene")
+local FormationEditorScene = require("scenes.FormationEditorScene")
 
 local sceneManager
 local screenCanvas
 local virtualW, virtualH
 local scaleFactor = 1
 local offsetX, offsetY = 0, 0
+local previousScene = nil -- Store previous scene when entering editor
 
 local function updateScreenScale()
   local winW, winH = love.graphics.getDimensions()
@@ -55,7 +57,31 @@ function love.resize(width, height)
 end
 
 function love.keypressed(key, scancode, isRepeat)
-  if sceneManager then sceneManager:keypressed(key, scancode, isRepeat) end
+  -- Handle "plan" hotkey to open formation editor
+  if key == "p" and not isRepeat then
+    -- Check if we're not already in the editor
+    local currentScene = sceneManager and sceneManager.currentScene
+    if currentScene and not (currentScene._isEditor) then
+      -- Store current scene and switch to editor
+      previousScene = currentScene
+      local editor = FormationEditorScene.new()
+      editor._isEditor = true
+      editor:setPreviousScene(previousScene)
+      sceneManager:set(editor)
+      return
+    end
+  end
+  
+  if sceneManager then 
+    local result = sceneManager:keypressed(key, scancode, isRepeat)
+    -- Check if editor wants to exit
+    if result == "exit" then
+      if previousScene then
+        sceneManager:set(previousScene)
+        previousScene = nil
+      end
+    end
+  end
 end
 
 function love.keyreleased(key, scancode)

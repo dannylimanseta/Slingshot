@@ -95,6 +95,12 @@ config.blocks = {
   spriteScale = 2, -- visual scale multiplier for block sprites
   -- Placement controls
   minGap = -11, -- minimum pixels of space between blocks (prevents touching)
+  -- Grid snapping for formation editor
+  gridSnap = {
+    enabled = true,
+    cellSize = 32, -- pixels per grid cell
+    showGrid = false, -- show grid visually (toggle with G key)
+  },
   -- Spawn animation for newly added blocks
   spawnAnim = {
     duration = 0.35, -- seconds
