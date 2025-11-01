@@ -36,7 +36,7 @@ end
 
 function SceneManager:keypressed(key, scancode, isRepeat)
   if self.currentScene and self.currentScene.keypressed then
-    self.currentScene:keypressed(key, scancode, isRepeat)
+    return self.currentScene:keypressed(key, scancode, isRepeat)
   end
 end
 

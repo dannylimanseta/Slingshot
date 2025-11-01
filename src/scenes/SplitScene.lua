@@ -496,20 +496,16 @@ function SplitScene:draw()
   love.graphics.pop() -- Pop screenshake transform
   -- Draw projectile card at bottom-left
   if self.projectileCard then
-    -- Determine which projectile to show based on turn number (even = spread shot)
+    -- Get current projectile ID from shooter's rotation system
     local ProjectileManager = require("managers.ProjectileManager")
-    local projectileIdToShow = self.currentProjectileId or "qi_orb"
+    local projectileIdToShow = "qi_orb"
     
-    -- Check if spread shot should be active (even turn numbers)
-    if self.turnManager and self.turnManager.getTurnNumber then
-      local turnNumber = self.turnManager:getTurnNumber()
-      if turnNumber % 2 == 0 then
-        -- Even turn = spread shot
-        projectileIdToShow = "spread_shot"
-      else
-        -- Odd turn = regular projectile
-        projectileIdToShow = self.currentProjectileId or "qi_orb"
-      end
+    -- Get projectile ID from shooter if available (uses dynamic rotation)
+    if self.left and self.left.shooter and self.left.shooter.getCurrentProjectileId then
+      projectileIdToShow = self.left.shooter:getCurrentProjectileId()
+    else
+      -- Fallback to stored projectile ID
+      projectileIdToShow = self.currentProjectileId or "qi_orb"
     end
     
     if projectileIdToShow then
@@ -687,14 +683,13 @@ function SplitScene:update(dt)
   end
   
   -- Detect projectile changes and trigger fade animation
-  local projectileIdToShow = self.currentProjectileId or "qi_orb"
-  if self.turnManager and self.turnManager.getTurnNumber then
-    local turnNumber = self.turnManager:getTurnNumber()
-    if turnNumber % 2 == 0 then
-      projectileIdToShow = "spread_shot"
-    else
-      projectileIdToShow = self.currentProjectileId or "qi_orb"
-    end
+  -- Get current projectile ID from shooter's rotation system
+  local projectileIdToShow = "qi_orb"
+  if self.left and self.left.shooter and self.left.shooter.getCurrentProjectileId then
+    projectileIdToShow = self.left.shooter:getCurrentProjectileId()
+  else
+    -- Fallback to stored projectile ID
+    projectileIdToShow = self.currentProjectileId or "qi_orb"
   end
   
   -- Check if projectile changed

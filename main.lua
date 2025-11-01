@@ -80,6 +80,10 @@ function love.keypressed(key, scancode, isRepeat)
         sceneManager:set(previousScene)
         previousScene = nil
       end
+    elseif result == "restart" then
+      -- Restart the game with a fresh SplitScene
+      previousScene = nil
+      sceneManager:set(SplitScene.new())
     end
   end
 end

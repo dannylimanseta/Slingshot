@@ -281,6 +281,7 @@ config.assets = {
     enemy = "assets/images/enemy_1.png",
     ball = "assets/images/ball_1.png",
     ball_2 = "assets/images/ball_2.png", -- spread shot projectile sprite
+    ball_3 = "assets/images/ball_3.png", -- twin strike projectile sprite
     block_attack = "assets/images/block_attack.png",
     block_defend = "assets/images/block_defend.png",
     block_crit = "assets/images/block_crit.png",

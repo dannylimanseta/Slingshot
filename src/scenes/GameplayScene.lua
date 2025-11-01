@@ -5,6 +5,7 @@ local BlockManager = require("managers.BlockManager")
 local Ball = require("entities.Ball")
 local Shooter = require("entities.Shooter")
 local ParticleManager = require("managers.ParticleManager")
+local ProjectileManager = require("managers.ProjectileManager")
 
 local GameplayScene = {}
 GameplayScene.__index = GameplayScene
@@ -44,6 +45,7 @@ function GameplayScene.new()
     shakeMagnitude = 0,
     shakeDuration = 0,
     shakeTime = 0,
+    projectileId = "qi_orb", -- default projectile ID
   }, GameplayScene)
 end
 
@@ -76,7 +78,8 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
   -- Load formation from battle profile (or use default random)
   local formationConfig = (battleProfile and battleProfile.blockFormation) or nil
   self.blocks:loadFormation(self.world, width, height, formationConfig)
-  self.shooter = Shooter.new(width * 0.5, height - config.shooter.spawnYFromBottom, projectileId)
+  self.projectileId = projectileId or "qi_orb" -- Store projectile ID
+  self.shooter = Shooter.new(width * 0.5, height - config.shooter.spawnYFromBottom, self.projectileId)
   -- Give shooter access to TurnManager for turn-based display
   if self.shooter and self.shooter.setTurnManager and self.turnManager then
     self.shooter:setTurnManager(self.turnManager)
@@ -214,11 +217,9 @@ function GameplayScene:update(dt, bounds)
   end
 end
 
--- Public: respawn blocks equal to those destroyed in the last player turn minus 1-3 (random)
+-- Public: respawn 1-2 blocks every turn (fixed respawn rate)
 function GameplayScene:respawnDestroyedBlocks(bounds)
-  local destroyed = self.destroyedThisTurn or 0
-  local reduction = love.math.random(1, 3) -- Random reduction of 1, 2, or 3 blocks
-  local toSpawn = math.max(0, destroyed - reduction)
+  local toSpawn = love.math.random(1, 2) -- Always spawn 1 or 2 blocks
   if toSpawn <= 0 then return end
   if not (self.blocks and self.blocks.addRandomBlocks) then return end
   local width = (bounds and bounds.w) or love.graphics.getWidth()
@@ -589,59 +590,122 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       self.comboTimeout = 0
       self.lastHitTime = 0
       
-      -- Determine if this is a spread shot turn (odd turn numbers = spread shot)
-      local isSpreadShot = false
-      if self.turnManager and self.turnManager.getTurnNumber then
-        local turnNumber = self.turnManager:getTurnNumber()
-        isSpreadShot = (turnNumber % 2 == 0) -- Even turns = spread shot (turn 2, 4, 6...)
+      -- Get current projectile ID from shooter based on turn rotation
+      local projectileId = "qi_orb"
+      if self.shooter and self.shooter.getCurrentProjectileId then
+        projectileId = self.shooter:getCurrentProjectileId()
+      else
+        projectileId = self.projectileId or "qi_orb"
       end
       
-      local spreadConfig = config.ball.spreadShot
-      if isSpreadShot and spreadConfig and spreadConfig.enabled then
-        -- Spread shot: spawn multiple projectiles
+      -- Get projectile data to determine behavior and sprite
+      local projectileData = ProjectileManager.getProjectile(projectileId)
+      local spritePath = nil
+      if projectileData and projectileData.icon then
+        spritePath = projectileData.icon
+      end
+      
+      if projectileId == "twin_strike" then
+        -- Twin Strike: spawn 2 mirrored projectiles (mirrored on x-axis)
         self.ball = nil -- Clear single ball
         self.balls = {}
-        local count = spreadConfig.count or 3
-        local spreadAngle = spreadConfig.spreadAngle or 0.15
-        local radiusScale = spreadConfig.radiusScale or 0.7
-        local spritePath = spreadConfig.sprite or (config.assets.images.ball_2)
-        local maxBounces = spreadConfig.maxBounces or 3
+        if not spritePath then
+          spritePath = (config.assets.images.ball_3) or "assets/images/ball_3.png"
+        end
+        local maxBounces = 5
         
-        -- Calculate base angle from aim direction
-        local baseAngle = math.atan2(ndy, ndx)
-        
-        -- Spawn projectiles in a spread pattern
-        for i = 1, count do
-          -- Calculate offset angle (centered around base angle)
-          local offset = 0
-          if count > 1 then
-            offset = (i - (count + 1) / 2) * (spreadAngle / (count - 1))
+        -- First ball: original direction
+        local ball1 = Ball.new(self.world, self.aimStartX, self.aimStartY, ndx, ndy, {
+          maxBounces = maxBounces,
+          spritePath = spritePath,
+          onLastBounce = function(ball)
+            ball:destroy()
           end
-          local angle = baseAngle + offset
-          local projDx = math.cos(angle)
-          local projDy = math.sin(angle)
+        })
+        
+        -- Second ball: mirrored on x-axis (flip x direction)
+        local ball2 = Ball.new(self.world, self.aimStartX, self.aimStartY, -ndx, ndy, {
+          maxBounces = maxBounces,
+          spritePath = spritePath,
+          onLastBounce = function(ball)
+            ball:destroy()
+          end
+        })
+        
+        if ball1 then
+          ball1.score = (config.score and config.score.baseSeed) or 0
+          self.score = self.score + ball1.score
+          table.insert(self.balls, ball1)
+        end
+        if ball2 then
+          ball2.score = (config.score and config.score.baseSeed) or 0
+          self.score = self.score + ball2.score
+          table.insert(self.balls, ball2)
+        end
+      elseif projectileId == "spread_shot" then
+        -- Spread shot: spawn multiple projectiles
+        local spreadConfig = config.ball.spreadShot
+        if spreadConfig and spreadConfig.enabled then
+          self.ball = nil -- Clear single ball
+          self.balls = {}
+          local count = spreadConfig.count or 3
+          local spreadAngle = spreadConfig.spreadAngle or 0.15
+          local radiusScale = spreadConfig.radiusScale or 0.7
+          if not spritePath then
+            spritePath = spreadConfig.sprite or (config.assets.images.ball_2)
+          end
+          local maxBounces = spreadConfig.maxBounces or 3
           
-          local ball = Ball.new(self.world, self.aimStartX, self.aimStartY, projDx, projDy, {
-            radius = config.ball.radius * radiusScale,
-            maxBounces = maxBounces,
+          -- Calculate base angle from aim direction
+          local baseAngle = math.atan2(ndy, ndx)
+          
+          -- Spawn projectiles in a spread pattern
+          for i = 1, count do
+            -- Calculate offset angle (centered around base angle)
+            local offset = 0
+            if count > 1 then
+              offset = (i - (count + 1) / 2) * (spreadAngle / (count - 1))
+            end
+            local angle = baseAngle + offset
+            local projDx = math.cos(angle)
+            local projDy = math.sin(angle)
+            
+            local ball = Ball.new(self.world, self.aimStartX, self.aimStartY, projDx, projDy, {
+              radius = config.ball.radius * radiusScale,
+              maxBounces = maxBounces,
+              spritePath = spritePath,
+              trailConfig = spreadConfig.trail, -- Use spread shot trail config (green, smaller width)
+              onLastBounce = function(ball)
+                -- Ball reached max bounces, destroy it - turn will end automatically
+                ball:destroy()
+              end
+            })
+            
+            if ball then
+              ball.score = (config.score and config.score.baseSeed) or 0
+              self.score = self.score + ball.score
+              table.insert(self.balls, ball)
+            end
+          end
+        else
+          -- Fallback to single projectile if spread shot config not available
+          self.balls = {} -- Clear multiple balls
+          self.ball = Ball.new(self.world, self.aimStartX, self.aimStartY, ndx, ndy, {
             spritePath = spritePath,
-            trailConfig = spreadConfig.trail, -- Use spread shot trail config (green, smaller width)
             onLastBounce = function(ball)
-              -- Ball reached max bounces, destroy it - turn will end automatically
               ball:destroy()
             end
           })
-          
-          if ball then
-            ball.score = (config.score and config.score.baseSeed) or 0
-            self.score = self.score + ball.score
-            table.insert(self.balls, ball)
+          if self.ball then
+            self.ball.score = (config.score and config.score.baseSeed) or 0
+            self.score = self.score + self.ball.score
           end
         end
       else
         -- Single projectile (regular shot)
         self.balls = {} -- Clear multiple balls
         self.ball = Ball.new(self.world, self.aimStartX, self.aimStartY, ndx, ndy, {
+          spritePath = spritePath,
           onLastBounce = function(ball)
             -- Ball reached max bounces, destroy it - turn will end automatically
             ball:destroy()
@@ -663,8 +727,9 @@ end
 
 -- Set the projectile ID for the shooter
 function GameplayScene:setProjectile(projectileId)
+  self.projectileId = projectileId or "qi_orb"
   if self.shooter and self.shooter.setProjectile then
-    self.shooter:setProjectile(projectileId)
+    self.shooter:setProjectile(self.projectileId)
   end
 end
 

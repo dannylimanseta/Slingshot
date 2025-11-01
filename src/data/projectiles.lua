@@ -106,6 +106,20 @@ projectiles.data = {
     },
     description = "Multiple projectiles fired in a spread pattern."
   },
+  {
+    id = "twin_strike",
+    name = "Twin Strike",
+    rarity = projectiles.Rarity.RARE,
+    level = 1,
+    baseDamage = 4,
+    icon = "assets/images/ball_3.png",
+    stats = {
+      "Fires 2 mirrored projectiles",
+      "Deals 4 damage",
+      "Bounces 5 times"
+    },
+    description = "Two projectiles that mirror each other's trajectory."
+  },
 }
 
 -- Helper function to get projectile by ID

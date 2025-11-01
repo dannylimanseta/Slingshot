@@ -324,9 +324,9 @@ end
 
 function FormationEditorScene:keypressed(key, scancode, isRepeat)
   if key == "escape" then
-    -- Exit editor - return to previous scene
-    -- Signal to main.lua to restore previous scene
-    return "exit"
+    -- Exit editor and restart the game
+    -- Signal to main.lua to restart with a new game
+    return "restart"
   elseif key == "1" then
     self.currentBlockType = "damage"
     self:showStatus("Block type: Damage")
