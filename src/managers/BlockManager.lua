@@ -9,6 +9,9 @@ function BlockManager.new()
     blocks = {},
     soulBlockSpawned = false, -- Track if soul block has been spawned this battle
     firstClusterCenter = nil, -- Store center of first large cluster for soul block placement
+    predefinedFormation = nil, -- Store predefined formation slots {x, y, kind, hp} where x,y are normalized
+    playfieldWidth = nil, -- Store playfield dimensions used for formation
+    playfieldHeight = nil,
   }, BlockManager)
 end
 
@@ -275,12 +278,14 @@ end
 function BlockManager:loadFormation(world, width, height, formationConfig)
   if not formationConfig or not formationConfig.type or formationConfig.type == "random" then
     -- Use random formation with optional overrides
+    self.predefinedFormation = nil  -- Clear predefined formation
     self:randomize(world, width, height, formationConfig and formationConfig.random)
   elseif formationConfig.type == "predefined" then
     -- Use predefined formation
     self:loadPredefinedFormation(world, width, height, formationConfig.predefined)
   else
     -- Fallback to random if unknown type
+    self.predefinedFormation = nil  -- Clear predefined formation
     self:randomize(world, width, height)
   end
 end
@@ -293,9 +298,28 @@ end
 function BlockManager:loadPredefinedFormation(world, width, height, predefined)
   if not predefined or type(predefined) ~= "table" or #predefined == 0 then
     -- Fallback to random if no predefined formation provided
+    self.predefinedFormation = nil
     self:randomize(world, width, height)
     return
   end
+  
+  -- Store predefined formation for respawn logic
+  self.predefinedFormation = {}
+  for _, blockDef in ipairs(predefined) do
+    if blockDef and type(blockDef) == "table" and blockDef.x and blockDef.y then
+      table.insert(self.predefinedFormation, {
+        x = blockDef.x,
+        y = blockDef.y,
+        kind = blockDef.kind or "damage",
+        hp = blockDef.hp or 1
+      })
+    end
+  end
+  self.playfieldWidth = width
+  self.playfieldHeight = height
+  
+  -- Debug: verify formation was stored
+  print("DEBUG: Stored predefined formation with", #self.predefinedFormation, "slots at", width, "x", height)
   
   self.blocks = {}
   self.firstClusterCenter = nil
@@ -377,6 +401,7 @@ end
 function BlockManager:randomize(world, width, height, overrideConfig)
   self.blocks = {}
   self.firstClusterCenter = nil  -- Reset cluster center tracking
+  self.predefinedFormation = nil  -- Clear predefined formation when using random
   local margin = config.playfield.margin
   local attemptsPerBlock = config.blocks.attemptsPerBlock
   local pad = (config.blocks and config.blocks.minGap) or 0
@@ -507,8 +532,215 @@ function BlockManager:addRandomBlocks(world, width, height, count)
   local newBlocks = {}
   local remaining = count
 
-  -- Try to place clusters if enabled
-  if clusteringEnabled then
+  -- If we have a predefined formation, try to fill empty formation slots first
+  if self.predefinedFormation and type(self.predefinedFormation) == "table" and #self.predefinedFormation > 0 then
+    -- Debug: print to verify formation is detected
+    print("DEBUG: Formation detected with", #self.predefinedFormation, "slots")
+    
+    -- Use stored playfield dimensions if available (more reliable than current width/height)
+    -- Otherwise fall back to current dimensions
+    local formationWidth = self.playfieldWidth or width
+    local formationHeight = self.playfieldHeight or height
+    
+    print("DEBUG: Formation dimensions:", formationWidth, "x", formationHeight, "Current:", width, "x", height)
+    
+    -- Calculate playfield bounds (matching loadPredefinedFormation exactly)
+    local playfieldX = margin
+    local playfieldY = margin
+    local playfieldW = formationWidth - 2 * margin
+    local playfieldH = formationHeight * 0.6 - margin
+    
+    print("DEBUG: Playfield bounds:", playfieldX, playfieldY, playfieldW, "x", playfieldH)
+    print("DEBUG: Alive blocks count:", #self:aliveBlocks())
+    
+    -- Tolerance for checking if a position matches a formation slot (in normalized coordinates)
+    local tolerance = 0.02 -- 2% of playfield size (roughly ~25 pixels)
+    
+    -- Helper to check if a world position matches a formation slot
+    local function isFormationSlot(worldX, worldY)
+      local normX = (worldX - playfieldX) / playfieldW
+      local normY = (worldY - playfieldY) / playfieldH
+      
+      for _, slot in ipairs(self.predefinedFormation) do
+        local dx = math.abs(normX - slot.x)
+        local dy = math.abs(normY - slot.y)
+        if dx <= tolerance and dy <= tolerance then
+          return true, slot
+        end
+      end
+      return false, nil
+    end
+    
+    -- Helper to check if a formation slot is currently occupied
+    -- Check all alive blocks directly for more reliable detection
+    local function isSlotOccupied(slot)
+      local worldX = playfieldX + slot.x * playfieldW
+      local worldY = playfieldY + slot.y * playfieldH
+      
+      -- Convert slot position to normalized coordinates for comparison
+      local slotNormX = slot.x
+      local slotNormY = slot.y
+      
+      -- Tolerance in normalized coordinates (more reliable than pixels)
+      -- Increased tolerance to account for physics movement and dimension differences
+      local normTolerance = 0.05 -- 5% of playfield size (more lenient)
+      
+      -- Check all alive blocks directly
+      for _, block in ipairs(self.blocks) do
+        if block and block.alive then
+          -- Try to get block center position
+          local blockCenterX, blockCenterY = nil, nil
+          
+          -- Method 1: Use cx/cy if available
+          if block.cx and block.cy then
+            blockCenterX = block.cx
+            blockCenterY = block.cy
+          -- Method 2: Calculate from AABB
+          elseif type(block.getAABB) == "function" then
+            local bx, by, bw, bh = block:getAABB()
+            if bx and by and bw and bh then
+              blockCenterX = bx + bw * 0.5
+              blockCenterY = by + bh * 0.5
+            end
+          -- Method 3: Calculate from placement AABB
+          elseif type(block.getPlacementAABB) == "function" then
+            local bx, by, bw, bh = block:getPlacementAABB()
+            if bx and by and bw and bh then
+              blockCenterX = bx + bw * 0.5
+              blockCenterY = by + bh * 0.5
+            end
+          end
+          
+          -- Check if block is at this slot position
+          if blockCenterX and blockCenterY then
+            -- Convert block position back to normalized coordinates
+            local blockNormX = (blockCenterX - playfieldX) / playfieldW
+            local blockNormY = (blockCenterY - playfieldY) / playfieldH
+            
+            -- Check distance in normalized space
+            local dx = math.abs(blockNormX - slotNormX)
+            local dy = math.abs(blockNormY - slotNormY)
+            
+            -- More lenient tolerance - blocks can move slightly due to physics
+            if dx <= normTolerance and dy <= normTolerance then
+              return true -- Slot is occupied
+            end
+          end
+        end
+      end
+      
+      return false -- Slot is empty
+    end
+    
+    -- Find empty formation slots and fill them first
+    local emptySlots = {}
+    local occupiedCount = 0
+    for _, slot in ipairs(self.predefinedFormation) do
+      if not isSlotOccupied(slot) then
+        table.insert(emptySlots, slot)
+      else
+        occupiedCount = occupiedCount + 1
+      end
+    end
+    print("DEBUG: Occupied slots:", occupiedCount, "Empty slots:", #emptySlots)
+    
+    -- Debug: print empty slots found
+    print("DEBUG: Found", #emptySlots, "empty slots out of", #self.predefinedFormation, "total slots")
+    print("DEBUG: Need to spawn", remaining, "blocks")
+    
+    -- Shuffle empty slots for random order
+    for i = #emptySlots, 2, -1 do
+      local j = love.math.random(i)
+      emptySlots[i], emptySlots[j] = emptySlots[j], emptySlots[i]
+    end
+    
+    -- Fill empty formation slots (up to remaining count)
+    local slotsToFill = math.min(remaining, #emptySlots)
+    print("DEBUG: Will fill", slotsToFill, "formation slots")
+    for i = 1, slotsToFill do
+      local slot = emptySlots[i]
+      local worldX = playfieldX + slot.x * playfieldW
+      local worldY = playfieldY + slot.y * playfieldH
+      
+      -- Clamp to ensure blocks stay within bounds (use formation dimensions)
+      local halfVis = visSize * 0.5
+      worldX = math.max(margin + halfVis, math.min(formationWidth - margin - halfVis, worldX))
+      worldY = math.max(margin + halfVis, math.min(formationHeight * 0.6 - halfVis, worldY))
+      
+      -- Use random kind for respawned blocks (or keep original kind - user's choice)
+      -- Using random kind for variety
+      local kind
+      do
+        local r = love.math.random()
+        local critR = (config.blocks and config.blocks.critSpawnRatio) or 0
+        local armorR = (config.blocks and config.blocks.armorSpawnRatio) or 0
+        critR = math.max(0, math.min(1, critR))
+        armorR = math.max(0, math.min(1, armorR))
+        if r < critR then
+          kind = "crit"
+        elseif r < critR + armorR then
+          kind = "armor"
+        else
+          kind = "damage"
+        end
+      end
+      
+      -- Double-check no overlap - use the same method as isSlotOccupied for consistency
+      -- Check all alive blocks to see if any are actually at this position
+      local overlap = false
+      local slotNormX = slot.x
+      local slotNormY = slot.y
+      local normTolerance = 0.05
+      
+      for _, b in ipairs(self.blocks) do
+        if b and b.alive then
+          local blockCenterX, blockCenterY = nil, nil
+          
+          if b.cx and b.cy then
+            blockCenterX = b.cx
+            blockCenterY = b.cy
+          elseif type(b.getAABB) == "function" then
+            local bx, by, bw, bh = b:getAABB()
+            if bx and by and bw and bh then
+              blockCenterX = bx + bw * 0.5
+              blockCenterY = by + bh * 0.5
+            end
+          elseif type(b.getPlacementAABB) == "function" then
+            local bx, by, bw, bh = b:getPlacementAABB()
+            if bx and by and bw and bh then
+              blockCenterX = bx + bw * 0.5
+              blockCenterY = by + bh * 0.5
+            end
+          end
+          
+          if blockCenterX and blockCenterY then
+            local blockNormX = (blockCenterX - playfieldX) / playfieldW
+            local blockNormY = (blockCenterY - playfieldY) / playfieldH
+            local dx = math.abs(blockNormX - slotNormX)
+            local dy = math.abs(blockNormY - slotNormY)
+            if dx <= normTolerance and dy <= normTolerance then
+              overlap = true
+              break
+            end
+          end
+        end
+      end
+      
+      if not overlap then
+        local block = Block.new(world, worldX, worldY, 1, kind, { animateSpawn = true, spawnDelay = 0 })
+        table.insert(self.blocks, block)
+        table.insert(newBlocks, block)
+        addToGrid(block)
+        remaining = remaining - 1
+        print("DEBUG: Placed block at formation slot", i, "position", worldX, worldY, "kind", kind)
+      else
+        print("DEBUG: WARNING - Overlap detected at slot", i, "position", worldX, worldY, "slot norm:", slotNormX, slotNormY)
+      end
+    end
+  end
+
+  -- Try to place clusters if enabled and we still have blocks to place
+  if clusteringEnabled and remaining > 0 then
     while remaining >= minRemainingForCluster do
       -- Choose a cluster size that fits within remaining blocks
       local validSizes = {}
