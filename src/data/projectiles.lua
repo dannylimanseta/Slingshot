@@ -63,51 +63,6 @@ projectiles.data = {
     },
     description = "Two projectiles that mirror each other's trajectory."
   },
-  {
-    id = "power_shot",
-    name = "Power Shot",
-    rarity = projectiles.Rarity.EPIC,
-    level = 1,
-    baseDamage = 8,
-    icon = "assets/images/ball_1.png", -- reusing sprite for demo
-    stats = {
-      "High damage projectile",
-      "Deals 8 damage",
-      "Bounces 3 times",
-      "Slower fire rate"
-    },
-    description = "A powerful single shot that deals massive damage."
-  },
-  {
-    id = "wide_spread",
-    name = "Wide Spread",
-    rarity = projectiles.Rarity.RARE,
-    level = 1,
-    baseDamage = 2,
-    icon = "assets/images/ball_2.png", -- using spread shot sprite
-    stats = {
-      "Fires 5 projectiles",
-      "Each bounces 3 times",
-      "Wide cone spread",
-      "Lower damage per hit"
-    },
-    description = "An improved spread shot that fires more projectiles."
-  },
-  {
-    id = "triple_strike",
-    name = "Triple Strike",
-    rarity = projectiles.Rarity.EPIC,
-    level = 1,
-    baseDamage = 5,
-    icon = "assets/images/ball_3.png", -- same sprite as Twin Strike
-    stats = {
-      "Fires 3 mirrored projectiles",
-      "Deals 5 damage each",
-      "Bounces 4 times",
-      "Wider mirror spread"
-    },
-    description = "Three projectiles that mirror across the center axis."
-  },
 }
 
 -- Helper function to get projectile by ID
