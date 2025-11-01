@@ -10,6 +10,8 @@ config.video = {
 config.playfield = {
   margin = 24, -- pixels from window edges for spawning blocks
   centerWidthFactor = 0.4, -- center playfield width as fraction of screen (reduced by 20% from 0.5)
+  maxHeightFactor = 0.6, -- maximum playfield height as fraction of screen height (increased from 0.6 to reduce occlusion)
+  horizontalSpacingFactor = 1.15, -- factor to scale horizontal spacing (1.15 = 115% of playfield width, increasing spacing between blocks)
 }
 
 config.ball = {
@@ -98,7 +100,7 @@ config.blocks = {
   -- Grid snapping for formation editor
   gridSnap = {
     enabled = true,
-    cellSize = 32, -- pixels per grid cell
+    cellSize = 36, -- pixels per grid cell (increased from 32 for better spacing)
     showGrid = false, -- show grid visually (toggle with G key)
   },
   -- Spawn animation for newly added blocks

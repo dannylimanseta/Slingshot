@@ -38,6 +38,7 @@ function FormationEditorScene.new()
     playfieldY = 0,
     playfieldW = 0,
     playfieldH = 0,
+    actualPlayfieldW = 0, -- Actual breakout area width (matches game exactly, without spacing factor)
     -- Mouse tracking
     mouseX = 0,
     mouseY = 0,
@@ -53,19 +54,31 @@ function FormationEditorScene.new()
 end
 
 function FormationEditorScene:load()
-  -- Calculate playfield bounds (matching GameplayScene)
-  local width = config.video.virtualWidth
-  local height = config.video.virtualHeight
+  -- Calculate playfield bounds exactly matching BlockManager:loadPredefinedFormation
+  -- BlockManager receives the center canvas width directly from GameplayScene
+  -- Use LayoutManager to get exact same dimensions as SplitScene uses
+  local LayoutManager = require("managers.LayoutManager")
+  local layoutManager = LayoutManager.new()
+  
+  -- Use love.graphics.getDimensions() to match SplitScene exactly
+  local w, h = love.graphics.getDimensions()
   local margin = config.playfield.margin
-  local centerWidthFactor = config.playfield.centerWidthFactor
   
-  local centerW = width * centerWidthFactor
-  local centerX = (width - centerW) * 0.5
+  -- Get center rect using LayoutManager (matches SplitScene exactly)
+  local centerRect = layoutManager:getCenterRect(w, h)
+  local centerW = centerRect.w -- This is math.floor(w * centerWidthFactor)
+  local centerX = centerRect.x -- This is math.floor((w - centerW) * 0.5)
   
-  self.playfieldX = centerX + margin
+  -- Match BlockManager exactly: it receives centerW as width and h as height
+  -- BlockManager calculates: playfieldX = margin, playfieldY = margin
+  -- playfieldW = width - 2 * margin, playfieldH = height * maxHeightFactor - margin
+  -- Where width = centerW and height = h (full screen height)
+  local maxHeightFactor = (config.playfield and config.playfield.maxHeightFactor) or 0.65
+  self.playfieldX = centerX + margin -- Offset by centerX to position on screen
   self.playfieldY = margin
-  self.playfieldW = centerW - 2 * margin
-  self.playfieldH = height * 0.6 - margin -- Use same maxFrac as random placement
+  self.playfieldW = centerW - 2 * margin -- Use center canvas width, not full screen width
+  self.actualPlayfieldW = self.playfieldW -- Store actual breakout area width (matches game exactly)
+  self.playfieldH = h * maxHeightFactor - margin -- Use same height and maxHeightFactor as BlockManager
   
   -- Load existing formation for current battle type
   self:loadFormation()
@@ -86,8 +99,13 @@ function FormationEditorScene:update(dt)
   local blockSize = config.blocks.baseSize * scaleMul
   local halfSize = blockSize * 0.5
   
+  -- Apply horizontal spacing factor to match BlockManager
+  local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+  local effectivePlayfieldW = self.playfieldW * horizontalSpacingFactor
+  local playfieldXOffset = self.playfieldW * (1 - horizontalSpacingFactor) * 0.5
+  
   for i, block in ipairs(self.blocks) do
-    local bx = self.playfieldX + block.x * self.playfieldW
+    local bx = self.playfieldX + playfieldXOffset + block.x * effectivePlayfieldW
     local by = self.playfieldY + block.y * self.playfieldH
     local dx = math.abs(self.mouseX - bx)
     local dy = math.abs(self.mouseY - by)
@@ -99,17 +117,16 @@ function FormationEditorScene:update(dt)
 end
 
 function FormationEditorScene:draw()
-  local width = config.video.virtualWidth
-  local height = config.video.virtualHeight
+  local width, height = love.graphics.getDimensions()
   
   -- Background
   love.graphics.setColor(0.05, 0.05, 0.08, 1)
   love.graphics.rectangle("fill", 0, 0, width, height)
   
-  -- Draw playfield bounds
+  -- Draw playfield bounds (show actual breakout area width, matching game exactly)
   love.graphics.setColor(0.2, 0.2, 0.3, 1)
   love.graphics.setLineWidth(2)
-  love.graphics.rectangle("line", self.playfieldX, self.playfieldY, self.playfieldW, self.playfieldH)
+  love.graphics.rectangle("line", self.playfieldX, self.playfieldY, self.actualPlayfieldW, self.playfieldH)
   
   -- Draw grid if enabled
   if config.blocks.gridSnap.showGrid then
@@ -120,8 +137,13 @@ function FormationEditorScene:draw()
   local scaleMul = config.blocks.spriteScale or 1
   local blockSize = config.blocks.baseSize * scaleMul
   
+  -- Apply horizontal spacing factor to match BlockManager
+  local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+  local effectivePlayfieldW = self.playfieldW * horizontalSpacingFactor
+  local playfieldXOffset = self.playfieldW * (1 - horizontalSpacingFactor) * 0.5
+  
   for i, block in ipairs(self.blocks) do
-    local bx = self.playfieldX + block.x * self.playfieldW
+    local bx = self.playfieldX + playfieldXOffset + block.x * effectivePlayfieldW
     local by = self.playfieldY + block.y * self.playfieldH
     
     -- Highlight selected block (stronger than hover)
@@ -153,9 +175,23 @@ function FormationEditorScene:draw()
       normX, normY = self:snapToGrid(normX, normY)
     end
     
-    local previewX = self.playfieldX + normX * self.playfieldW
+    local previewX = self.playfieldX + playfieldXOffset + normX * effectivePlayfieldW
     local previewY = self.playfieldY + normY * self.playfieldH
-    love.graphics.setColor(1, 1, 1, 0.5)
+    
+    -- Check if preview block would exceed actual playfield bounds
+    local halfSize = blockSize * 0.5
+    local blockLeft = previewX - halfSize
+    local blockRight = previewX + halfSize
+    local actualPlayfieldLeft = self.playfieldX
+    local actualPlayfieldRight = self.playfieldX + self.actualPlayfieldW
+    local canPlace = blockLeft >= actualPlayfieldLeft and blockRight <= actualPlayfieldRight
+    
+    -- Draw preview with color indicating if placement is allowed
+    if canPlace then
+      love.graphics.setColor(1, 1, 1, 0.5)
+    else
+      love.graphics.setColor(1, 0.3, 0.3, 0.5) -- Red tint if cannot place
+    end
     self:drawBlock(previewX, previewY, self.currentBlockType, blockSize)
   end
   
@@ -179,7 +215,11 @@ function FormationEditorScene:drawBlock(x, y, kind, size)
   
   if sprite then
     local iw, ih = sprite:getWidth(), sprite:getHeight()
-    local s = size / math.max(1, math.max(iw, ih))
+    -- Match Block:draw() exactly: s = self.size / max(iw, ih), then s = s * spriteScale
+    local baseSize = config.blocks.baseSize
+    local s = baseSize / math.max(1, math.max(iw, ih))
+    local mul = (config.blocks and config.blocks.spriteScale) or 1
+    s = s * mul
     local dx = x - iw * s * 0.5
     local dy = y - ih * s * 0.5
     love.graphics.setColor(1, 1, 1, 1)
@@ -286,15 +326,42 @@ function FormationEditorScene:mousepressed(x, y, button)
           normX, normY = self:snapToGrid(normX, normY)
         end
         
-        table.insert(self.blocks, {
-          x = normX,
-          y = normY,
-          kind = self.currentBlockType,
-          hp = 1
-        })
-        self:showStatus("Block placed")
-        -- Clear selection after placing
-        self.selectedBlockIndex = nil
+        -- Check if block would exceed actual playfield bounds
+        local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+        local effectivePlayfieldW = self.playfieldW * horizontalSpacingFactor
+        local playfieldXOffset = self.playfieldW * (1 - horizontalSpacingFactor) * 0.5
+        local blockX = self.playfieldX + playfieldXOffset + normX * effectivePlayfieldW
+        local blockY = self.playfieldY + normY * self.playfieldH
+        
+        -- Calculate block size for bounds checking
+        local scaleMul = config.blocks.spriteScale or 1
+        local blockSize = config.blocks.baseSize * scaleMul
+        local halfSize = blockSize * 0.5
+        
+        -- Check if block fits within actual playfield bounds (horizontal and vertical)
+        local blockLeft = blockX - halfSize
+        local blockRight = blockX + halfSize
+        local blockTop = blockY - halfSize
+        local blockBottom = blockY + halfSize
+        local actualPlayfieldLeft = self.playfieldX
+        local actualPlayfieldRight = self.playfieldX + self.actualPlayfieldW
+        local actualPlayfieldTop = self.playfieldY
+        local actualPlayfieldBottom = self.playfieldY + self.playfieldH
+        
+        if blockLeft >= actualPlayfieldLeft and blockRight <= actualPlayfieldRight and
+           blockTop >= actualPlayfieldTop and blockBottom <= actualPlayfieldBottom then
+          table.insert(self.blocks, {
+            x = normX,
+            y = normY,
+            kind = self.currentBlockType,
+            hp = 1
+          })
+          self:showStatus("Block placed")
+          -- Clear selection after placing
+          self.selectedBlockIndex = nil
+        else
+          self:showStatus("Cannot place block: exceeds playfield bounds")
+        end
       end
     else
       -- Click outside playfield: clear selection
@@ -365,13 +432,18 @@ function FormationEditorScene:keypressed(key, scancode, isRepeat)
 end
 
 function FormationEditorScene:isMouseInPlayfield()
-  return self.mouseX >= self.playfieldX and self.mouseX <= self.playfieldX + self.playfieldW and
+  -- Check if mouse is within actual breakout area bounds (matching game exactly)
+  return self.mouseX >= self.playfieldX and self.mouseX <= self.playfieldX + self.actualPlayfieldW and
          self.mouseY >= self.playfieldY and self.mouseY <= self.playfieldY + self.playfieldH
 end
 
 function FormationEditorScene:screenToNormalizedX(screenX)
-  local relativeX = screenX - self.playfieldX
-  return math.max(0, math.min(1, relativeX / self.playfieldW))
+  -- Account for horizontal spacing factor when converting screen to normalized coordinates
+  local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+  local effectivePlayfieldW = self.playfieldW * horizontalSpacingFactor
+  local playfieldXOffset = self.playfieldW * (1 - horizontalSpacingFactor) * 0.5
+  local relativeX = screenX - (self.playfieldX + playfieldXOffset)
+  return math.max(0, math.min(1, relativeX / effectivePlayfieldW))
 end
 
 function FormationEditorScene:screenToNormalizedY(screenY)
@@ -385,39 +457,68 @@ function FormationEditorScene:showStatus(message)
 end
 
 function FormationEditorScene:snapToGrid(normX, normY)
-  -- Convert normalized coordinates to screen pixels
-  local screenX = self.playfieldX + normX * self.playfieldW
+  -- Account for horizontal spacing factor
+  local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+  local effectivePlayfieldW = self.playfieldW * horizontalSpacingFactor
+  local playfieldXOffset = self.playfieldW * (1 - horizontalSpacingFactor) * 0.5
+  local effectivePlayfieldX = self.playfieldX + playfieldXOffset
+  
+  -- Convert normalized coordinates to screen pixels (using effective playfield)
+  local screenX = effectivePlayfieldX + normX * effectivePlayfieldW
   local screenY = self.playfieldY + normY * self.playfieldH
   
-  -- Snap to grid
+  -- Calculate centered grid position (matching drawGrid)
   local cellSize = config.blocks.gridSnap.cellSize
-  local snappedX = math.floor((screenX - self.playfieldX) / cellSize + 0.5) * cellSize
+  local numCells = math.floor(effectivePlayfieldW / cellSize)
+  local gridWidth = numCells * cellSize
+  local gridOffset = (effectivePlayfieldW - gridWidth) * 0.5
+  local gridStartX = effectivePlayfieldX + gridOffset
+  
+  -- Snap to centered grid (no clamping - placement will be prevented if out of bounds)
+  local snappedX = math.floor((screenX - gridStartX) / cellSize + 0.5) * cellSize
   local snappedY = math.floor((screenY - self.playfieldY) / cellSize + 0.5) * cellSize
   
-  -- Clamp to playfield bounds
-  snappedX = math.max(0, math.min(self.playfieldW, snappedX))
-  snappedY = math.max(0, math.min(self.playfieldH, snappedY))
+  -- Convert snapped position to absolute screen coordinates (snappedX is relative to gridStartX)
+  local absoluteX = gridStartX + snappedX
+  local absoluteY = self.playfieldY + snappedY
   
-  -- Convert back to normalized coordinates
-  local snappedNormX = snappedX / self.playfieldW
+  -- Convert back to relative position (relative to effectivePlayfieldX for normalization)
+  snappedX = absoluteX - effectivePlayfieldX
+  snappedY = absoluteY - self.playfieldY
+  
+  -- Convert back to normalized coordinates (using effective playfield width)
+  local snappedNormX = snappedX / effectivePlayfieldW
   local snappedNormY = snappedY / self.playfieldH
   
   return snappedNormX, snappedNormY
 end
 
 function FormationEditorScene:drawGrid()
+  -- Draw grid centered horizontally to match block placement
+  -- Blocks are placed within effective playfield bounds (with horizontal spacing factor)
+  local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+  local effectivePlayfieldW = self.playfieldW * horizontalSpacingFactor
+  local playfieldXOffset = self.playfieldW * (1 - horizontalSpacingFactor) * 0.5
+  local effectivePlayfieldX = self.playfieldX + playfieldXOffset
+  
   local cellSize = config.blocks.gridSnap.cellSize
   love.graphics.setColor(0.3, 0.3, 0.4, 0.3)
   love.graphics.setLineWidth(1)
   
-  -- Draw vertical lines
-  local startX = self.playfieldX
-  local endX = self.playfieldX + self.playfieldW
+  -- Center the grid horizontally within the effective playfield
+  -- Calculate how many full cells fit in the effective playfield width
+  local numCells = math.floor(effectivePlayfieldW / cellSize)
+  local gridWidth = numCells * cellSize
+  local gridOffset = (effectivePlayfieldW - gridWidth) * 0.5
+  local gridStartX = effectivePlayfieldX + gridOffset
+  local gridEndX = gridStartX + gridWidth
+  
   local y1 = self.playfieldY
   local y2 = self.playfieldY + self.playfieldH
   
-  local x = startX
-  while x <= endX do
+  -- Draw vertical lines (centered within effective playfield bounds)
+  local x = gridStartX
+  while x <= gridEndX do
     love.graphics.line(x, y1, x, y2)
     x = x + cellSize
   end
@@ -428,7 +529,7 @@ function FormationEditorScene:drawGrid()
   
   local y = startY
   while y <= endY do
-    love.graphics.line(startX, y, endX, y)
+    love.graphics.line(gridStartX, y, gridEndX, y)
     y = y + cellSize
   end
 end

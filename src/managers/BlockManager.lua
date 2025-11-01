@@ -331,7 +331,8 @@ function BlockManager:loadPredefinedFormation(world, width, height, predefined)
   local playfieldX = margin
   local playfieldY = margin
   local playfieldW = width - 2 * margin
-  local playfieldH = height * 0.6 - margin -- Use same maxFrac as random placement
+  local maxHeightFactor = (config.playfield and config.playfield.maxHeightFactor) or 0.65
+  local playfieldH = height * maxHeightFactor - margin -- Use configurable maxHeightFactor
   
   local staggerDelay = (config.blocks.spawnAnim and config.blocks.spawnAnim.staggerDelay) or 0.03
   local blockIndex = 0
@@ -348,16 +349,22 @@ function BlockManager:loadPredefinedFormation(world, width, height, predefined)
   local soulBlockIndex = nil
   
   -- Place predefined blocks
+  -- Apply horizontal spacing factor to spread blocks out more
+  local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+  local effectivePlayfieldW = playfieldW * horizontalSpacingFactor
+  local playfieldXOffset = playfieldW * (1 - horizontalSpacingFactor) * 0.5 -- Center the scaled area
+  
   for i, blockDef in ipairs(predefined) do
     if blockDef and type(blockDef) == "table" and blockDef.x and blockDef.y then
-      -- Convert normalized coordinates to world coordinates
-      local worldX = playfieldX + blockDef.x * playfieldW
+      -- Convert normalized coordinates to world coordinates with horizontal spacing
+      local worldX = playfieldX + playfieldXOffset + blockDef.x * effectivePlayfieldW
       local worldY = playfieldY + blockDef.y * playfieldH
       
       -- Clamp to ensure blocks stay within bounds
       local halfVis = visSize * 0.5
+      local maxHeightFactor = (config.playfield and config.playfield.maxHeightFactor) or 0.65
       worldX = math.max(margin + halfVis, math.min(width - margin - halfVis, worldX))
-      worldY = math.max(margin + halfVis, math.min(height * 0.6 - halfVis, worldY))
+      worldY = math.max(margin + halfVis, math.min(height * maxHeightFactor - halfVis, worldY))
       
       -- Determine block kind and HP
       local kind = blockDef.kind or "damage"
@@ -381,15 +388,13 @@ function BlockManager:loadPredefinedFormation(world, width, height, predefined)
     end
   end
   
-  -- If no soul block was predefined, spawn one at the center
+  -- Only auto-spawn soul block for random formations, not user-defined formations
+  -- User-defined formations should respect exactly what the user placed
   if not soulBlockIndex and centerX and centerY then
-    self.firstClusterCenter = {x = centerX, y = centerY}
-    if not self.soulBlockSpawned then
-      local soulBlock = self:spawnSoulBlock(world)
-      if soulBlock then
-        self.soulBlockSpawned = true
-      end
-    end
+    -- Check if this is a user-defined formation (has predefined blocks)
+    -- If user explicitly created a formation without a soul block, respect that choice
+    -- Only auto-spawn for random formations (handled in randomize function)
+    self.soulBlockSpawned = false -- Don't auto-spawn, respect user's formation
   else
     self.soulBlockSpawned = true -- Already has soul block
   end
@@ -409,7 +414,7 @@ function BlockManager:randomize(world, width, height, overrideConfig)
 
   local size = config.blocks.baseSize
   local visSize = size * scaleMul
-  local maxFrac = 0.6
+  local maxFrac = (config.playfield and config.playfield.maxHeightFactor) or 0.65
   
   -- Apply override config if provided
   local clusteringEnabled = (config.blocks.clustering and config.blocks.clustering.enabled) or false
@@ -520,7 +525,7 @@ function BlockManager:addRandomBlocks(world, width, height, count)
 
   local size = config.blocks.baseSize
   local visSize = size * scaleMul
-  local maxFrac = 0.6
+  local maxFrac = (config.playfield and config.playfield.maxHeightFactor) or 0.65
   
   local clusteringEnabled = (config.blocks.clustering and config.blocks.clustering.enabled) or false
   local clusterSizes = (config.blocks.clustering and config.blocks.clustering.clusterSizes) or {9, 12}
@@ -540,7 +545,8 @@ function BlockManager:addRandomBlocks(world, width, height, count)
     local playfieldX = margin
     local playfieldY = margin
     local playfieldW = formationWidth - 2 * margin
-    local playfieldH = formationHeight * 0.6 - margin
+    local maxHeightFactor = (config.playfield and config.playfield.maxHeightFactor) or 0.65
+    local playfieldH = formationHeight * maxHeightFactor - margin
     
     -- Tolerance for checking if a position matches a formation slot (in normalized coordinates)
     local tolerance = 0.02 -- 2% of playfield size (roughly ~25 pixels)
@@ -562,8 +568,12 @@ function BlockManager:addRandomBlocks(world, width, height, count)
     
     -- Helper to check if a formation slot is currently occupied
     -- Check all alive blocks directly for more reliable detection
+    local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+    local effectivePlayfieldW = playfieldW * horizontalSpacingFactor
+    local playfieldXOffset = playfieldW * (1 - horizontalSpacingFactor) * 0.5
+    
     local function isSlotOccupied(slot)
-      local worldX = playfieldX + slot.x * playfieldW
+      local worldX = playfieldX + playfieldXOffset + slot.x * effectivePlayfieldW
       local worldY = playfieldY + slot.y * playfieldH
       
       -- Convert slot position to normalized coordinates for comparison
@@ -640,15 +650,20 @@ function BlockManager:addRandomBlocks(world, width, height, count)
     
     -- Fill empty formation slots (up to remaining count)
     local slotsToFill = math.min(remaining, #emptySlots)
+    local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+    local effectivePlayfieldW = playfieldW * horizontalSpacingFactor
+    local playfieldXOffset = playfieldW * (1 - horizontalSpacingFactor) * 0.5
+    
     for i = 1, slotsToFill do
       local slot = emptySlots[i]
-      local worldX = playfieldX + slot.x * playfieldW
+      local worldX = playfieldX + playfieldXOffset + slot.x * effectivePlayfieldW
       local worldY = playfieldY + slot.y * playfieldH
       
       -- Clamp to ensure blocks stay within bounds (use formation dimensions)
       local halfVis = visSize * 0.5
+      local maxHeightFactor = (config.playfield and config.playfield.maxHeightFactor) or 0.65
       worldX = math.max(margin + halfVis, math.min(formationWidth - margin - halfVis, worldX))
-      worldY = math.max(margin + halfVis, math.min(formationHeight * 0.6 - halfVis, worldY))
+      worldY = math.max(margin + halfVis, math.min(formationHeight * maxHeightFactor - halfVis, worldY))
       
       -- Use random kind for respawned blocks (or keep original kind - user's choice)
       -- Using random kind for variety
