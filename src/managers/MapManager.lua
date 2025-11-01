@@ -8,6 +8,8 @@ MapManager.TileType = {
   STONE = "stone",
   ENEMY = "enemy",
   REST = "rest",
+  TREASURE = "treasure",
+  EVENT = "event",
 }
 
 function MapManager.new()
@@ -23,6 +25,8 @@ function MapManager.new()
     playerTargetGridY = nil,
     sprites = {}, -- cached sprites
     seed = nil, -- random seed for generation
+    _pendingTreasureX = nil, -- treasure position when moving to protecting enemy
+    _pendingTreasureY = nil,
   }, MapManager)
 end
 
@@ -46,6 +50,8 @@ function MapManager:loadSprites()
     },
     enemy = love.graphics.newImage("assets/images/map/enemy_1.png"),
     rest = love.graphics.newImage("assets/images/map/rest_1.png"),
+    treasure = love.graphics.newImage("assets/images/map/treasure_1.png"),
+    event = love.graphics.newImage("assets/images/map/event_1.png"),
   }
 end
 
@@ -88,7 +94,7 @@ end
 function MapManager:isTraversable(x, y)
   local tile = self:getTile(x, y)
   if not tile then return false end
-  return tile.type == MapManager.TileType.GROUND or tile.type == MapManager.TileType.ENEMY or tile.type == MapManager.TileType.REST
+  return tile.type == MapManager.TileType.GROUND or tile.type == MapManager.TileType.ENEMY or tile.type == MapManager.TileType.REST or tile.type == MapManager.TileType.TREASURE or tile.type == MapManager.TileType.EVENT
 end
 
 -- Count neighbors of a specific type (4-directional)
@@ -395,6 +401,12 @@ function MapManager:generateMap(width, height, seed)
   
   -- Step 8: Place enemies
   self:placeEnemies()
+  
+  -- Step 9: Place treasures (some protected by enemies)
+  self:placeTreasures()
+  
+  -- Step 10: Place events (more common than treasures)
+  self:placeEvents()
 end
 
 -- Place trees and stones as obstacles (non-traversable)
@@ -500,10 +512,33 @@ end
 function MapManager:placeRestNodes()
   local config = require("config")
   local gen = config.map.generation
-  local restAttempts = math.floor(self.gridWidth * self.gridHeight * (gen.restDensity or 0.01))
+  local minRests = gen.minRests or 2
+  local maxRests = gen.maxRests or 6
   local minSpacing = (gen.minRestSpacing or 4)
   
+  -- Collect all valid rest positions
+  local candidatePositions = {}
+  for y = 1, self.gridHeight do
+    for x = 1, self.gridWidth do
+      local tile = self:getTile(x, y)
+      if tile and tile.type == MapManager.TileType.GROUND then
+        local distFromPlayer = math.abs(x - self.playerGridX) + math.abs(y - self.playerGridY)
+        if distFromPlayer >= (gen.minRestDistanceFromPlayer or 5) then
+          table.insert(candidatePositions, {x, y})
+        end
+      end
+    end
+  end
+  
+  -- Shuffle candidates
+  for i = #candidatePositions, 2, -1 do
+    local j = self:random(1, i)
+    candidatePositions[i], candidatePositions[j] = candidatePositions[j], candidatePositions[i]
+  end
+  
   local placed = {}
+  local targetRestCount = math.min(maxRests, #candidatePositions)
+  targetRestCount = math.max(targetRestCount, math.min(minRests, #candidatePositions))
   
   local function tooCloseToOtherRest(x, y)
     for i = 1, #placed do
@@ -515,20 +550,20 @@ function MapManager:placeRestNodes()
     return false
   end
   
-  for i = 1, restAttempts do
-    local x = self:random(1, self.gridWidth)
-    local y = self:random(1, self.gridHeight)
+  for i = 1, #candidatePositions do
+    if #placed >= targetRestCount then
+      break
+    end
     
-    -- Must be ground and not too close to existing rests or player
+    local x, y = candidatePositions[i][1], candidatePositions[i][2]
     local tile = self:getTile(x, y)
+    
+    -- Must be ground and not too close to existing rests
     if tile and tile.type == MapManager.TileType.GROUND then
       if not tooCloseToOtherRest(x, y) then
-        local distFromPlayer = math.abs(x - self.playerGridX) + math.abs(y - self.playerGridY)
-        if distFromPlayer >= (gen.minRestDistanceFromPlayer or 5) then
-          -- Place rest
-          tile.type = MapManager.TileType.REST
-          table.insert(placed, {x, y})
-        end
+        -- Place rest
+        tile.type = MapManager.TileType.REST
+        table.insert(placed, {x, y})
       end
     end
   end
@@ -653,16 +688,20 @@ function MapManager:placeEnemies()
   end
   
   -- Place enemies with minimum spacing
-  local enemyCount = math.min(
+  local minEnemies = genConfig.minEnemies or 12
+  local maxEnemies = genConfig.maxEnemies or 25
+  local targetEnemyCount = math.min(
     math.floor(#candidatePositions * genConfig.enemyDensity),
-    genConfig.maxEnemies
+    maxEnemies
   )
+  -- Ensure we meet minimum if possible
+  targetEnemyCount = math.max(targetEnemyCount, math.min(minEnemies, #candidatePositions))
   
   local placedEnemies = {}
   local minEnemySpacing = genConfig.minEnemySpacing or 3
   
   for i = 1, #candidatePositions do
-    if #placedEnemies >= enemyCount then
+    if #placedEnemies >= targetEnemyCount then
       break
     end
     
@@ -695,6 +734,517 @@ function MapManager:placeEnemies()
     local ex, ey = enemyPos[1], enemyPos[2]
     if not self:isReachableFromStart(ex, ey) then
       -- Carve a path to make this enemy accessible
+      self:ensurePathToPosition(ex, ey)
+    end
+  end
+end
+
+-- Count traversable neighbors (4-directional)
+-- For treasure placement, we only count GROUND tiles (not REST, ENEMY, TREASURE)
+-- This ensures we find true dead-ends with only ground paths
+function MapManager:countTraversableNeighbors(x, y, onlyGround)
+  onlyGround = onlyGround ~= false -- Default to true for treasure placement
+  local count = 0
+  local traversableNeighbors = {}
+  local neighbors = {
+    {x - 1, y}, -- Left
+    {x + 1, y}, -- Right
+    {x, y - 1}, -- Up
+    {x, y + 1}, -- Down
+  }
+  
+  for _, pos in ipairs(neighbors) do
+    local nx, ny = pos[1], pos[2]
+    local neighborTile = self:getTile(nx, ny)
+    if neighborTile then
+      local isCountable = false
+      if onlyGround then
+        -- Only count GROUND tiles
+        isCountable = neighborTile.type == MapManager.TileType.GROUND
+      else
+        -- Count all traversable tiles
+        isCountable = self:isTraversable(nx, ny)
+      end
+      
+      if isCountable then
+        count = count + 1
+        table.insert(traversableNeighbors, {nx, ny})
+      end
+    end
+  end
+  
+  return count, traversableNeighbors
+end
+
+-- Verify that a path tile is the ONLY way to reach a treasure position
+-- Returns true if blocking the path tile makes the treasure unreachable (meaning it's the only path)
+function MapManager:isPathTileUniqueChokepoint(treasureX, treasureY, pathX, pathY)
+  -- Temporarily block the path tile
+  local pathTile = self:getTile(pathX, pathY)
+  if not pathTile then return false end
+  
+  local originalType = pathTile.type
+  pathTile.type = MapManager.TileType.TREE -- Block it temporarily
+  
+  -- Check if treasure is still reachable from start
+  local stillReachable = self:isReachableFromStart(treasureX, treasureY)
+  
+  -- Restore original type
+  pathTile.type = originalType
+  
+  -- If NOT reachable when blocked, then this path is the ONLY way (perfect!)
+  -- If still reachable, there's another path (not a true dead-end)
+  return not stillReachable
+end
+
+-- Place treasures on the map, some protected by adjacent enemies
+-- Treasures spawn in dead-ends with only one traversable path, with enemy blocking that path
+function MapManager:placeTreasures()
+  local config = require("config")
+  local genConfig = config.map.generation
+  
+  -- First, find positions that are dead-ends (have exactly one traversable neighbor)
+  -- These are ideal for treasure placement as they naturally have only one path
+  local deadEndPositions = {}
+  for y = 1, self.gridHeight do
+    for x = 1, self.gridWidth do
+      local tile = self:getTile(x, y)
+      if tile and tile.type == MapManager.TileType.GROUND then
+        -- Check distance from start position
+        local dist = math.abs(x - self.playerGridX) + math.abs(y - self.playerGridY)
+        if dist >= (genConfig.minTreasureDistance or 6) then
+          -- Count traversable neighbors (only GROUND tiles to find true dead-ends)
+          local traversableCount, traversableNeighbors = self:countTraversableNeighbors(x, y, true) -- onlyGround = true
+          -- Only consider positions with exactly one traversable neighbor (dead-ends)
+          if traversableCount == 1 then
+            local pathTile = traversableNeighbors[1]
+            -- Verify this path tile is truly the only way to reach this position
+            if self:isPathTileUniqueChokepoint(x, y, pathTile[1], pathTile[2]) then
+              table.insert(deadEndPositions, {
+                x = x,
+                y = y,
+                pathTile = pathTile -- The single path to this position
+              })
+            end
+          end
+        end
+      end
+    end
+  end
+  
+  -- If we don't have enough dead-ends, try to create them by blocking paths
+  -- Find positions with 2 traversable neighbors and convert one to obstacle
+  if #deadEndPositions < (genConfig.maxTreasures or 8) then
+    local candidatePositions = {}
+    for y = 1, self.gridHeight do
+      for x = 1, self.gridWidth do
+        local tile = self:getTile(x, y)
+        if tile and tile.type == MapManager.TileType.GROUND then
+          local dist = math.abs(x - self.playerGridX) + math.abs(y - self.playerGridY)
+          if dist >= (genConfig.minTreasureDistance or 6) then
+            local traversableCount, traversableNeighbors = self:countTraversableNeighbors(x, y, true) -- onlyGround = true
+            -- Consider positions with 2 traversable neighbors (only counting GROUND tiles)
+            if traversableCount == 2 then
+              table.insert(candidatePositions, {
+                x = x,
+                y = y,
+                neighbors = traversableNeighbors
+              })
+            end
+          end
+        end
+      end
+    end
+    
+    -- Shuffle and try to create dead-ends
+    for i = #candidatePositions, 2, -1 do
+      local j = self:random(1, i)
+      candidatePositions[i], candidatePositions[j] = candidatePositions[j], candidatePositions[i]
+    end
+    
+    for _, candidate in ipairs(candidatePositions) do
+      if #deadEndPositions >= (genConfig.maxTreasures or 8) then
+        break
+      end
+      
+      -- Pick one neighbor to block (keep the other as the single path)
+      local neighborToBlock = candidate.neighbors[self:random(1, 2)]
+      local neighborToKeep = candidate.neighbors[1]
+      if neighborToBlock == neighborToKeep then
+        neighborToKeep = candidate.neighbors[2]
+      end
+      
+      -- Convert the neighbor to a tree/stone obstacle to create dead-end
+      local blockTile = self:getTile(neighborToBlock[1], neighborToBlock[2])
+      if blockTile and blockTile.type == MapManager.TileType.GROUND then
+        -- Temporarily block to check reachability
+        blockTile.type = MapManager.TileType.TREE
+        blockTile.decorationVariant = self:random(1, #self.sprites.tree)
+        
+        -- Verify the candidate position is still reachable via the other path
+        local stillReachable = self:isReachableFromStart(candidate.x, candidate.y)
+        if stillReachable then
+          -- Verify that the remaining path tile is truly the only way (chokepoint)
+          if self:isPathTileUniqueChokepoint(candidate.x, candidate.y, neighborToKeep[1], neighborToKeep[2]) then
+            -- Position is now a true dead-end, add it
+            table.insert(deadEndPositions, {
+              x = candidate.x,
+              y = candidate.y,
+              pathTile = neighborToKeep
+            })
+          else
+            -- There's still another path, revert the block
+            blockTile.type = MapManager.TileType.GROUND
+            blockTile.decorationVariant = nil
+          end
+        else
+          -- Revert the block if it made the position unreachable
+          blockTile.type = MapManager.TileType.GROUND
+          blockTile.decorationVariant = nil
+        end
+      end
+    end
+  end
+  
+  -- Shuffle dead-end positions
+  for i = #deadEndPositions, 2, -1 do
+    local j = self:random(1, i)
+    deadEndPositions[i], deadEndPositions[j] = deadEndPositions[j], deadEndPositions[i]
+  end
+  
+  -- Place treasures with minimum spacing
+  local minTreasures = genConfig.minTreasures or 4
+  local maxTreasures = genConfig.maxTreasures or 10
+  local treasureCount = math.min(
+    #deadEndPositions,
+    maxTreasures
+  )
+  -- Ensure we meet minimum if possible
+  treasureCount = math.max(treasureCount, math.min(minTreasures, #deadEndPositions))
+  
+  local placedTreasures = {}
+  local minTreasureSpacing = genConfig.minTreasureSpacing or 4
+  local protectionChance = genConfig.treasureProtectionChance or 0.9
+  
+  for i = 1, #deadEndPositions do
+    if #placedTreasures >= treasureCount then
+      break
+    end
+    
+    local pos = deadEndPositions[i]
+    local x, y = pos.x, pos.y
+    local tile = self:getTile(x, y)
+    
+    if tile and tile.type == MapManager.TileType.GROUND then
+      -- Check minimum spacing from other treasures
+      local tooClose = false
+      if minTreasureSpacing > 0 then
+        for _, treasurePos in ipairs(placedTreasures) do
+          local tx, ty = treasurePos.x, treasurePos.y
+          local dist = math.abs(x - tx) + math.abs(y - ty)
+          if dist < minTreasureSpacing then
+            tooClose = true
+            break
+          end
+        end
+      end
+      
+      if not tooClose then
+        -- Block all adjacent tiles except the path tile to ensure only one opening
+        local allNeighbors = {
+          {x - 1, y}, -- Left
+          {x + 1, y}, -- Right
+          {x, y - 1}, -- Up
+          {x, y + 1}, -- Down
+        }
+        
+        for _, neighborPos in ipairs(allNeighbors) do
+          local nx, ny = neighborPos[1], neighborPos[2]
+          -- Skip the path tile - that's the only opening
+          if nx ~= pos.pathTile[1] or ny ~= pos.pathTile[2] then
+            local neighborTile = self:getTile(nx, ny)
+            if neighborTile then
+              -- Block ALL traversable adjacent tiles (GROUND, REST, ENEMY) except the path
+              -- This ensures no other openings exist
+              if neighborTile.type == MapManager.TileType.GROUND or
+                 neighborTile.type == MapManager.TileType.REST or
+                 neighborTile.type == MapManager.TileType.ENEMY then
+                neighborTile.type = MapManager.TileType.TREE
+                neighborTile.decorationVariant = self:random(1, #self.sprites.tree)
+                neighborTile.decoration = nil
+                neighborTile.spriteVariant = nil
+              end
+            end
+          end
+        end
+        
+        -- Place treasure
+        tile.type = MapManager.TileType.TREASURE
+        tile.protected = false
+        tile.pathTile = { x = pos.pathTile[1], y = pos.pathTile[2] }
+        
+        -- Check if this treasure should be protected by an enemy
+        if self:randomFloat() < protectionChance then
+          -- Place enemy on the single path tile (blocking the only way to treasure)
+          local pathX, pathY = pos.pathTile[1], pos.pathTile[2]
+          local pathTile = self:getTile(pathX, pathY)
+          
+          if pathTile and pathTile.type == MapManager.TileType.GROUND then
+            -- Check if there's already an enemy nearby (don't stack)
+            local hasNearbyEnemy = false
+            for dy = -1, 1 do
+              for dx = -1, 1 do
+                if dx ~= 0 or dy ~= 0 then
+                  local checkTile = self:getTile(pathX + dx, pathY + dy)
+                  if checkTile and checkTile.type == MapManager.TileType.ENEMY then
+                    hasNearbyEnemy = true
+                    break
+                  end
+                end
+              end
+              if hasNearbyEnemy then break end
+            end
+            
+            if not hasNearbyEnemy then
+              -- Place protecting enemy on the single path
+              pathTile.type = MapManager.TileType.ENEMY
+              tile.protected = true
+            end
+          end
+        end
+        
+        table.insert(placedTreasures, {
+          x = x,
+          y = y,
+          pathX = pos.pathTile[1],
+          pathY = pos.pathTile[2],
+          protected = tile.protected,
+        })
+      end
+    end
+  end
+  
+  -- Finalize treasure chokepoints and ensure guarding paths remain intact
+  for _, treasureInfo in ipairs(placedTreasures) do
+    local tx, ty = treasureInfo.x, treasureInfo.y
+    local px, py = treasureInfo.pathX, treasureInfo.pathY
+
+    local treasureTile = self:getTile(tx, ty)
+    if treasureTile and px and py then
+      -- Ensure the guarding path is reachable from player start
+      self:ensurePathToPosition(px, py)
+
+      -- Re-apply chokepoint blocking (in case path carving reopened other sides)
+      local neighbors = {
+        {tx - 1, ty},
+        {tx + 1, ty},
+        {tx, ty - 1},
+        {tx, ty + 1},
+      }
+
+      for _, neighborPos in ipairs(neighbors) do
+        local nx, ny = neighborPos[1], neighborPos[2]
+        if not (nx == px and ny == py) then
+          local neighborTile = self:getTile(nx, ny)
+          if neighborTile then
+            if neighborTile.type == MapManager.TileType.GROUND or
+               neighborTile.type == MapManager.TileType.REST or
+               neighborTile.type == MapManager.TileType.ENEMY then
+              neighborTile.type = MapManager.TileType.TREE
+              neighborTile.decorationVariant = self:random(1, #self.sprites.tree)
+              neighborTile.decoration = nil
+              neighborTile.spriteVariant = nil
+            end
+          end
+        end
+      end
+
+      -- Mark the stored path tile for future reference
+      treasureTile.pathTile = { x = px, y = py }
+
+      -- Reinstate protecting enemy if applicable
+      if treasureInfo.protected then
+        local pathTile = self:getTile(px, py)
+        if pathTile then
+          pathTile.type = MapManager.TileType.ENEMY
+          pathTile.decorationVariant = nil
+          pathTile.decoration = nil
+          pathTile.spriteVariant = nil
+        end
+      else
+        -- Ensure the path tile remains traversable if unprotected
+        local pathTile = self:getTile(px, py)
+        if pathTile and pathTile.type ~= MapManager.TileType.ENEMY then
+          pathTile.type = MapManager.TileType.GROUND
+        end
+      end
+    end
+  end
+end
+
+-- Check if a treasure is protected by an adjacent enemy
+function MapManager:isTreasureProtected(x, y)
+  local tile = self:getTile(x, y)
+  if not tile or tile.type ~= MapManager.TileType.TREASURE then
+    return false
+  end
+  
+  -- Check for adjacent enemies
+  local neighbors = {
+    {x - 1, y}, -- Left
+    {x + 1, y}, -- Right
+    {x, y - 1}, -- Up
+    {x, y + 1}, -- Down
+  }
+  
+  for _, pos in ipairs(neighbors) do
+    local nx, ny = pos[1], pos[2]
+    local neighborTile = self:getTile(nx, ny)
+    if neighborTile and neighborTile.type == MapManager.TileType.ENEMY then
+      return true, nx, ny -- Return true and enemy position
+    end
+  end
+  
+  return false
+end
+
+-- Place events on the map (more common than treasures, simpler placement)
+function MapManager:placeEvents()
+  local config = require("config")
+  local genConfig = config.map.generation
+  
+  -- Collect all valid event positions (ground tiles, far from start)
+  local candidatePositions = {}
+  for y = 1, self.gridHeight do
+    for x = 1, self.gridWidth do
+      local tile = self:getTile(x, y)
+      if tile and tile.type == MapManager.TileType.GROUND then
+        -- Check distance from start position
+        local dist = math.abs(x - self.playerGridX) + math.abs(y - self.playerGridY)
+        if dist >= (genConfig.minEventDistance or 5) then
+          table.insert(candidatePositions, {x, y})
+        end
+      end
+    end
+  end
+  
+  -- Shuffle candidates
+  for i = #candidatePositions, 2, -1 do
+    local j = self:random(1, i)
+    candidatePositions[i], candidatePositions[j] = candidatePositions[j], candidatePositions[i]
+  end
+  
+  -- Place events with minimum spacing
+  local minEvents = genConfig.minEvents or 6
+  local maxEvents = genConfig.maxEvents or 15
+  local eventCount = math.min(
+    math.floor(#candidatePositions * (genConfig.eventDensity or 0.08)),
+    maxEvents
+  )
+  -- Ensure we meet minimum if possible
+  eventCount = math.max(eventCount, math.min(minEvents, #candidatePositions))
+  
+  local placedEvents = {}
+  local minEventSpacing = genConfig.minEventSpacing or 5
+  
+  -- Cache all special tile positions once for efficiency
+  if not self._eventPlacementCache then
+    self._eventPlacementCache = {
+      treasures = {},
+      restSites = {},
+      enemies = {},
+    }
+    
+    for ty = 1, self.gridHeight do
+      for tx = 1, self.gridWidth do
+        local checkTile = self:getTile(tx, ty)
+        if checkTile then
+          if checkTile.type == MapManager.TileType.TREASURE then
+            table.insert(self._eventPlacementCache.treasures, {tx, ty})
+          elseif checkTile.type == MapManager.TileType.REST then
+            table.insert(self._eventPlacementCache.restSites, {tx, ty})
+          elseif checkTile.type == MapManager.TileType.ENEMY then
+            table.insert(self._eventPlacementCache.enemies, {tx, ty})
+          end
+        end
+      end
+    end
+  end
+  
+  for i = 1, #candidatePositions do
+    if #placedEvents >= eventCount then
+      break
+    end
+    
+    local x, y = candidatePositions[i][1], candidatePositions[i][2]
+    local tile = self:getTile(x, y)
+    
+    if tile and tile.type == MapManager.TileType.GROUND then
+      -- Check minimum spacing from other events, treasures, rest sites, and enemies
+      local tooClose = false
+      if minEventSpacing > 0 then
+        -- Check spacing from already placed events
+        for _, eventPos in ipairs(placedEvents) do
+          local ex, ey = eventPos[1], eventPos[2]
+          local dist = math.abs(x - ex) + math.abs(y - ey)
+          if dist < minEventSpacing then
+            tooClose = true
+            break
+          end
+        end
+        
+        -- Check spacing from treasures
+        if not tooClose then
+          for _, treasurePos in ipairs(self._eventPlacementCache.treasures) do
+            local tx, ty = treasurePos[1], treasurePos[2]
+            local dist = math.abs(x - tx) + math.abs(y - ty)
+            if dist < minEventSpacing then
+              tooClose = true
+              break
+            end
+          end
+        end
+        
+        -- Check spacing from rest sites (use slightly smaller spacing to allow more flexibility)
+        if not tooClose then
+          local restSpacing = math.max(2, minEventSpacing - 1)
+          for _, restPos in ipairs(self._eventPlacementCache.restSites) do
+            local rx, ry = restPos[1], restPos[2]
+            local dist = math.abs(x - rx) + math.abs(y - ry)
+            if dist < restSpacing then
+              tooClose = true
+              break
+            end
+          end
+        end
+        
+        -- Check spacing from enemies (use slightly smaller spacing)
+        if not tooClose then
+          local enemySpacing = math.max(2, minEventSpacing - 1)
+          for _, enemyPos in ipairs(self._eventPlacementCache.enemies) do
+            local ex, ey = enemyPos[1], enemyPos[2]
+            local dist = math.abs(x - ex) + math.abs(y - ey)
+            if dist < enemySpacing then
+              tooClose = true
+              break
+            end
+          end
+        end
+      end
+      
+      if not tooClose then
+        -- Place event
+        tile.type = MapManager.TileType.EVENT
+        table.insert(placedEvents, {x, y})
+      end
+    end
+  end
+  
+  -- Ensure all placed events are accessible
+  for _, eventPos in ipairs(placedEvents) do
+    local ex, ey = eventPos[1], eventPos[2]
+    if not self:isReachableFromStart(ex, ey) then
+      -- Carve a path to make this event accessible
       self:ensurePathToPosition(ex, ey)
     end
   end
@@ -853,6 +1403,33 @@ end
 -- Move player to grid position
 function MapManager:movePlayerTo(gridX, gridY)
   if self:canMoveTo(gridX, gridY) then
+    -- Check if target is a protected treasure - if so, redirect to the protecting enemy
+    local targetTile = self:getTile(gridX, gridY)
+    if targetTile and targetTile.type == MapManager.TileType.TREASURE then
+      local isProtected, enemyX, enemyY = self:isTreasureProtected(gridX, gridY)
+      if isProtected and enemyX and enemyY then
+        -- Check if the protecting enemy is adjacent to player (valid move target)
+        -- If enemy is between player and treasure, redirect to enemy
+        -- Otherwise, allow movement to treasure and handle battle when reaching it
+        local dxToEnemy = math.abs(enemyX - self.playerGridX)
+        local dyToEnemy = math.abs(enemyY - self.playerGridY)
+        local canMoveToEnemy = (dxToEnemy == 1 and dyToEnemy == 0) or (dxToEnemy == 0 and dyToEnemy == 1)
+        
+        if canMoveToEnemy then
+          -- Store the treasure position for later collection
+          self._pendingTreasureX = gridX
+          self._pendingTreasureY = gridY
+          -- Redirect movement to the protecting enemy tile
+          gridX, gridY = enemyX, enemyY
+        else
+          -- Enemy is not adjacent to player, allow movement to treasure
+          -- Battle will be triggered when player reaches treasure tile
+          self._pendingTreasureX = gridX
+          self._pendingTreasureY = gridY
+        end
+      end
+    end
+    
     -- Remember previous position before starting movement (used to return after battle)
     self.previousGridX = self.playerGridX
     self.previousGridY = self.playerGridY
@@ -871,11 +1448,46 @@ function MapManager:completeMovement()
     self.playerTargetGridX = nil
     self.playerTargetGridY = nil
     
-    -- Check if we're on an enemy tile
     local tile = self:getTile(self.playerGridX, self.playerGridY)
+    
+    -- Check if we're on an enemy tile
     if tile and tile.type == MapManager.TileType.ENEMY then
-      return true -- Signal battle
+      -- Check if this enemy was protecting a treasure
+      if self._pendingTreasureX and self._pendingTreasureY then
+        return true, "protected_treasure", self._pendingTreasureX, self._pendingTreasureY
+      end
+      return true, "enemy" -- Signal battle
     end
+    
+    -- Check if we're on a treasure tile
+    if tile and tile.type == MapManager.TileType.TREASURE then
+      -- Check if treasure is protected
+      local isProtected, enemyX, enemyY = self:isTreasureProtected(self.playerGridX, self.playerGridY)
+      if isProtected and enemyX and enemyY then
+        -- Move to enemy tile to trigger battle
+        self.playerGridX = enemyX
+        self.playerGridY = enemyY
+        -- Use pending treasure position if available, otherwise use current position
+        local treasureX = self._pendingTreasureX or self.playerGridX
+        local treasureY = self._pendingTreasureY or self.playerGridY
+        return true, "protected_treasure", treasureX, treasureY
+      else
+        -- Unprotected treasure - collect immediately
+        tile.type = MapManager.TileType.GROUND
+        return false, "treasure_collected"
+      end
+    end
+    
+    -- Check if we're on an event tile
+    if tile and tile.type == MapManager.TileType.EVENT then
+      -- Collect event immediately (simpler than treasures - no protection)
+      tile.type = MapManager.TileType.GROUND
+      return false, "event_collected"
+    end
+    
+    -- Clear pending treasure if movement completed without battle
+    self._pendingTreasureX = nil
+    self._pendingTreasureY = nil
   end
   return false
 end

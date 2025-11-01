@@ -371,11 +371,27 @@ config.map = {
     enemyDensity = 0.15, -- percentage of valid positions to place enemies
     minEnemyDistance = 8, -- minimum distance from start to place enemy
     minEnemySpacing = 3, -- minimum spacing between enemies (grid distance)
-    maxEnemies = 20, -- maximum number of enemies on map
+    minEnemies = 18, -- minimum number of enemies on map
+    maxEnemies = 22, -- maximum number of enemies on map (must be > maxTreasures)
     -- Rest node placement
     restDensity = 0.01, -- attempts per tile to place rest nodes (sparse)
     minRestSpacing = 5, -- minimum spacing between rest nodes (grid distance)
     minRestDistanceFromPlayer = 6, -- keep rests a bit away from start
+    minRests = 3, -- minimum number of rest nodes on map
+    maxRests = 5, -- maximum number of rest nodes on map
+    -- Treasure placement
+    treasureDensity = 0.05, -- percentage of valid positions to place treasures
+    minTreasureDistance = 6, -- minimum distance from start to place treasure
+    minTreasureSpacing = 4, -- minimum spacing between treasures (grid distance)
+    minTreasures = 6, -- minimum number of treasures on map
+    maxTreasures = 8, -- maximum number of treasures on map
+    treasureProtectionChance = 1.0, -- chance that a treasure is protected by an adjacent enemy (90%)
+    -- Event placement (more common than treasures)
+    eventDensity = 0.08, -- percentage of valid positions to place events (higher than treasures)
+    minEventDistance = 5, -- minimum distance from start to place event
+    minEventSpacing = 5, -- minimum spacing between events (grid distance) - increased to prevent clustering
+    minEvents = 6, -- minimum number of events on map
+    maxEvents = 8, -- maximum number of events on map
   },
 }
 

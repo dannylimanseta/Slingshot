@@ -107,6 +107,21 @@ function MapScene:load()
       spriteVariant = nil,
       decoration = nil,
     })
+    
+    -- If we were fighting for a protected treasure, collect it now
+    if self._treasureTileX and self._treasureTileY then
+      local treasureTile = self.mapManager:getTile(self._treasureTileX, self._treasureTileY)
+      if treasureTile and treasureTile.type == MapManager.TileType.TREASURE then
+        -- Collect the treasure
+        self.mapManager:setTile(self._treasureTileX, self._treasureTileY, {
+          type = MapManager.TileType.GROUND,
+          spriteVariant = nil,
+          decoration = nil,
+        })
+      end
+      self._treasureTileX, self._treasureTileY = nil, nil
+    end
+    
     -- Clear enemy tile tracking
     self._enemyTileX, self._enemyTileY = nil, nil
     self._battleVictory = false
@@ -162,15 +177,31 @@ function MapScene:update(deltaTime)
         self.playerTargetY = nil
         self.isMoving = false
         
-        -- Check if we reached an enemy tile (battle)
-        if self.mapManager:completeMovement() then
+        -- Check what we reached (enemy, protected treasure, or regular treasure)
+        local battleTriggered, battleType, treasureX, treasureY = self.mapManager:completeMovement()
+        if battleTriggered then
           -- Save return position to the tile where movement started
           self._returnGridX = self.mapManager.previousGridX or self.mapManager.playerGridX
           self._returnGridY = self.mapManager.previousGridY or self.mapManager.playerGridY
           -- Store enemy tile position (where player is now, which is the enemy tile)
           self._enemyTileX = self.mapManager.playerGridX
           self._enemyTileY = self.mapManager.playerGridY
+          -- If this was a protected treasure, store the treasure position
+          if battleType == "protected_treasure" and treasureX and treasureY then
+            self._treasureTileX = treasureX
+            self._treasureTileY = treasureY
+          end
           self._battleTransitionDelay = 0.5 -- 0.5 second delay before battle
+        elseif battleType == "treasure_collected" then
+          -- Treasure was collected, update player visual position
+          local px, py = self.mapManager:getPlayerWorldPosition(self.gridSize, self.offsetX, self.offsetY)
+          self.playerWorldX = px
+          self.playerWorldY = py
+        elseif battleType == "event_collected" then
+          -- Event was collected, update player visual position
+          local px, py = self.mapManager:getPlayerWorldPosition(self.gridSize, self.offsetX, self.offsetY)
+          self.playerWorldX = px
+          self.playerWorldY = py
         end
       else
         -- Interpolate position
@@ -381,7 +412,7 @@ function MapScene:draw()
         local worldY = self.offsetY + (y - 1) * gridSize
         
         -- Draw base ground and entities for traversable tiles
-        if tile.type == MapManager.TileType.GROUND or tile.type == MapManager.TileType.ENEMY or tile.type == MapManager.TileType.REST then
+        if tile.type == MapManager.TileType.GROUND or tile.type == MapManager.TileType.ENEMY or tile.type == MapManager.TileType.REST or tile.type == MapManager.TileType.TREASURE or tile.type == MapManager.TileType.EVENT then
           -- Draw ground sprite decoration if present (sparingly placed)
           if tile.spriteVariant then
             local sprite = sprites.ground[tile.spriteVariant]
@@ -485,6 +516,73 @@ function MapScene:draw()
                 
                 local sx = baseSx
                 local sy = baseSy * heightScale
+                
+                love.graphics.push()
+                love.graphics.translate(centerWorldX, centerWorldY)
+                love.graphics.shear(skewX, 0)
+                love.graphics.translate(-pivotX * sx, -pivotY * sy)
+                love.graphics.draw(sprite, 0, 0, 0, sx, sy)
+                love.graphics.pop()
+              end, false)
+            end
+          elseif tile.type == MapManager.TileType.TREASURE then
+            local sprite = sprites.treasure
+            if sprite then
+              addToQueue(worldY, worldX, function()
+                love.graphics.setColor(1, 1, 1, 1)
+                local baseSx = (gridSize * oversize) / sprite:getWidth()
+                local baseSy = (gridSize * oversize) / sprite:getHeight()
+                
+                -- Calculate bobbing animation for treasure (similar to rest sites)
+                local bobConfig = config.map.restBob
+                local phaseOffset = (x + y * 100) * bobConfig.phaseVariation
+                local time = self._treeSwayTime * bobConfig.speed * 2 * math.pi + phaseOffset
+                local heightScale = 1 + math.sin(time) * bobConfig.heightVariation
+                
+                local sx = baseSx
+                local sy = baseSy * heightScale
+                local ox = (gridSize * (oversize - 1)) * 0.5
+                local oy = (gridSize * (oversize - 1)) * 0.5
+                
+                local spriteW, spriteH = sprite:getDimensions()
+                local pivotX = spriteW * 0.5
+                local pivotY = spriteH
+                local centerWorldX = worldX - ox + spriteW * 0.5 * baseSx
+                local centerWorldY = worldY - oy + spriteH * baseSy
+                
+                love.graphics.push()
+                love.graphics.translate(centerWorldX, centerWorldY)
+                love.graphics.translate(-pivotX * sx, -pivotY * sy)
+                love.graphics.draw(sprite, 0, 0, 0, sx, sy)
+                love.graphics.pop()
+              end, false)
+            end
+          elseif tile.type == MapManager.TileType.EVENT then
+            local sprite = sprites.event
+            if sprite then
+              addToQueue(worldY, worldX, function()
+                love.graphics.setColor(1, 1, 1, 1)
+                local baseSx = (gridSize * oversize) / sprite:getWidth()
+                local baseSy = (gridSize * oversize) / sprite:getHeight()
+                
+                -- Calculate bobbing animation for event (slower than rest sites)
+                local bobConfig = config.map.restBob
+                local phaseOffset = (x + y * 100) * bobConfig.phaseVariation
+                local eventSpeed = bobConfig.speed * 0.7 -- 30% slower than rest sites
+                local time = self._treeSwayTime * eventSpeed * 2 * math.pi + phaseOffset
+                local heightScale = 1 + math.sin(time) * bobConfig.heightVariation
+                local skewX = math.sin(time) * bobConfig.maxShear
+                
+                local sx = baseSx
+                local sy = baseSy * heightScale
+                local ox = (gridSize * (oversize - 1)) * 0.5
+                local oy = (gridSize * (oversize - 1)) * 0.5
+                
+                local spriteW, spriteH = sprite:getDimensions()
+                local pivotX = spriteW * 0.5
+                local pivotY = spriteH
+                local centerWorldX = worldX - ox + spriteW * 0.5 * baseSx
+                local centerWorldY = worldY - oy + spriteH * baseSy
                 
                 love.graphics.push()
                 love.graphics.translate(centerWorldX, centerWorldY)

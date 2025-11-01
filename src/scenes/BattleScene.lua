@@ -864,8 +864,15 @@ local function drawBorderFragments(fragments)
 end
 
 function BattleScene:draw(bounds)
-  local w = (bounds and bounds.w) or love.graphics.getWidth()
-  local h = (bounds and bounds.h) or love.graphics.getHeight()
+  -- Always use bounds if provided, otherwise fall back to canvas dimensions
+  local w, h
+  if bounds and bounds.w and bounds.h then
+    w = bounds.w
+    h = bounds.h
+  else
+    w = love.graphics.getWidth()
+    h = love.graphics.getHeight()
+  end
 
   local pad = 12
   local center = bounds and bounds.center or nil

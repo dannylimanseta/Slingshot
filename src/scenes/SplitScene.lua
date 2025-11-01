@@ -68,7 +68,9 @@ function SplitScene.new()
 end
 
 function SplitScene:load()
-  local w, h = love.graphics.getDimensions()
+  -- Use virtual resolution from config (matches canvas size)
+  local w = (config.video and config.video.virtualWidth) or 1280
+  local h = (config.video and config.video.virtualHeight) or 720
   local centerRect = self.layoutManager:getCenterRect(w, h)
   self.left = GameplayScene.new()
   self.right = BattleScene.new()
@@ -259,13 +261,16 @@ function SplitScene:endPlayerTurnWithTurnManager()
 end
 
 function SplitScene:resize(width, height)
-  local centerRect = self.layoutManager:getCenterRect(width, height)
-  if self.left and self.left.resize then self.left:resize(centerRect.w, height) end
-  if self.right and self.right.resize then self.right:resize(width - centerRect.w, height) end
+  -- Use virtual resolution from config for layout calculations (resize is called with window dimensions, but we work in virtual space)
+  local w = (config.video and config.video.virtualWidth) or 1280
+  local h = (config.video and config.video.virtualHeight) or 720
+  local centerRect = self.layoutManager:getCenterRect(w, h)
+  if self.left and self.left.resize then self.left:resize(centerRect.w, h) end
+  if self.right and self.right.resize then self.right:resize(w - centerRect.w, h) end
   -- Update walls if width changed significantly
   if self._lastCenterW and math.abs(centerRect.w - self._lastCenterW) > 1 then
     if self.left and self.left.updateWalls then
-      self.left:updateWalls(centerRect.w, height)
+      self.left:updateWalls(centerRect.w, h)
     end
     self._lastCenterW = centerRect.w
   end
@@ -281,8 +286,9 @@ local function withScissor(bounds, fn)
 end
 
 function SplitScene:draw()
-  local w = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
-  local h = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
+  -- Always use virtual resolution from config (matches canvas size)
+  local w = (config.video and config.video.virtualWidth) or 1280
+  local h = (config.video and config.video.virtualHeight) or 720
   local centerRect = self.layoutManager:getCenterRect(w, h)
   local centerW = centerRect.w
   local centerX = centerRect.x
@@ -629,8 +635,9 @@ function SplitScene:update(dt)
     end
   end
   
-  local w = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
-  local h = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
+  -- Always use virtual resolution from config (matches canvas size)
+  local w = (config.video and config.video.virtualWidth) or 1280
+  local h = (config.video and config.video.virtualHeight) or 720
   local centerRect = self.layoutManager:getCenterRect(w, h)
   
   -- Update walls if width changed significantly (for smooth tweening)
