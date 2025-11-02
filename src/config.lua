@@ -208,7 +208,7 @@ config.battle = {
   hitFlashPasses = 3, -- draw additive flash this many times for stronger effect
   hitFlashAlphaScale = 0.4, -- multiply base flash alpha (clamped to 1) - reduced from 1.0 to tone down intensity
   popupLifetime = 0.8,
-  popupBounceHeight = 60, -- vertical distance for damage popup bounce
+  popupBounceHeight = 42, -- vertical distance for damage popup bounce (reduced by 30% to avoid topbar)
   popupFadeStart = 0.7, -- start fading at 70% of lifetime (last 30%)
   popupFadeMultiplier = 0.5, -- 50% faster fade within fade window (1.0 = baseline)
   hpBarTweenSpeed = 8, -- HP bar tween speed (how quickly bar moves toward actual HP)
@@ -377,11 +377,11 @@ config.map = {
     -- Ground sprite decorations (sparingly placed)
     groundSpriteChance = 0.05, -- 5% chance per ground tile to have decorative sprite
     -- Enemy placement
-    enemyDensity = 0.15, -- percentage of valid positions to place enemies
+    enemyDensity = 0.105, -- percentage of valid positions to place enemies (30% fewer than 0.15)
     minEnemyDistance = 8, -- minimum distance from start to place enemy
     minEnemySpacing = 3, -- minimum spacing between enemies (grid distance)
-    minEnemies = 18, -- minimum number of enemies on map
-    maxEnemies = 22, -- maximum number of enemies on map (must be > maxTreasures)
+    minEnemies = 13, -- minimum number of enemies on map (30% fewer than 18)
+    maxEnemies = 15, -- maximum number of enemies on map (30% fewer than 22)
     -- Rest node placement
     restDensity = 0.01, -- attempts per tile to place rest nodes (sparse)
     minRestSpacing = 5, -- minimum spacing between rest nodes (grid distance)
