@@ -452,6 +452,23 @@ function Visuals.draw(scene, bounds)
           brightnessMultiplier = 1 + math.sin(enemy.pulseTime or 0) * variation
         end
         
+        -- Calculate backward skew when hit (shear backwards)
+        local skewX = 0
+        if enemy.flash and enemy.flash > 0 and not enemy.disintegrating then
+          local flashProgress = 1 - (enemy.flash / math.max(0.0001, config.battle.hitFlashDuration))
+          -- Backward skew: negative shearX value, easing out as flash fades
+          local maxSkew = -0.15 -- Backward lean amount
+          skewX = maxSkew * (1 - flashProgress) * (1 - flashProgress) -- Quadratic ease-out
+        end
+        
+        love.graphics.push()
+        -- Apply skew around the sprite's bottom-center pivot point
+        if skewX ~= 0 then
+          love.graphics.translate(pos.curX, pos.y)
+          love.graphics.shear(skewX, 0)
+          love.graphics.translate(-pos.curX, -pos.y)
+        end
+        
         love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, 1)
         love.graphics.draw(enemy.img, pos.curX, pos.y, tilt, sx, sy, iw * 0.5, ih)
         
@@ -461,7 +478,7 @@ function Visuals.draw(scene, bounds)
         
         if enemy.flash and enemy.flash > 0 and not enemy.disintegrating then
           local base = enemy.flash / math.max(0.0001, config.battle.hitFlashDuration)
-          local a = math.min(1, base * ((config.battle and config.battle.hitFlashAlphaScale) or 1))
+          local a = math.min(1, base * ((config.battle and config.battle.hitFlashAlphaScale) or 1) * 1.5) -- Increase brightness by 50%
           local passes = (config.battle and config.battle.hitFlashPasses) or 1
           love.graphics.setBlendMode("add")
           love.graphics.setColor(1, 1, 1, a)
@@ -471,6 +488,8 @@ function Visuals.draw(scene, bounds)
           love.graphics.setBlendMode("alpha")
           love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, 1)
         end
+        
+        love.graphics.pop()
       elseif scene.state ~= "win" then
         -- Fallback circle if no sprite
         local brightnessMultiplier = 1
