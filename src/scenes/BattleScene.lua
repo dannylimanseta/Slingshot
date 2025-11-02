@@ -109,8 +109,10 @@ function BattleScene:load(bounds, battleProfile)
   
   -- Initialize enemies from battle profile
   self.enemies = {}
-  local enemyCount = battleProfile.enemyCount or (battleProfile.enemies and #battleProfile.enemies) or 2
-  enemyCount = math.min(enemyCount, battleProfile.enemies and #battleProfile.enemies or 0, 3) -- Cap at 3
+  -- Randomize enemy count between 1-3 for each battle
+  local maxAvailableEnemies = battleProfile.enemies and #battleProfile.enemies or 0
+  local randomEnemyCount = love.math.random(1, 3)
+  local enemyCount = math.min(randomEnemyCount, maxAvailableEnemies)
   
   for i = 1, enemyCount do
     if battleProfile.enemies and battleProfile.enemies[i] then
@@ -748,10 +750,10 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
   self._enemyAttackDelays = {}
   
   -- Schedule attacks for all alive enemies with staggered delays
-  local attackDelay = 0.3 -- Base delay between enemy attacks
+  local attackDelay = 0.5 -- Delay between consecutive enemy attacks (in seconds)
   for i, enemy in ipairs(self.enemies or {}) do
     if enemy.hp > 0 and enemy.displayHP > 0.1 then
-      -- First enemy attacks immediately (handled below), others are delayed
+      -- First enemy attacks immediately (handled below), others are delayed by 0.3s intervals
       if i == 1 then
         -- Perform first enemy attack immediately
         local dmg = love.math.random(enemy.damageMin, enemy.damageMax)
@@ -778,10 +780,10 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
   -- Trigger screenshake
   self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
       else
-        -- Schedule delayed attack for subsequent enemies
+        -- Schedule delayed attack for subsequent enemies (0.3s delay between each enemy)
         table.insert(self._enemyAttackDelays, {
           index = i,
-          delay = attackDelay * (i - 1) -- Stagger each enemy by delay amount
+          delay = attackDelay * (i - 1) -- Each enemy attacks 0.3s after the previous one
         })
       end
     end
@@ -1041,7 +1043,7 @@ end
 
 -- Handle keyboard input for enemy selection
 function BattleScene:keypressed(key, scancode, isRepeat)
-  if key == "q" then
+  if key == "tab" then
     -- Cycle to next enemy
     self:_cycleEnemySelection()
   end

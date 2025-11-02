@@ -18,6 +18,8 @@ function ImpactSystem.create(scene, blockCount, isCrit)
   local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
   local centerW = center and center.w or math.floor(w * 0.5)
   local hitX, hitY = scene:getEnemyHitPoint({ x = 0, y = 0, w = w, h = h, center = { x = centerX, w = centerW, h = h } })
+  -- Shift impact sprites slightly to the left for better visual centering
+  hitX = hitX - 20
 
   local staggerDelay = (config.battle and config.battle.impactStaggerDelay) or 0.05
   local fps = (config.battle and config.battle.impactFps) or 30
@@ -47,6 +49,7 @@ function ImpactSystem.create(scene, blockCount, isCrit)
 
     local delay = (i - 1) * staggerDelay
     local rotation = love.math.random() * 2 * math.pi
+    -- Random offset with slight leftward bias for better centering
     local offsetX = (love.math.random() - 0.5) * 20
     local offsetY = (love.math.random() - 0.5) * 20
 
