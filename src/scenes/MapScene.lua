@@ -26,7 +26,7 @@ function MapScene.new()
     offsetX = 0,
     offsetY = 0,
     _pendingBattleTransition = false,
-    _battleTransitionDelay = 0,
+    _battleTransitionDelay = nil,
     playerSprite = nil,
     _initialized = false,
     _returnGridX = nil,
@@ -202,7 +202,7 @@ function MapScene:update(deltaTime)
             self._treasureTileX = treasureX
             self._treasureTileY = treasureY
           end
-          self._battleTransitionDelay = 0.5 -- 0.5 second delay before battle
+          self._battleTransitionDelay = 0 -- No delay, transition immediately
         elseif battleType == "treasure_collected" then
           -- Treasure was collected, update player visual position
           local px, py = self.mapManager:getPlayerWorldPosition(self.gridSize, self.offsetX, self.offsetY)
@@ -241,10 +241,17 @@ function MapScene:update(deltaTime)
   self:_clampCameraToMap(false)
   
   -- Handle battle transition delay
-  if self._battleTransitionDelay > 0 then
-    self._battleTransitionDelay = self._battleTransitionDelay - deltaTime
-    if self._battleTransitionDelay <= 0 then
-      -- Transition to battle
+  if self._battleTransitionDelay ~= nil then
+    if self._battleTransitionDelay > 0 then
+      self._battleTransitionDelay = self._battleTransitionDelay - deltaTime
+      if self._battleTransitionDelay <= 0 then
+        -- Transition to battle
+        self._battleTransitionDelay = nil
+        return "enter_battle"
+      end
+    else
+      -- No delay (0), transition immediately
+      self._battleTransitionDelay = nil
       return "enter_battle"
     end
   end
