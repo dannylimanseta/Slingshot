@@ -1007,6 +1007,23 @@ function MapManager:isPathTileUniqueChokepoint(treasureX, treasureY, pathX, path
   return not stillReachable
 end
 
+-- Check if there is any enemy within a given Manhattan distance from (x, y)
+function MapManager:hasEnemyWithin(x, y, minSpacing)
+  minSpacing = minSpacing or 1
+  for ty = 1, self.gridHeight do
+    for tx = 1, self.gridWidth do
+      local tile = self:getTile(tx, ty)
+      if tile and tile.type == MapManager.TileType.ENEMY then
+        local dist = math.abs(tx - x) + math.abs(ty - y)
+        if dist < minSpacing then
+          return true
+        end
+      end
+    end
+  end
+  return false
+end
+
 -- Place treasures on the map, some protected by adjacent enemies
 -- Treasures spawn in dead-ends with only one traversable path, with enemy blocking that path
 function MapManager:placeTreasures()
@@ -1204,21 +1221,9 @@ function MapManager:placeTreasures()
           if pathTile and pathTile.type == MapManager.TileType.ENEMY then
             tile.protected = true
           elseif pathTile and pathTile.type == MapManager.TileType.GROUND then
-            -- Check if there's already an enemy nearby (don't stack)
-            local hasNearbyEnemy = false
-            for dy = -1, 1 do
-              for dx = -1, 1 do
-                if dx ~= 0 or dy ~= 0 then
-                  local checkTile = self:getTile(pathX + dx, pathY + dy)
-                  if checkTile and checkTile.type == MapManager.TileType.ENEMY then
-                    hasNearbyEnemy = true
-                    break
-                  end
-                end
-              end
-              if hasNearbyEnemy then break end
-            end
-            
+            -- Enforce global enemy spacing
+            local minEnemySpacing = (genConfig and genConfig.minEnemySpacing) or 3
+            local hasNearbyEnemy = self:hasEnemyWithin(pathX, pathY, minEnemySpacing)
             if not hasNearbyEnemy then
               -- Place protecting enemy on the single path
               pathTile.type = MapManager.TileType.ENEMY

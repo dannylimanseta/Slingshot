@@ -30,12 +30,20 @@ do
   -- Load attack icon
   if imgs.icon_attack then
     local ok, img = pcall(love.graphics.newImage, imgs.icon_attack)
-    if ok then ICON_ATTACK = img end
+    if ok then
+      -- Ensure anti-aliased sampling when scaling
+      pcall(function() img:setFilter('linear', 'linear') end)
+      ICON_ATTACK = img
+    end
   end
   -- Load armor icon
   if imgs.icon_armor then
     local ok, img = pcall(love.graphics.newImage, imgs.icon_armor)
-    if ok then ICON_ARMOR = img end
+    if ok then
+      -- Ensure anti-aliased sampling when scaling
+      pcall(function() img:setFilter('linear', 'linear') end)
+      ICON_ARMOR = img
+    end
   end
 end
 
@@ -45,15 +53,13 @@ do
   local shaderCode = [[
     vec4 effect(vec4 color, Image texture, vec2 texture_coords, vec2 screen_coords) {
       vec4 texcolor = Texel(texture, texture_coords);
-      // Convert to grayscale and threshold - remove shadows/dark areas
+      // Convert to grayscale and soft-threshold to retain highlight edges with AA
       float gray = dot(texcolor.rgb, vec3(0.299, 0.587, 0.114));
-      // Only keep pixels above threshold (bright parts of icon)
-      if (gray > 0.3) {
-        return vec4(0.0, 0.0, 0.0, texcolor.a * color.a);
-      } else {
-        // Make shadows transparent
-        return vec4(0.0, 0.0, 0.0, 0.0);
-      }
+      float threshold = 0.3;
+      float width = 0.15; // smoothing width around threshold for anti-aliased edge
+      float mask = smoothstep(threshold - width, threshold + width, gray);
+      // Output pure black with softened alpha from mask and source alpha
+      return vec4(0.0, 0.0, 0.0, mask * texcolor.a * color.a);
     }
   ]]
   local ok, shader = pcall(love.graphics.newShader, shaderCode)
