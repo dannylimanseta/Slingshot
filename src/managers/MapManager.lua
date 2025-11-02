@@ -814,10 +814,42 @@ function MapManager:ensureAllTreasuresProtected()
   end
 end
 
+-- Find chokepoint positions (narrow paths with exactly 2 traversable neighbors)
+function MapManager:findChokepoints(minDistance)
+  minDistance = minDistance or 0
+  local chokepoints = {}
+  
+  for y = 1, self.gridHeight do
+    for x = 1, self.gridWidth do
+      local tile = self:getTile(x, y)
+      if tile and tile.type == MapManager.TileType.GROUND then
+        -- Check distance from start position
+        local dist = math.abs(x - self.playerGridX) + math.abs(y - self.playerGridY)
+        if dist >= minDistance then
+          -- Count traversable neighbors (all traversable types)
+          local traversableCount = self:countTraversableNeighbors(x, y, false) -- false = count all traversable
+          
+          -- Chokepoints are tiles with exactly 2 traversable neighbors (narrow passages)
+          -- These are natural bottlenecks where enemies would be strategically placed
+          if traversableCount == 2 then
+            table.insert(chokepoints, {x, y, chokepoint = true})
+          end
+        end
+      end
+    end
+  end
+  
+  return chokepoints
+end
+
 -- Place enemies on traversable ground tiles and ensure they're all accessible
+-- Prioritizes chokepoints (narrow paths) for strategic enemy placement
 function MapManager:placeEnemies()
   local config = require("config")
   local genConfig = config.map.generation
+  
+  -- First, find chokepoint positions (narrow paths - strategic locations)
+  local chokepoints = self:findChokepoints(genConfig.minEnemyDistance)
   
   -- Collect all valid enemy positions (traversable ground tiles, far from start)
   local candidatePositions = {}
@@ -828,37 +860,62 @@ function MapManager:placeEnemies()
         -- Check distance from start position
         local dist = math.abs(x - self.playerGridX) + math.abs(y - self.playerGridY)
         if dist >= genConfig.minEnemyDistance then
-          table.insert(candidatePositions, {x, y})
+          -- Check if this is already a chokepoint (avoid duplicates)
+          local isChokepoint = false
+          for _, cp in ipairs(chokepoints) do
+            if cp[1] == x and cp[2] == y then
+              isChokepoint = true
+              break
+            end
+          end
+          
+          if not isChokepoint then
+            table.insert(candidatePositions, {x, y, chokepoint = false})
+          end
         end
       end
     end
   end
   
-  -- Shuffle candidates
+  -- Shuffle both lists separately
+  for i = #chokepoints, 2, -1 do
+    local j = self:random(1, i)
+    chokepoints[i], chokepoints[j] = chokepoints[j], chokepoints[i]
+  end
+  
   for i = #candidatePositions, 2, -1 do
     local j = self:random(1, i)
     candidatePositions[i], candidatePositions[j] = candidatePositions[j], candidatePositions[i]
+  end
+  
+  -- Combine: chokepoints first, then regular candidates
+  local allCandidates = {}
+  for _, cp in ipairs(chokepoints) do
+    table.insert(allCandidates, cp)
+  end
+  for _, cand in ipairs(candidatePositions) do
+    table.insert(allCandidates, cand)
   end
   
   -- Place enemies with minimum spacing
   local minEnemies = genConfig.minEnemies or 12
   local maxEnemies = genConfig.maxEnemies or 25
   local targetEnemyCount = math.min(
-    math.floor(#candidatePositions * genConfig.enemyDensity),
+    math.floor(#allCandidates * genConfig.enemyDensity),
     maxEnemies
   )
   -- Ensure we meet minimum if possible
-  targetEnemyCount = math.max(targetEnemyCount, math.min(minEnemies, #candidatePositions))
+  targetEnemyCount = math.max(targetEnemyCount, math.min(minEnemies, #allCandidates))
   
   local placedEnemies = {}
   local minEnemySpacing = genConfig.minEnemySpacing or 3
   
-  for i = 1, #candidatePositions do
+  for i = 1, #allCandidates do
     if #placedEnemies >= targetEnemyCount then
       break
     end
     
-      local x, y = candidatePositions[i][1], candidatePositions[i][2]
+    local x, y = allCandidates[i][1], allCandidates[i][2]
       local tile = self:getTile(x, y)
     
     if tile and tile.type == MapManager.TileType.GROUND then
@@ -1117,16 +1174,17 @@ function MapManager:placeTreasures()
           if nx ~= pos.pathTile[1] or ny ~= pos.pathTile[2] then
             local neighborTile = self:getTile(nx, ny)
             if neighborTile then
-              -- Block ALL traversable adjacent tiles (GROUND, REST, ENEMY) except the path
-              -- This ensures no other openings exist
+              -- Block traversable adjacent tiles (GROUND, REST) except the path
+              -- IMPORTANT: Don't convert ENEMY tiles to trees - preserve chokepoint enemies
+              -- If an enemy is already guarding this area, keep it
               if neighborTile.type == MapManager.TileType.GROUND or
-                 neighborTile.type == MapManager.TileType.REST or
-                 neighborTile.type == MapManager.TileType.ENEMY then
+                 neighborTile.type == MapManager.TileType.REST then
                 neighborTile.type = MapManager.TileType.TREE
                 neighborTile.decorationVariant = self:random(1, #self.sprites.tree)
                 neighborTile.decoration = nil
                 neighborTile.spriteVariant = nil
               end
+              -- If it's already an ENEMY, leave it alone - it might be a chokepoint enemy
             end
           end
         end
@@ -1142,7 +1200,10 @@ function MapManager:placeTreasures()
           local pathX, pathY = pos.pathTile[1], pos.pathTile[2]
           local pathTile = self:getTile(pathX, pathY)
           
-          if pathTile and pathTile.type == MapManager.TileType.GROUND then
+          -- If path tile is already an enemy (e.g., from chokepoint placement), mark as protected
+          if pathTile and pathTile.type == MapManager.TileType.ENEMY then
+            tile.protected = true
+          elseif pathTile and pathTile.type == MapManager.TileType.GROUND then
             -- Check if there's already an enemy nearby (don't stack)
             local hasNearbyEnemy = false
             for dy = -1, 1 do
@@ -1188,6 +1249,7 @@ function MapManager:placeTreasures()
       self:ensurePathToPosition(px, py)
 
       -- Re-apply chokepoint blocking (in case path carving reopened other sides)
+      -- IMPORTANT: Preserve existing ENEMY tiles - they might be chokepoint enemies
       local neighbors = {
         {tx - 1, ty},
         {tx + 1, ty},
@@ -1200,14 +1262,15 @@ function MapManager:placeTreasures()
         if not (nx == px and ny == py) then
           local neighborTile = self:getTile(nx, ny)
           if neighborTile then
+            -- Block GROUND and REST, but preserve ENEMY tiles (chokepoint enemies)
             if neighborTile.type == MapManager.TileType.GROUND or
-               neighborTile.type == MapManager.TileType.REST or
-               neighborTile.type == MapManager.TileType.ENEMY then
+               neighborTile.type == MapManager.TileType.REST then
               neighborTile.type = MapManager.TileType.TREE
               neighborTile.decorationVariant = self:random(1, #self.sprites.tree)
               neighborTile.decoration = nil
               neighborTile.spriteVariant = nil
             end
+            -- If it's already an ENEMY, leave it alone
           end
         end
       end

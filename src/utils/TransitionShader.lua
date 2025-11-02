@@ -13,10 +13,9 @@ extern float u_gridHeight;
 extern Image u_previousScene;
 
 vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
-    // Normalized pixel coordinates (from 0 to 1)
-    vec2 fragCoord = sc;
-    vec2 resolution = love_ScreenSize.xy;
-    vec2 uv_coord = fragCoord / resolution;
+    // Use UV coordinates (normalized 0-1) instead of screen coordinates
+    // This ensures the shader works correctly regardless of canvas/screen size
+    vec2 uv_coord = uv;
     
     float fadeTimer = u_fadeTimer;
     

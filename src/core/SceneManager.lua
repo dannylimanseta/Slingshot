@@ -38,12 +38,15 @@ function SceneManager:set(scene, skipTransition)
     local virtualW = (config.video and config.video.virtualWidth) or 1280
     local virtualH = (config.video and config.video.virtualHeight) or 720
     local canvas = love.graphics.newCanvas(virtualW, virtualH)
+    love.graphics.push('all')
     love.graphics.setCanvas(canvas)
+    love.graphics.origin()
     love.graphics.clear(0, 0, 0, 0)
     if self.currentScene.draw then
       self.currentScene:draw()
     end
     love.graphics.setCanvas()
+    love.graphics.pop()
     
     self.previousScene = self.currentScene
     self.previousSceneCanvas = canvas
@@ -95,21 +98,28 @@ end
 function SceneManager:draw()
   -- If transitioning, render with transition shader
   if self.isTransitioning and self.previousSceneCanvas and self.currentSceneCanvas then
+    -- Get virtual resolution (canvas size)
+    local virtualW = (config.video and config.video.virtualWidth) or 1280
+    local virtualH = (config.video and config.video.virtualHeight) or 720
+    
     -- Render current scene to reusable canvas (reuse instead of creating new one each frame)
+    love.graphics.push('all')
     love.graphics.setCanvas(self.currentSceneCanvas)
+    love.graphics.origin()
     love.graphics.clear(0, 0, 0, 0)
     if self.currentScene and self.currentScene.draw then
       self.currentScene:draw()
     end
     love.graphics.setCanvas()
+    love.graphics.pop()
     
     -- Calculate fade timer
     -- Progress goes from 0 (start) to 1 (end)
     -- fadeTimer should go from very negative (all previous scene) to very positive (all current scene)
-    -- For horizontal fade: -1.5 (all previous) to 1.5 (all current)
-    -- This ensures the transition is visible from the very beginning
+    -- For horizontal fade: wider range makes transition slower and more visible
+    -- Using -2.0 to 2.0 range (total 4.0) instead of -1.5 to 1.5 (total 3.0) for slower transition
     local progress = self.transitionTimer / self.transitionDuration
-    local fadeTimer = progress * 3.0 - 1.5
+    local fadeTimer = progress * 4.0 - 2.0
     
     -- Set shader uniforms
     self.transitionShader:send("u_fadeTimer", fadeTimer)
@@ -119,10 +129,13 @@ function SceneManager:draw()
     self.transitionShader:send("u_previousScene", self.previousSceneCanvas)
     
     -- Draw current scene canvas with transition shader
+    love.graphics.push('all')
+    love.graphics.origin()
     love.graphics.setShader(self.transitionShader)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(self.currentSceneCanvas, 0, 0)
     love.graphics.setShader()
+    love.graphics.pop()
   else
     -- Normal rendering without transition
     if self.currentScene and self.currentScene.draw then
