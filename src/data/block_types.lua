@@ -38,7 +38,7 @@ block_types.types = {
     displayName = "Soul",
     spritePath = "block_crit_2",
     hotkey = 4,
-    description = "Soul block (+25 bonus damage)"
+    description = "Soul block (4x damage multiplier)"
   },
   {
     key = "aoe",

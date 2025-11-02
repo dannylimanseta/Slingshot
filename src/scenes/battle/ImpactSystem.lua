@@ -27,9 +27,9 @@ function ImpactSystem.create(scene, blockCount, isCrit, isAOE)
     hitPoints = scene:getAllEnemyHitPoints({ x = 0, y = 0, w = w, h = h, center = { x = centerX, w = centerW, h = h } })
   else
     -- Get hit point for selected enemy only
-    local hitX, hitY = scene:getEnemyHitPoint({ x = 0, y = 0, w = w, h = h, center = { x = centerX, w = centerW, h = h } })
-    -- Shift impact sprites slightly to the left for better visual centering
-    hitX = hitX - 20
+  local hitX, hitY = scene:getEnemyHitPoint({ x = 0, y = 0, w = w, h = h, center = { x = centerX, w = centerW, h = h } })
+  -- Shift impact sprites slightly to the left for better visual centering
+  hitX = hitX - 20
     table.insert(hitPoints, { x = hitX, y = hitY, enemyIndex = scene.selectedEnemyIndex })
   end
   
@@ -57,45 +57,45 @@ function ImpactSystem.create(scene, blockCount, isCrit, isAOE)
     if hitPointIdx == 1 and not isAOE then
       hitX = hitX - 20
     end
-    
-    for i = 1, spriteCount do
-      local anim = {
-        image = baseImage,
-        quads = baseQuads,
-        frameW = 512,
-        frameH = 512,
-        fps = fps,
-        time = 0,
-        index = 1,
-        playing = false,
-        loop = false,
-        active = false,
-      }
-      setmetatable(anim, SpriteAnimation)
+
+  for i = 1, spriteCount do
+    local anim = {
+      image = baseImage,
+      quads = baseQuads,
+      frameW = 512,
+      frameH = 512,
+      fps = fps,
+      time = 0,
+      index = 1,
+      playing = false,
+      loop = false,
+      active = false,
+    }
+    setmetatable(anim, SpriteAnimation)
 
       -- Stagger delay: start with delay based on hit point index, then sprite index within that
       local baseDelay = (hitPointIdx - 1) * staggerDelay * 0.5 -- Small delay between enemies in AOE
       local spriteDelay = (i - 1) * staggerDelay
       local delay = baseDelay + spriteDelay
       
-      local rotation = love.math.random() * 2 * math.pi
-      -- Random offset with slight leftward bias for better centering
-      local offsetX = (love.math.random() - 0.5) * 20
-      local offsetY = (love.math.random() - 0.5) * 20
+    local rotation = love.math.random() * 2 * math.pi
+    -- Random offset with slight leftward bias for better centering
+    local offsetX = (love.math.random() - 0.5) * 20
+    local offsetY = (love.math.random() - 0.5) * 20
 
-      table.insert(scene.impactInstances, {
-        anim = anim,
-        x = hitX,
-        y = hitY,
-        rotation = rotation,
-        delay = delay,
-        offsetX = offsetX,
-        offsetY = offsetY,
+    table.insert(scene.impactInstances, {
+      anim = anim,
+      x = hitX,
+      y = hitY,
+      rotation = rotation,
+      delay = delay,
+      offsetX = offsetX,
+      offsetY = offsetY,
         enemyIndex = enemyIndex, -- Store enemy index for flash/knockback events
-      })
+    })
 
       -- Schedule per-sprite flash and knockback (store enemy index for AOE)
-      local flashDuration = (config.battle and config.battle.hitFlashDuration) or 0.5
+    local flashDuration = (config.battle and config.battle.hitFlashDuration) or 0.5
       table.insert(scene.enemyFlashEvents, { delay = delay, duration = flashDuration, enemyIndex = enemyIndex })
       table.insert(scene.enemyKnockbackEvents, { delay = delay, startTime = nil, enemyIndex = enemyIndex })
     end
@@ -139,13 +139,13 @@ function ImpactSystem.update(scene, dt)
             -- Fallback to first enemy
             enemy = scene.enemies[1]
           end
-          if enemy then
-            enemy.flash = math.max(enemy.flash or 0, flashDuration)
-            -- Apply slight rotation nudge on hit
-            local rotationDegrees = love.math.random(1, 3)
-            local rotationRadians = math.rad(rotationDegrees)
-            if love.math.random() < 0.5 then rotationRadians = -rotationRadians end
-            enemy.rotation = (enemy.rotation or 0) + rotationRadians
+            if enemy then
+              enemy.flash = math.max(enemy.flash or 0, flashDuration)
+          -- Apply slight rotation nudge on hit
+          local rotationDegrees = love.math.random(1, 3)
+          local rotationRadians = math.rad(rotationDegrees)
+          if love.math.random() < 0.5 then rotationRadians = -rotationRadians end
+              enemy.rotation = (enemy.rotation or 0) + rotationRadians
           end
         end
         event.startTime = (event.startTime or 0) + dt

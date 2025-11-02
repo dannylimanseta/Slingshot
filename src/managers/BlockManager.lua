@@ -1096,8 +1096,9 @@ function BlockManager:spawnSoulBlock(world)
 end
 
 function BlockManager:draw()
-  -- Sort blocks by Y position (ascending) so blocks with lower Y are drawn first,
-  -- and blocks with higher Y (lower on screen) are drawn last (on top)
+  -- Sort blocks by Y position (ascending) first, then X position (ascending) as secondary
+  -- Blocks with lower Y are drawn first, and blocks with higher Y (lower on screen) are drawn last (on top)
+  -- When Y positions are similar, blocks on the left (lower X) are drawn first (behind), and blocks on the right (higher X) are drawn last (on top)
   local sortedBlocks = {}
   for _, b in ipairs(self.blocks) do
     if b and b.alive then
@@ -1105,7 +1106,18 @@ function BlockManager:draw()
     end
   end
   table.sort(sortedBlocks, function(a, b)
-    return (a.cy or 0) < (b.cy or 0)
+    local ay = a.cy or 0
+    local by = b.cy or 0
+    local ax = a.cx or 0
+    local bx = b.cx or 0
+    -- Primary sort by Y (top to bottom)
+    -- Use a small threshold to account for floating point precision
+    local yThreshold = 1.0 -- pixels: blocks within 1 pixel vertically are considered at the same row
+    if math.abs(ay - by) > yThreshold then
+      return ay < by
+    end
+    -- Secondary sort by X (left to right) when Y positions are similar
+    return ax < bx
   end)
   for _, b in ipairs(sortedBlocks) do b:draw() end
 end

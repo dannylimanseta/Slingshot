@@ -3,6 +3,7 @@ local config = require("config")
 
 -- Shared sprites for blocks (loaded once)
 local SPRITES = { attack = nil, armor = nil, crit = nil, soul = nil, aoe = nil }
+local ICON_ATTACK = nil
 do
   local imgs = (config.assets and config.assets.images) or {}
   if imgs.block_attack then
@@ -25,6 +26,32 @@ do
     local ok, img = pcall(love.graphics.newImage, imgs.block_aoe)
     if ok then SPRITES.aoe = img end
   end
+  -- Load attack icon
+  if imgs.icon_attack then
+    local ok, img = pcall(love.graphics.newImage, imgs.icon_attack)
+    if ok then ICON_ATTACK = img end
+  end
+end
+
+-- Shader to convert icon to pure black and remove shadows
+local shadowRemovalShader = nil
+do
+  local shaderCode = [[
+    vec4 effect(vec4 color, Image texture, vec2 texture_coords, vec2 screen_coords) {
+      vec4 texcolor = Texel(texture, texture_coords);
+      // Convert to grayscale and threshold - remove shadows/dark areas
+      float gray = dot(texcolor.rgb, vec3(0.299, 0.587, 0.114));
+      // Only keep pixels above threshold (bright parts of icon)
+      if (gray > 0.3) {
+        return vec4(0.0, 0.0, 0.0, texcolor.a * color.a);
+      } else {
+        // Make shadows transparent
+        return vec4(0.0, 0.0, 0.0, 0.0);
+      }
+    }
+  ]]
+  local ok, shader = pcall(love.graphics.newShader, shaderCode)
+  if ok then shadowRemovalShader = shader end
 end
 
 local Block = {}
@@ -235,6 +262,82 @@ function Block:draw()
       love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
     end
   end
+  
+  -- Draw attack value text label on blocks
+  local attackText = nil
+  if self.kind == "damage" or self.kind == "attack" then
+    attackText = "+1"
+  elseif self.kind == "crit" then
+    attackText = "x2"
+  elseif self.kind == "soul" then
+    attackText = "x4"
+  end
+  
+  if attackText then
+    -- Use theme font for text, scaled down by 30%
+    local baseFont = theme.fonts.base or love.graphics.getFont()
+    love.graphics.setFont(baseFont)
+    
+    -- Get base text dimensions (before scaling)
+    local baseTextWidth = baseFont:getWidth(attackText)
+    local baseTextHeight = baseFont:getHeight()
+    
+    -- Scale factor for 30% reduction
+    local textScale = 0.7
+    
+    -- Scaled dimensions
+    local textWidth = baseTextWidth * textScale
+    local textHeight = baseTextHeight * textScale
+    
+    -- Icon dimensions and spacing
+    local iconSpacing = 2 -- pixels between text and icon (reduced from 4)
+    local iconSize = textHeight * 0.7 -- icon size matches text height, reduced by 30%
+    local iconWidth = ICON_ATTACK and iconSize or 0
+    local iconHeight = ICON_ATTACK and iconSize or 0
+    
+    -- Calculate total width for centering
+    local totalWidth = textWidth + iconSpacing + iconWidth
+    
+    -- Calculate starting X position (centered, pixel-aligned for crisp rendering)
+    local startX = math.floor(self.cx - totalWidth * 0.5 + 0.5)
+    
+    -- Text position (shifted up by 7px total: 5px previous + 2px additional, pixel-aligned)
+    local textX = startX
+    local textY = math.floor(self.cy + yOffset - textHeight * 0.5 - 7 + 0.5)
+    
+    -- Draw text with scale transform (no outline, black color, crisp rendering, 50% opacity)
+    love.graphics.push("all")
+    love.graphics.setBlendMode("alpha")
+    love.graphics.translate(textX, textY)
+    love.graphics.scale(textScale, textScale)
+    love.graphics.setColor(0, 0, 0, alpha * 0.5)
+    love.graphics.print(attackText, 0, 0)
+    love.graphics.pop()
+    
+    -- Draw attack icon to the right of text (tinted black, no shadow, crisp rendering)
+    if ICON_ATTACK then
+      local iconX = math.floor(startX + textWidth + iconSpacing + 0.5)
+      local iconY = math.floor(self.cy + yOffset - iconHeight * 0.5 - 5 + 0.5) -- Shifted down by 2px relative to text
+      
+      local iconW, iconH = ICON_ATTACK:getDimensions()
+      local iconScale = iconSize / math.max(iconW, iconH)
+      
+      -- Use shader to remove shadows and convert to pure black (50% opacity)
+      love.graphics.push("all")
+      love.graphics.setBlendMode("alpha")
+      love.graphics.setColor(1, 1, 1, alpha * 0.5)
+      if shadowRemovalShader then
+        love.graphics.setShader(shadowRemovalShader)
+      else
+        -- Fallback: use black color if shader unavailable
+        love.graphics.setColor(0, 0, 0, alpha * 0.5)
+      end
+      love.graphics.draw(ICON_ATTACK, iconX, iconY, 0, iconScale, iconScale, 0, 0)
+      love.graphics.setShader() -- Reset shader
+      love.graphics.pop()
+    end
+  end
+  
   -- Reset color for other draw calls
   love.graphics.setColor(1, 1, 1, 1)
 end

@@ -653,47 +653,47 @@ function BattleScene:update(dt, bounds)
           pushLog(self, "You dealt " .. dmg .. " to all enemies!")
         else
           -- Normal attack: damage only selected enemy
-          local selectedEnemy = self:getSelectedEnemy()
-          if selectedEnemy then
-            local i = self.selectedEnemyIndex
-            if selectedEnemy.hp > 0 then
-              selectedEnemy.hp = math.max(0, selectedEnemy.hp - dmg)
-          
-              -- Trigger enemy hit visual effects (flash, knockback, popup)
-              selectedEnemy.flash = config.battle.hitFlashDuration
-              selectedEnemy.knockbackTime = 1e-6
-              table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy", enemyIndex = i })
-          
-              -- Check if enemy is defeated
-              if selectedEnemy.hp <= 0 then
-                -- Check if disintegration has already completed (prevent restarting)
-                local cfg = config.battle.disintegration or {}
-                local duration = cfg.duration or 1.5
-                local hasCompletedDisintegration = (selectedEnemy.disintegrationTime or 0) >= duration
-                
-                if not hasCompletedDisintegration then
-                  -- Check if impact animations are still playing
-                  local impactsActive = (self.impactInstances and #self.impactInstances > 0)
-                  if impactsActive then
-                    -- Wait for impact animations to finish before starting disintegration
-                    selectedEnemy.pendingDisintegration = true
+        local selectedEnemy = self:getSelectedEnemy()
+        if selectedEnemy then
+          local i = self.selectedEnemyIndex
+          if selectedEnemy.hp > 0 then
+            selectedEnemy.hp = math.max(0, selectedEnemy.hp - dmg)
+        
+            -- Trigger enemy hit visual effects (flash, knockback, popup)
+            selectedEnemy.flash = config.battle.hitFlashDuration
+            selectedEnemy.knockbackTime = 1e-6
+            table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy", enemyIndex = i })
+        
+            -- Check if enemy is defeated
+            if selectedEnemy.hp <= 0 then
+              -- Check if disintegration has already completed (prevent restarting)
+              local cfg = config.battle.disintegration or {}
+              local duration = cfg.duration or 1.5
+              local hasCompletedDisintegration = (selectedEnemy.disintegrationTime or 0) >= duration
+              
+              if not hasCompletedDisintegration then
+                -- Check if impact animations are still playing
+                local impactsActive = (self.impactInstances and #self.impactInstances > 0)
+                if impactsActive then
+                  -- Wait for impact animations to finish before starting disintegration
+                  selectedEnemy.pendingDisintegration = true
+                  pushLog(self, "Enemy " .. i .. " defeated!")
+                else
+                  -- Start disintegration effect immediately if no impacts
+                  if not selectedEnemy.disintegrating then
+                    selectedEnemy.disintegrating = true
+                    selectedEnemy.disintegrationTime = 0
                     pushLog(self, "Enemy " .. i .. " defeated!")
-                  else
-                    -- Start disintegration effect immediately if no impacts
-                    if not selectedEnemy.disintegrating then
-                      selectedEnemy.disintegrating = true
-                      selectedEnemy.disintegrationTime = 0
-                      pushLog(self, "Enemy " .. i .. " defeated!")
-                    end
                   end
                 end
-                
-                -- Auto-select next enemy to the right when selected enemy dies
-                self:_selectNextEnemy()
               end
+              
+              -- Auto-select next enemy to the right when selected enemy dies
+              self:_selectNextEnemy()
             end
           end
-          pushLog(self, "You dealt " .. dmg)
+        end
+        pushLog(self, "You dealt " .. dmg)
         end
         
         -- Clear pending damage

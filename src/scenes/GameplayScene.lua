@@ -34,6 +34,7 @@ function GameplayScene.new()
     cursorY = 0,
     popups = {},
     critThisTurn = 0, -- count of crit blocks hit this turn
+    soulThisTurn = 0, -- count of soul blocks hit this turn
     aoeThisTurn = false, -- true if any AOE blocks were hit this turn
     _prevCanShoot = true,
     turnManager = nil, -- reference to TurnManager (set by SplitScene)
@@ -628,6 +629,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       self.displayScore = 0
       self.armorThisTurn = 0
       self.critThisTurn = 0
+      self.soulThisTurn = 0
       self.aoeThisTurn = false
       self.blocksHitThisTurn = 0
       -- Reset combo when new shot starts
@@ -887,7 +889,7 @@ function GameplayScene:beginContact(fixA, fixB, contact)
     if x and y and self.particles then self.particles:emitSpark(x, y) end
     ball:onBlockHit() -- Trigger glow burst effect
     ball:onBounce()
-    -- Award rewards: per-hit for all blocks. Crit sets a turn multiplier (2x total damage)
+    -- Award rewards: per-hit for all blocks. Crit sets a turn multiplier (2x total damage), Soul sets a turn multiplier (4x total damage)
     local perHit = (config.score and config.score.rewardPerHit) or 1
     local hitReward = perHit
     local popupText = "+" .. tostring(perHit)
@@ -897,10 +899,9 @@ function GameplayScene:beginContact(fixA, fixB, contact)
       popupText = "x2"
       popupKind = "crit"
     elseif block.kind == "soul" then
-      -- Soul block gives +25 bonus damage
-      local soulReward = (config.score and config.score.soulReward) or 25
-      hitReward = hitReward + soulReward
-      popupText = "+" .. tostring(hitReward)
+      -- Soul block gives x4 multiplier (count as soul block)
+      self.soulThisTurn = (self.soulThisTurn or 0) + 1
+      popupText = "x4"
       popupKind = "soul"
     elseif block.kind == "aoe" then
       -- AOE block gives +3 bonus damage and marks attack as AOE

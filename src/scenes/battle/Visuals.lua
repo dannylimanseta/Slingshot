@@ -191,7 +191,7 @@ function Visuals.draw(scene, bounds)
   local playerHalfH = scene.playerImg and ((scene.playerImg:getHeight() * playerScale) * 0.5) or r
 
   local barH = 12
-  local playerBarW = math.max(120, math.min(220, leftWidth - pad * 2)) * 0.7
+  local playerBarW = math.max(120, math.min(220, leftWidth - pad * 2)) * 0.56 -- Reduced by 20% (0.7 * 0.8 = 0.56)
 
   local barY = baselineY + 16
 
