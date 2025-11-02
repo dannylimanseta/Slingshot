@@ -35,6 +35,7 @@ function MapScene.new()
     _battleVictory = false, -- Whether the last battle was a victory
     _treeSwayTime = 0, -- accumulated time for tree sway animation
     playerFacingRight = true, -- track player facing direction for sprite flipping
+    _movementTime = 0, -- time elapsed during current movement for bobbing animation
   }, MapScene)
 end
 
@@ -159,6 +160,9 @@ function MapScene:update(deltaTime)
   
   -- Update player movement animation
   if self.isMoving and self.playerTargetX and self.playerTargetY then
+    -- Track movement time for bobbing animation
+    self._movementTime = self._movementTime + deltaTime
+    
     local moveSpeed = config.map.playerMoveSpeed
     local totalDistance = math.sqrt(
       (self.playerTargetX - self.playerWorldX) ^ 2 +
@@ -176,6 +180,7 @@ function MapScene:update(deltaTime)
         self.playerTargetX = nil
         self.playerTargetY = nil
         self.isMoving = false
+        self._movementTime = 0 -- Reset movement time
         
         -- Check what we reached (enemy, protected treasure, or regular treasure)
         local battleTriggered, battleType, treasureX, treasureY = self.mapManager:completeMovement()
@@ -658,9 +663,21 @@ function MapScene:draw()
       local spriteSize = self.gridSize * 0.8 * 1.5
     local spriteW, spriteH = self.playerSprite:getDimensions()
     local scale = spriteSize / math.max(spriteW, spriteH)
+    
+    -- Calculate bobbing offset during movement
+    local bobOffset = 0
+    if self.isMoving then
+      local bobConfig = config.map.playerBob
+      bobOffset = -math.sin(self._movementTime * bobConfig.speed * 2 * math.pi) * bobConfig.amplitude
+    end
+    
+    -- Apply vertical offset to lower player on tile
+    local verticalOffset = config.map.playerVerticalOffset or 0
+    
     love.graphics.setColor(1, 1, 1, 1)
       local scaleX = self.playerFacingRight and scale or -scale
-      love.graphics.draw(self.playerSprite, px, py, 0, scaleX, scale, spriteW * 0.5, spriteH * 0.5)
+      -- Draw with bottom pivot: pivotX = spriteW * 0.5 (center horizontally), pivotY = spriteH (bottom)
+      love.graphics.draw(self.playerSprite, px, py + verticalOffset + bobOffset, 0, scaleX, scale, spriteW * 0.5, spriteH)
   else
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.circle("fill", px, py, 12)
@@ -698,12 +715,7 @@ function MapScene:drawUI()
   theme.drawTextWithOutline(movesText, 20, 50, 1, 1, 1, 1, 2)
   
   -- Draw instructions
-  if self._battleTransitionDelay > 0 then
-    -- Show battle starting message
-    local battleText = "BATTLE STARTING..."
-    local alpha = math.min(1.0, self._battleTransitionDelay * 2)
-    theme.drawTextWithOutline(battleText, vw * 0.5, vh * 0.5, 1, 0.2, 0.2, alpha, 3)
-  elseif not self.isMoving and self.daySystem:canMove() then
+  if not self.isMoving and self.daySystem:canMove() then
     local instructionText = "WASD or Click to move"
     theme.drawTextWithOutline(instructionText, 20, vh - 40, 0.7, 0.7, 0.7, 1, 2)
   elseif not self.daySystem:canMove() then
@@ -741,6 +753,7 @@ function MapScene:mousepressed(x, y, button)
       self.playerTargetX = targetWorldX
       self.playerTargetY = targetWorldY
       self.isMoving = true
+      self._movementTime = 0 -- Reset movement time for new movement
       -- Update facing direction based on movement direction
       if targetWorldX > self.playerWorldX then
         self.playerFacingRight = true
@@ -821,6 +834,7 @@ function MapScene:keypressed(key, scancode, isRepeat)
       self.playerTargetX = targetWorldX
       self.playerTargetY = targetWorldY
       self.isMoving = true
+      self._movementTime = 0 -- Reset movement time for new movement
       -- Update facing direction based on movement direction (for mouse clicks)
       if targetWorldX > self.playerWorldX then
         self.playerFacingRight = true

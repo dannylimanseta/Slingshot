@@ -350,6 +350,13 @@ config.map = {
     maxShear = 0.04, -- maximum horizontal shear for skewing effect (reduced intensity)
     phaseVariation = 1.5, -- variation in phase offset between rest nodes
   },
+  -- Player bobbing animation during movement
+  playerBob = {
+    speed = 3.0, -- bobbing speed (oscillations per second) - faster for movement
+    amplitude = 2, -- vertical offset in pixels (how much player bobs up/down)
+  },
+  -- Player vertical positioning offset
+  playerVerticalOffset = 35, -- pixels to offset player downward from tile center
   -- Map generation parameters
   generation = {
     width = 40, -- grid width in tiles
