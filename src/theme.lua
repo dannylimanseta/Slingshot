@@ -7,13 +7,23 @@ theme.colors = {
   background = { 33/255, 35/255, 46/255, 1 },
   -- Top bar: hex #0E1014 -> {14,16,20}/255
   topbar = { 14/255, 16/255, 20/255, 1 },
+  topbarDivider = { 0, 0, 0, 1 },
   uiText = { 1, 1, 1, 0.75 },
+  uiTextStrong = { 1, 1, 1, 1 },
   aim = { 0.3, 0.8, 1, 0.7 },
   ball = { 1, 1, 1, 1 },
   block = { 0.95, 0.6, 0.25, 1 },
   blockOutline = { 0, 0, 0, 0.2 },
   blockArmor = { 0.35, 0.75, 0.95, 1 },
   shooter = { 0.8, 0.9, 0.2, 1 },
+  -- Steps indicator (top bar)
+  stepFilled = { 0.78, 0.92, 0.6, 1 },   -- light green
+  stepEmpty = { 0.18, 0.2, 0.22, 1 },     -- dark gray
+}
+
+-- Shared UI metrics
+theme.metrics = {
+  stepCornerRadius = 3, -- corner radius for step rectangles in the top bar
 }
 
 do

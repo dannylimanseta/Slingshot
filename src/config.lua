@@ -304,6 +304,7 @@ config.player = {
 config.map = {
   gridSize = 64, -- pixels per grid cell
   movesPerDay = 12, -- maximum moves per day
+  totalDays = 30, -- campaign length in days
   playerMoveSpeed = 200, -- pixels per second for movement animation
   -- Visual settings
   nodeRadius = 20, -- visual radius of nodes (legacy, may be removed)

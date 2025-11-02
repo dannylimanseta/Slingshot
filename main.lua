@@ -30,6 +30,9 @@ function love.load()
   virtualW = (config.video and config.video.virtualWidth) or 1280
   virtualH = (config.video and config.video.virtualHeight) or 720
   screenCanvas = love.graphics.newCanvas(virtualW, virtualH)
+  -- Use linear filtering so upscaled text looks smooth in fullscreen
+  screenCanvas:setFilter('linear', 'linear')
+  love.graphics.setDefaultFilter('linear', 'linear', 1)
   updateScreenScale()
 
   sceneManager = SceneManager.new()

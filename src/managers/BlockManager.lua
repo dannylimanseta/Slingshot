@@ -672,10 +672,10 @@ function BlockManager:addRandomBlocks(world, width, height, count)
       worldX = math.max(margin + halfVis, math.min(formationWidth - margin - halfVis, worldX))
       worldY = math.max(margin + halfVis, math.min(formationHeight * maxHeightFactor - halfVis, worldY))
       
-      -- Use random kind for respawned blocks (or keep original kind - user's choice)
-      -- Using random kind for variety
-      local kind
-      do
+      -- Preserve the original kind for predefined formation slots, so blocks don't appear to "change"
+      local kind = slot.kind
+      if not kind then
+        -- Fallback to random kind when kind isn't defined in the formation
         local r = love.math.random()
         local critR = (config.blocks and config.blocks.critSpawnRatio) or 0
         local armorR = (config.blocks and config.blocks.armorSpawnRatio) or 0

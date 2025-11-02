@@ -44,6 +44,10 @@ end
 function MapScene:load()
   -- Initialize day system
   self.daySystem:load(config)
+  -- Expose day system to top bar for rendering day and steps
+  if self.topBar then
+    self.topBar.daySystem = self.daySystem
+  end
   
   -- Load map sprites
   if not self._initialized then
@@ -711,21 +715,10 @@ function MapScene:drawUI()
   local vw = config.video.virtualWidth
   local vh = config.video.virtualHeight
   
-  -- Draw day and moves remaining
-  love.graphics.setFont(theme.fonts.base)
-  local dayText = string.format("Day %d", self.daySystem:getCurrentDay())
-  local movesText = string.format("Moves: %d/%d", 
-    self.daySystem:getMovesRemaining(), 
-    self.daySystem:getMaxMoves())
-  
-  theme.drawTextWithOutline(dayText, 20, 20, 1, 1, 1, 1, 2)
-  theme.drawTextWithOutline(movesText, 20, 50, 1, 1, 1, 1, 2)
+  -- Day and steps are now rendered by the TopBar
   
   -- Draw instructions
-  if not self.isMoving and self.daySystem:canMove() then
-    local instructionText = "WASD or Click to move"
-    theme.drawTextWithOutline(instructionText, 20, vh - 40, 0.7, 0.7, 0.7, 1, 2)
-  elseif not self.daySystem:canMove() then
+  if not self.daySystem:canMove() then
     local instructionText = "No moves remaining. Press SPACE to advance to next day."
     theme.drawTextWithOutline(instructionText, 20, vh - 40, 0.9, 0.7, 0.2, 1, 2)
   end
