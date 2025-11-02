@@ -212,9 +212,9 @@ config.battle = {
   popupFadeStart = 0.7, -- start fading at 70% of lifetime (last 30%)
   popupFadeMultiplier = 0.5, -- 50% faster fade within fade window (1.0 = baseline)
   hpBarTweenSpeed = 8, -- HP bar tween speed (how quickly bar moves toward actual HP)
-  spriteScale = 5, -- global fallback
-  playerSpriteScale = 5,
-  enemySpriteScale = 5,
+  spriteScale = 4, -- global fallback (reduced by 20%)
+  playerSpriteScale = 4, -- reduced by 20%
+  enemySpriteScale = 4, -- reduced by 20%
   positionOffsetY = 50, -- Reduced by 100px to avoid tooltip occlusion
   lungeDistance = 80,
   lungeDuration = 0.168, -- 40% slower than original 0.12
