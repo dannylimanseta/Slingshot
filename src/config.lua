@@ -11,7 +11,7 @@ config.playfield = {
   margin = 24, -- pixels from window edges for spawning blocks
   centerWidthFactor = 0.4, -- center playfield width as fraction of screen (reduced by 20% from 0.5)
   maxHeightFactor = 0.6, -- maximum playfield height as fraction of screen height (increased from 0.6 to reduce occlusion)
-  horizontalSpacingFactor = 1.15, -- factor to scale horizontal spacing (1.15 = 115% of playfield width, increasing spacing between blocks)
+  horizontalSpacingFactor = 1.2, -- factor to scale horizontal spacing (~41/36 of previous; ~+5px between grid columns)
   topBarHeight = 60, -- height of top bar UI (pixels)
 }
 
@@ -101,7 +101,7 @@ config.blocks = {
   -- Grid snapping for formation editor
   gridSnap = {
     enabled = true,
-    cellSize = 36, -- pixels per grid cell (increased from 32 for better spacing)
+    cellSize = 41, -- pixels per grid cell (increased by 5 to match +5px spacing)
     showGrid = false, -- show grid visually (toggle with G key)
   },
   -- Spawn animation for newly added blocks

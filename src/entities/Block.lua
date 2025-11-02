@@ -4,6 +4,7 @@ local config = require("config")
 -- Shared sprites for blocks (loaded once)
 local SPRITES = { attack = nil, armor = nil, crit = nil, soul = nil, aoe = nil }
 local ICON_ATTACK = nil
+local ICON_ARMOR = nil
 do
   local imgs = (config.assets and config.assets.images) or {}
   if imgs.block_attack then
@@ -30,6 +31,11 @@ do
   if imgs.icon_attack then
     local ok, img = pcall(love.graphics.newImage, imgs.icon_attack)
     if ok then ICON_ATTACK = img end
+  end
+  -- Load armor icon
+  if imgs.icon_armor then
+    local ok, img = pcall(love.graphics.newImage, imgs.icon_armor)
+    if ok then ICON_ARMOR = img end
   end
 end
 
@@ -263,23 +269,33 @@ function Block:draw()
     end
   end
   
-  -- Draw attack value text label on blocks
-  local attackText = nil
+  -- Draw value text label on blocks (attack or armor)
+  local valueText = nil
+  local iconToUse = nil
   if self.kind == "damage" or self.kind == "attack" then
-    attackText = "+1"
+    valueText = "+1"
+    iconToUse = ICON_ATTACK
   elseif self.kind == "crit" then
-    attackText = "x2"
+    valueText = "x2"
+    iconToUse = ICON_ATTACK
   elseif self.kind == "soul" then
-    attackText = "x4"
+    valueText = "x4"
+    iconToUse = ICON_ATTACK
+  elseif self.kind == "armor" then
+    -- Get armor value based on HP
+    local armorMap = config.armor and config.armor.rewardByHp or { [1] = 3, [2] = 2, [3] = 1 }
+    local armorValue = armorMap[math.max(1, math.min(3, self.hp))] or 0
+    valueText = "+" .. tostring(armorValue)
+    iconToUse = ICON_ARMOR
   end
   
-  if attackText then
+  if valueText and iconToUse then
     -- Use theme font for text, scaled down by 30%
     local baseFont = theme.fonts.base or love.graphics.getFont()
     love.graphics.setFont(baseFont)
     
     -- Get base text dimensions (before scaling)
-    local baseTextWidth = baseFont:getWidth(attackText)
+    local baseTextWidth = baseFont:getWidth(valueText)
     local baseTextHeight = baseFont:getHeight()
     
     -- Scale factor for 30% reduction
@@ -292,8 +308,8 @@ function Block:draw()
     -- Icon dimensions and spacing
     local iconSpacing = 2 -- pixels between text and icon (reduced from 4)
     local iconSize = textHeight * 0.7 -- icon size matches text height, reduced by 30%
-    local iconWidth = ICON_ATTACK and iconSize or 0
-    local iconHeight = ICON_ATTACK and iconSize or 0
+    local iconWidth = iconToUse and iconSize or 0
+    local iconHeight = iconToUse and iconSize or 0
     
     -- Calculate total width for centering
     local totalWidth = textWidth + iconSpacing + iconWidth
@@ -311,15 +327,17 @@ function Block:draw()
     love.graphics.translate(textX, textY)
     love.graphics.scale(textScale, textScale)
     love.graphics.setColor(0, 0, 0, alpha * 0.5)
-    love.graphics.print(attackText, 0, 0)
+    love.graphics.print(valueText, 0, 0)
     love.graphics.pop()
     
-    -- Draw attack icon to the right of text (tinted black, no shadow, crisp rendering)
-    if ICON_ATTACK then
+    -- Draw icon to the right of text (tinted black, no shadow, crisp rendering)
+    if iconToUse then
       local iconX = math.floor(startX + textWidth + iconSpacing + 0.5)
-      local iconY = math.floor(self.cy + yOffset - iconHeight * 0.5 - 5 + 0.5) -- Shifted down by 2px relative to text
+      -- Icon Y position: armor blocks shifted up by 2px more (relative to attack blocks)
+      local iconYOffset = (self.kind == "armor") and -7 or -5
+      local iconY = math.floor(self.cy + yOffset - iconHeight * 0.5 + iconYOffset + 0.5)
       
-      local iconW, iconH = ICON_ATTACK:getDimensions()
+      local iconW, iconH = iconToUse:getDimensions()
       local iconScale = iconSize / math.max(iconW, iconH)
       
       -- Use shader to remove shadows and convert to pure black (50% opacity)
@@ -332,7 +350,7 @@ function Block:draw()
         -- Fallback: use black color if shader unavailable
         love.graphics.setColor(0, 0, 0, alpha * 0.5)
       end
-      love.graphics.draw(ICON_ATTACK, iconX, iconY, 0, iconScale, iconScale, 0, 0)
+      love.graphics.draw(iconToUse, iconX, iconY, 0, iconScale, iconScale, 0, 0)
       love.graphics.setShader() -- Reset shader
       love.graphics.pop()
     end
