@@ -13,6 +13,36 @@ battle_profiles.Types = {
 battle_profiles.data = {
   [battle_profiles.Types.DEFAULT] = {
     centerWidthFactor = 0.45,
+    -- Enemy configuration
+    -- enemyCount: number of enemies (1-3)
+    -- enemySpacing: spacing between enemies in pixels (default: 40)
+    enemySpacing = -20, -- Gap between enemies in pixels
+    -- enemies: array of enemy configs, each with:
+    --   sprite: path to sprite image (relative to assets/images/)
+    --   maxHP: maximum HP for this enemy
+    --   damageMin: minimum damage this enemy deals
+    --   damageMax: maximum damage this enemy deals
+    --   spriteScale: visual scale multiplier (optional, defaults to config.battle.enemySpriteScale)
+    --   scaleMul: additional scale multiplier (optional, defaults to 1)
+    enemies = {
+      {
+        sprite = "enemy_1.png",
+        maxHP = 80,
+        damageMin = 3,
+        damageMax = 8,
+        spriteScale = 3.5,
+        scaleMul = 1,
+      },
+      {
+        sprite = "enemy_2.png",
+        maxHP = 50,
+        damageMin = 3,
+        damageMax = 5,
+        spriteScale = 3.5,
+        scaleMul = 1,
+      },
+    },
+    enemyCount = 2, -- Number of enemies (will use first N entries from enemies array)
     -- Block formation configuration
     -- Type: "random" (uses clustering/random placement) or "predefined" (uses exact positions)
     blockFormation = {

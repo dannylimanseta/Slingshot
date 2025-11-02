@@ -82,7 +82,7 @@ function SplitScene:load()
   local battleProfile = battle_profiles.getProfile(currentBattleType)
   
   self.left:load({ x = 0, y = 0, w = centerRect.w, h = h }, self.currentProjectileId, battleProfile)
-  self.right:load({ x = centerRect.w, y = 0, w = w - centerRect.w, h = h })
+  self.right:load({ x = centerRect.w, y = 0, w = w - centerRect.w, h = h }, battleProfile)
   self._lastCenterW = centerRect.w
 
   -- Increase current enemy size (runtime multiplier)
@@ -211,8 +211,17 @@ function SplitScene:setupTurnManagerEvents()
   
   -- Check victory event
   self.turnManager:on("check_victory", function()
-    if self.right and self.right.enemyHP and self.right.enemyHP <= 0 and self.right.enemy2HP and self.right.enemy2HP <= 0 then
+    if self.right and self.right.enemies then
+      local allDefeated = true
+      for _, enemy in ipairs(self.right.enemies) do
+        if enemy.hp > 0 and not enemy.disintegrating then
+          allDefeated = false
+          break
+        end
+      end
+      if allDefeated then
       self.turnManager:transitionTo(TurnManager.States.VICTORY)
+      end
     end
   end)
   
@@ -726,14 +735,22 @@ function SplitScene:update(dt)
   end
   
   -- Check for victory/defeat and return to map after delay
-  -- Check for victory condition: enemy HP at 0 or BattleScene win state
+  -- Check for victory condition: all enemies defeated or BattleScene win state
   local isVictory = false
   if self.right then
-    -- Check multiple victory conditions
-    if ((self.right.enemyHP and self.right.enemyHP <= 0) or (self.right.displayEnemyHP and self.right.displayEnemyHP <= 0.1)) and
-       ((self.right.enemy2HP and self.right.enemy2HP <= 0) or (self.right.displayEnemy2HP and self.right.displayEnemy2HP <= 0.1)) or
-       (self.right.state == "win") then
+    if self.right.state == "win" then
       isVictory = true
+    elseif self.right.enemies then
+      local allDefeated = true
+      for _, enemy in ipairs(self.right.enemies) do
+        if enemy.hp > 0 and not enemy.disintegrating then
+          allDefeated = false
+          break
+        end
+      end
+      if allDefeated then
+        isVictory = true
+      end
     end
   end
   

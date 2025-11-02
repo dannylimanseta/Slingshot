@@ -217,7 +217,7 @@ config.battle = {
   popupFadeMultiplier = 0.5, -- 50% faster fade within fade window (1.0 = baseline)
   hpBarTweenSpeed = 8, -- HP bar tween speed (how quickly bar moves toward actual HP)
   spriteScale = 4, -- global fallback (reduced by 20%)
-  playerSpriteScale = 4, -- reduced by 20%
+  playerSpriteScale = 3.2, -- reduced by 20% (was 4)
   enemySpriteScale = 4, -- reduced by 20%
   positionOffsetY = 50, -- Reduced by 100px to avoid tooltip occlusion
   lungeDistance = 80,

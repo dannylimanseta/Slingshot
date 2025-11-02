@@ -23,10 +23,13 @@ function Animations.update(scene, dt)
     end
   end
 
+  -- Advance enemy lunge timers
   local totalEnemy = ((config.battle and config.battle.lungeDuration) or 0) + ((config.battle and config.battle.lungeReturnDuration) or 0)
-  if scene.enemyLungeTime and scene.enemyLungeTime > 0 then
-    scene.enemyLungeTime = scene.enemyLungeTime + dt
-    if scene.enemyLungeTime > totalEnemy then scene.enemyLungeTime = 0 end
+  for _, enemy in ipairs(scene.enemies or {}) do
+    if enemy.lungeTime and enemy.lungeTime > 0 then
+      enemy.lungeTime = enemy.lungeTime + dt
+      if enemy.lungeTime > totalEnemy then enemy.lungeTime = 0 end
+    end
   end
 
   -- Advance knockback timers
@@ -37,9 +40,11 @@ function Animations.update(scene, dt)
   end
 
   local kbTotalEnemy = ((config.battle and config.battle.knockbackDuration) or 0) + ((config.battle and config.battle.knockbackReturnDuration) or 0)
-  if scene.enemyKnockbackTime and scene.enemyKnockbackTime > 0 then
-    scene.enemyKnockbackTime = scene.enemyKnockbackTime + dt
-    if scene.enemyKnockbackTime > kbTotalEnemy then scene.enemyKnockbackTime = 0 end
+  for _, enemy in ipairs(scene.enemies or {}) do
+    if enemy.knockbackTime and enemy.knockbackTime > 0 then
+      enemy.knockbackTime = enemy.knockbackTime + dt
+      if enemy.knockbackTime > kbTotalEnemy then enemy.knockbackTime = 0 end
+    end
   end
 
   -- Tween rotation back to 0
@@ -49,10 +54,12 @@ function Animations.update(scene, dt)
     scene.playerRotation = scene.playerRotation * (1 - k)
     if math.abs(scene.playerRotation) < 0.001 then scene.playerRotation = 0 end
   end
-  if scene.enemyRotation and math.abs(scene.enemyRotation) > 0.001 then
+  for _, enemy in ipairs(scene.enemies or {}) do
+    if enemy.rotation and math.abs(enemy.rotation) > 0.001 then
     local k = math.min(1, rotationTweenSpeed * dt)
-    scene.enemyRotation = scene.enemyRotation * (1 - k)
-    if math.abs(scene.enemyRotation) < 0.001 then scene.enemyRotation = 0 end
+      enemy.rotation = enemy.rotation * (1 - k)
+      if math.abs(enemy.rotation) < 0.001 then enemy.rotation = 0 end
+    end
   end
 
   -- Update fog time
@@ -76,7 +83,9 @@ function Animations.update(scene, dt)
   if pulseConfig and (pulseConfig.enabled ~= false) then
     local speed = pulseConfig.speed or 1.2
     scene.playerPulseTime = (scene.playerPulseTime or 0) + dt * speed * 2 * math.pi
-    scene.enemyPulseTime = (scene.enemyPulseTime or 0) + dt * speed * 2 * math.pi
+    for _, enemy in ipairs(scene.enemies or {}) do
+      enemy.pulseTime = (enemy.pulseTime or 0) + dt * speed * 2 * math.pi
+    end
   end
 
   -- Emit lunge speed streaks during player forward phase

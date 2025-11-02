@@ -91,12 +91,18 @@ function ImpactSystem.update(scene, dt)
         if not event.triggered then
           event.triggered = true
           event.startTime = 0
-          scene.enemyFlash = math.max(scene.enemyFlash or 0, flashDuration)
+          -- Apply flash and rotation to first enemy (primary target)
+          if scene.enemies and #scene.enemies > 0 then
+            local enemy = scene.enemies[1]
+            if enemy then
+              enemy.flash = math.max(enemy.flash or 0, flashDuration)
           -- Apply slight rotation nudge on hit
           local rotationDegrees = love.math.random(1, 3)
           local rotationRadians = math.rad(rotationDegrees)
           if love.math.random() < 0.5 then rotationRadians = -rotationRadians end
-          scene.enemyRotation = (scene.enemyRotation or 0) + rotationRadians
+              enemy.rotation = (enemy.rotation or 0) + rotationRadians
+            end
+          end
         end
         event.startTime = (event.startTime or 0) + dt
         if event.startTime < flashDuration then
@@ -150,12 +156,20 @@ function ImpactSystem.update(scene, dt)
     scene.impactInstances = activeInstances
 
     -- If we owe a disintegration after impacts, trigger when all slashes are done
-    if scene.pendingDisintegration and (#scene.impactInstances == 0) then
-      if not scene.enemyDisintegrating then
-        scene.enemyDisintegrating = true
-        scene.enemyDisintegrationTime = 0
+    -- Check all enemies for pending disintegration
+    for _, enemy in ipairs(scene.enemies or {}) do
+      if enemy.pendingDisintegration and (#scene.impactInstances == 0) then
+        -- Check if disintegration has already completed (prevent restarting)
+        local cfg = config.battle and config.battle.disintegration or {}
+        local duration = cfg.duration or 1.5
+        local hasCompletedDisintegration = (enemy.disintegrationTime or 0) >= duration
+        
+        if not enemy.disintegrating and not hasCompletedDisintegration then
+          enemy.disintegrating = true
+          enemy.disintegrationTime = 0
+        end
+        enemy.pendingDisintegration = false
       end
-      scene.pendingDisintegration = false
     end
   end
 end
