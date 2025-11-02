@@ -19,8 +19,8 @@ do
     local ok, img = pcall(love.graphics.newImage, imgs.block_crit)
     if ok then SPRITES.crit = img end
   end
-  if imgs.block_soul then
-    local ok, img = pcall(love.graphics.newImage, imgs.block_soul)
+  if imgs.block_crit_2 then
+    local ok, img = pcall(love.graphics.newImage, imgs.block_crit_2)
     if ok then SPRITES.soul = img end
   end
 end
