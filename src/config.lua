@@ -235,7 +235,7 @@ config.battle = {
     speedMax = -600,
     lengthMin = 24,
     lengthMax = 60,
-    thickness = 4,
+    thickness = 6, -- increased thickness for more visible streaks
     alpha = 0.45,
     jitterY = 18, -- vertical jitter around mid-height
   },
@@ -317,8 +317,8 @@ config.map = {
   -- Distance fog/fading effect
   distanceFog = {
     enabled = true, -- enable distance-based fading
-    fadeStartRadius = 200, -- radius in pixels where fading begins (fully visible inside)
-    fadeEndRadius = 400, -- radius in pixels where fading ends (minimum alpha reached)
+    fadeStartRadius = 300, -- radius in pixels where fading begins (fully visible inside)
+    fadeEndRadius = 500, -- radius in pixels where fading ends (minimum alpha reached)
     minAlpha = 0.03, -- minimum alpha value for objects at max distance (0% = fully transparent)
   },
   -- Rest site lighting effect

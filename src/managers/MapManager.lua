@@ -407,6 +407,15 @@ function MapManager:generateMap(width, height, seed)
   
   -- Step 10: Place events (more common than treasures)
   self:placeEvents()
+  
+  -- Step 11: Final verification - ensure all enemies are accessible
+  self:ensureAllEnemiesAccessible()
+  
+  -- Step 12: Ensure all treasures are protected by enemies
+  self:ensureAllTreasuresProtected()
+  
+  -- Step 13: Final check - ensure newly placed protecting enemies are accessible
+  self:ensureAllEnemiesAccessible()
 end
 
 -- Place trees and stones as obstacles (non-traversable)
@@ -627,12 +636,16 @@ function MapManager:ensurePathToPosition(targetX, targetY)
   -- Simple manhattan path - move toward start position
   while currentX ~= startX or currentY ~= startY do
     -- Convert current tile to ground if it's not already traversable
-    if self:isValidGrid(currentX, currentY) and not self:isTraversable(currentX, currentY) then
-      self:setTile(currentX, currentY, {
-        type = MapManager.TileType.GROUND,
-        spriteVariant = nil,
-        decoration = nil,
-      })
+    -- But preserve enemy tiles (they're traversable but we don't want to remove them)
+    if self:isValidGrid(currentX, currentY) then
+      local tile = self:getTile(currentX, currentY)
+      if tile and tile.type ~= MapManager.TileType.ENEMY and not self:isTraversable(currentX, currentY) then
+        self:setTile(currentX, currentY, {
+          type = MapManager.TileType.GROUND,
+          spriteVariant = nil,
+          decoration = nil,
+        })
+      end
     end
     
     -- Move toward start position (prefer horizontal movement first)
@@ -649,16 +662,156 @@ function MapManager:ensurePathToPosition(targetX, targetY)
     end
     
     -- Convert tile at new position to ground if needed
-    if self:isValidGrid(currentX, currentY) and not self:isTraversable(currentX, currentY) then
-      self:setTile(currentX, currentY, {
-        type = MapManager.TileType.GROUND,
-        spriteVariant = nil,
-        decoration = nil,
-      })
+    -- But preserve enemy tiles
+    if self:isValidGrid(currentX, currentY) then
+      local tile = self:getTile(currentX, currentY)
+      if tile and tile.type ~= MapManager.TileType.ENEMY and not self:isTraversable(currentX, currentY) then
+        self:setTile(currentX, currentY, {
+          type = MapManager.TileType.GROUND,
+          spriteVariant = nil,
+          decoration = nil,
+        })
+      end
     end
   end
   
   return true
+end
+
+-- Final verification: ensure all enemies on the map are accessible from player start
+function MapManager:ensureAllEnemiesAccessible()
+  -- Collect all enemy positions on the map
+  local allEnemies = {}
+  for y = 1, self.gridHeight do
+    for x = 1, self.gridWidth do
+      local tile = self:getTile(x, y)
+      if tile and tile.type == MapManager.TileType.ENEMY then
+        table.insert(allEnemies, {x, y})
+      end
+    end
+  end
+  
+  -- Ensure each enemy is reachable
+  for _, enemyPos in ipairs(allEnemies) do
+    local ex, ey = enemyPos[1], enemyPos[2]
+    if not self:isReachableFromStart(ex, ey) then
+      -- Carve a path to make this enemy accessible
+      self:ensurePathToPosition(ex, ey)
+    end
+  end
+end
+
+-- Final verification: ensure all treasures are protected by enemies and only accessible through one path
+function MapManager:ensureAllTreasuresProtected()
+  -- Find all treasures on the map
+  for y = 1, self.gridHeight do
+    for x = 1, self.gridWidth do
+      local tile = self:getTile(x, y)
+      if tile and tile.type == MapManager.TileType.TREASURE then
+        -- Find all traversable neighbors (potential paths to treasure)
+        local neighbors = {
+          {x - 1, y}, -- Left
+          {x + 1, y}, -- Right
+          {x, y - 1}, -- Up
+          {x, y + 1}, -- Down
+        }
+        
+        local traversablePaths = {}
+        local enemyPath = nil
+        
+        -- Identify all traversable paths and find which one has an enemy
+        for _, neighborPos in ipairs(neighbors) do
+          local nx, ny = neighborPos[1], neighborPos[2]
+          local neighborTile = self:getTile(nx, ny)
+          if neighborTile and self:isTraversable(nx, ny) then
+            table.insert(traversablePaths, {x = nx, y = ny, tile = neighborTile})
+            if neighborTile.type == MapManager.TileType.ENEMY then
+              enemyPath = {x = nx, y = ny, tile = neighborTile}
+            end
+          end
+        end
+        
+        -- If there are multiple paths, we need to ensure only one path exists (with enemy)
+        if #traversablePaths > 1 then
+          -- Multiple paths exist - need to block all except one with enemy
+          if enemyPath then
+            -- We have an enemy on one path - block all other paths
+            for _, path in ipairs(traversablePaths) do
+              if path.x ~= enemyPath.x or path.y ~= enemyPath.y then
+                -- Block this path
+                path.tile.type = MapManager.TileType.TREE
+                path.tile.decorationVariant = self:random(1, #self.sprites.tree)
+                path.tile.decoration = nil
+                path.tile.spriteVariant = nil
+              end
+            end
+            tile.protected = true
+          else
+            -- No enemy found - place one on the first path and block others
+            -- Use stored pathTile if available, otherwise use first traversable path
+            local pathToUse = nil
+            if tile.pathTile and tile.pathTile.x and tile.pathTile.y then
+              -- Find the stored path tile in our traversable paths
+              for _, path in ipairs(traversablePaths) do
+                if path.x == tile.pathTile.x and path.y == tile.pathTile.y then
+                  pathToUse = path
+                  break
+                end
+              end
+            end
+            
+            -- If stored path not found or not traversable, use first traversable path
+            if not pathToUse and #traversablePaths > 0 then
+              pathToUse = traversablePaths[1]
+            end
+            
+            if pathToUse then
+              -- Place enemy on chosen path
+              pathToUse.tile.type = MapManager.TileType.ENEMY
+              pathToUse.tile.decorationVariant = nil
+              pathToUse.tile.decoration = nil
+              pathToUse.tile.spriteVariant = nil
+              
+              -- Block all other paths
+              for _, path in ipairs(traversablePaths) do
+                if path.x ~= pathToUse.x or path.y ~= pathToUse.y then
+                  path.tile.type = MapManager.TileType.TREE
+                  path.tile.decorationVariant = self:random(1, #self.sprites.tree)
+                  path.tile.decoration = nil
+                  path.tile.spriteVariant = nil
+                end
+              end
+              
+              -- Update stored path tile
+              tile.pathTile = {x = pathToUse.x, y = pathToUse.y}
+              tile.protected = true
+            end
+          end
+        elseif #traversablePaths == 1 then
+          -- Only one path exists - ensure it has an enemy
+          local path = traversablePaths[1]
+          if path.tile.type ~= MapManager.TileType.ENEMY then
+            -- Place enemy on the single path
+            path.tile.type = MapManager.TileType.ENEMY
+            path.tile.decorationVariant = nil
+            path.tile.decoration = nil
+            path.tile.spriteVariant = nil
+            tile.protected = true
+          else
+            -- Already has enemy
+            tile.protected = true
+          end
+          
+          -- Update stored path tile
+          tile.pathTile = {x = path.x, y = path.y}
+        else
+          -- No traversable paths - treasure is completely blocked (shouldn't happen, but handle it)
+          -- This means the treasure is unreachable, which is fine for protection
+          tile.protected = true
+        end
+      end
+    end
+  end
 end
 
 -- Place enemies on traversable ground tiles and ensure they're all accessible

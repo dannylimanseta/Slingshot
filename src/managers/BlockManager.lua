@@ -775,6 +775,88 @@ function BlockManager:addRandomBlocks(world, width, height, count)
   return newBlocks
 end
 
+-- Count available empty spaces for block placement
+-- Returns the number of empty formation slots (if using predefined formation) or an estimate
+function BlockManager:countAvailableSpaces(width, height)
+  local margin = config.playfield.margin
+  
+  -- If we have a predefined formation, count empty slots
+  if self.predefinedFormation and type(self.predefinedFormation) == "table" and #self.predefinedFormation > 0 then
+    local formationWidth = self.playfieldWidth or width
+    local formationHeight = self.playfieldHeight or height
+    
+    local playfieldX = margin
+    local playfieldY = margin
+    local playfieldW = formationWidth - 2 * margin
+    local maxHeightFactor = (config.playfield and config.playfield.maxHeightFactor) or 0.65
+    local playfieldH = formationHeight * maxHeightFactor - margin
+    
+    local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+    local effectivePlayfieldW = playfieldW * horizontalSpacingFactor
+    local playfieldXOffset = playfieldW * (1 - horizontalSpacingFactor) * 0.5
+    
+    -- Helper to check if a formation slot is currently occupied (same logic as addRandomBlocks)
+    local function isSlotOccupied(slot)
+      local worldX = playfieldX + playfieldXOffset + slot.x * effectivePlayfieldW
+      local worldY = playfieldY + slot.y * playfieldH
+      
+      local slotNormX = slot.x
+      local slotNormY = slot.y
+      local normTolerance = 0.05
+      
+      for _, block in ipairs(self.blocks) do
+        if block and block.alive then
+          local blockCenterX, blockCenterY = nil, nil
+          
+          if block.cx and block.cy then
+            blockCenterX = block.cx
+            blockCenterY = block.cy
+          elseif type(block.getAABB) == "function" then
+            local bx, by, bw, bh = block:getAABB()
+            if bx and by and bw and bh then
+              blockCenterX = bx + bw * 0.5
+              blockCenterY = by + bh * 0.5
+            end
+          elseif type(block.getPlacementAABB) == "function" then
+            local bx, by, bw, bh = block:getPlacementAABB()
+            if bx and by and bw and bh then
+              blockCenterX = bx + bw * 0.5
+              blockCenterY = by + bh * 0.5
+            end
+          end
+          
+          if blockCenterX and blockCenterY then
+            local blockNormX = (blockCenterX - playfieldX) / playfieldW
+            local blockNormY = (blockCenterY - playfieldY) / playfieldH
+            local dx = math.abs(blockNormX - slotNormX)
+            local dy = math.abs(blockNormY - slotNormY)
+            if dx <= normTolerance and dy <= normTolerance then
+              return true
+            end
+          end
+        end
+      end
+      
+      return false
+    end
+    
+    -- Count empty slots
+    local emptyCount = 0
+    for _, slot in ipairs(self.predefinedFormation) do
+      if not isSlotOccupied(slot) then
+        emptyCount = emptyCount + 1
+      end
+    end
+    
+    return emptyCount
+  end
+  
+  -- If no predefined formation, we can't reliably count spaces
+  -- Return a conservative estimate based on total blocks vs max possible
+  -- For now, return a high number to allow spawning (will be limited by overlap checks)
+  return 10 -- Conservative estimate
+end
+
 function BlockManager:aliveBlocks()
   local out = {}
   for _, b in ipairs(self.blocks) do

@@ -219,11 +219,25 @@ end
 
 -- Public: respawn 1-2 blocks every turn (fixed respawn rate)
 function GameplayScene:respawnDestroyedBlocks(bounds)
-  local toSpawn = love.math.random(1, 2) -- Always spawn 1 or 2 blocks
-  if toSpawn <= 0 then return end
   if not (self.blocks and self.blocks.addRandomBlocks) then return end
   local width = (bounds and bounds.w) or love.graphics.getWidth()
   local height = (bounds and bounds.h) or love.graphics.getHeight()
+  
+  -- Count available empty spaces
+  local availableSpaces = 0
+  if self.blocks.countAvailableSpaces then
+    availableSpaces = self.blocks:countAvailableSpaces(width, height)
+  end
+  
+  -- Only spawn blocks if there are available spaces
+  if availableSpaces <= 0 then return end
+  
+  -- Limit spawn count to available spaces (never spawn more than available)
+  local desiredSpawn = love.math.random(1, 2) -- Want to spawn 1 or 2 blocks
+  local toSpawn = math.min(desiredSpawn, availableSpaces) -- But limit to available spaces
+  
+  if toSpawn <= 0 then return end
+  
   local newBlocks = self.blocks:addRandomBlocks(self.world, width, height, toSpawn)
   for _, nb in ipairs(newBlocks) do
     nb.onDestroyed = function()
