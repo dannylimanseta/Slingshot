@@ -1,6 +1,7 @@
 local config = require("config")
 local theme = require("theme")
 local battle_profiles = require("data.battle_profiles")
+local TopBar = require("ui.TopBar")
 
 -- Shared sprites for blocks (same as Block.lua)
 local SPRITES = { attack = nil, armor = nil, crit = nil, soul = nil }
@@ -50,6 +51,7 @@ function FormationEditorScene.new()
     statusMessageTimer = 0,
     -- Previous scene reference (to return to)
     previousScene = nil,
+    topBar = TopBar.new(),
   }, FormationEditorScene)
 end
 
@@ -71,12 +73,13 @@ function FormationEditorScene:load()
   local centerX = centerRect.x -- This is math.floor((w - centerW) * 0.5)
   
   -- Match BlockManager exactly: it receives centerW as width and h as height
-  -- BlockManager calculates: playfieldX = margin, playfieldY = margin
+  -- BlockManager calculates: playfieldX = margin, playfieldY = margin + topBarHeight
   -- playfieldW = width - 2 * margin, playfieldH = height * maxHeightFactor - margin
   -- Where width = centerW and height = h (full screen height)
+  -- Note: Top bar is hidden in editor, so we use margin instead of margin + topBarHeight
   local maxHeightFactor = (config.playfield and config.playfield.maxHeightFactor) or 0.65
   self.playfieldX = centerX + margin -- Offset by centerX to position on screen
-  self.playfieldY = margin
+  self.playfieldY = margin -- No top bar in editor, so start at margin
   self.playfieldW = centerW - 2 * margin -- Use center canvas width, not full screen width
   self.actualPlayfieldW = self.playfieldW -- Store actual breakout area width (matches game exactly)
   self.playfieldH = h * maxHeightFactor - margin -- Use same height and maxHeightFactor as BlockManager
@@ -202,6 +205,8 @@ function FormationEditorScene:draw()
   self:drawUI()
   
   love.graphics.setColor(1, 1, 1, 1)
+  
+  -- Top bar is hidden in editor
 end
 
 function FormationEditorScene:drawBlock(x, y, kind, size)

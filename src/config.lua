@@ -12,6 +12,7 @@ config.playfield = {
   centerWidthFactor = 0.4, -- center playfield width as fraction of screen (reduced by 20% from 0.5)
   maxHeightFactor = 0.6, -- maximum playfield height as fraction of screen height (increased from 0.6 to reduce occlusion)
   horizontalSpacingFactor = 1.15, -- factor to scale horizontal spacing (1.15 = 115% of playfield width, increasing spacing between blocks)
+  topBarHeight = 60, -- height of top bar UI (pixels)
 }
 
 config.ball = {
@@ -417,6 +418,8 @@ config.assets = {
     block_soul = "assets/images/block_soul.png",
     icon_armor = "assets/images/icon_armor.png",
     icon_attack = "assets/images/icon_attack.png",
+    icon_health = "assets/images/icon_health.png",
+    icon_gold = "assets/images/icon_gold.png",
     impact = "assets/images/fx/impact_1.png",
   },
   fonts = {

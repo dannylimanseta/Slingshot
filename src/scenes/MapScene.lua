@@ -2,6 +2,7 @@ local theme = require("theme")
 local config = require("config")
 local MapManager = require("managers.MapManager")
 local DaySystem = require("core.DaySystem")
+local TopBar = require("ui.TopBar")
 
 local MapScene = {}
 MapScene.__index = MapScene
@@ -36,6 +37,7 @@ function MapScene.new()
     _treeSwayTime = 0, -- accumulated time for tree sway animation
     playerFacingRight = true, -- track player facing direction for sprite flipping
     _movementTime = 0, -- time elapsed during current movement for bobbing animation
+    topBar = TopBar.new(),
   }, MapScene)
 end
 
@@ -698,6 +700,11 @@ function MapScene:draw()
   
   -- Draw UI overlay
   self:drawUI()
+  
+  -- Draw top bar on top (z-order)
+  if self.topBar then
+    self.topBar:draw()
+  end
 end
 
 function MapScene:drawUI()

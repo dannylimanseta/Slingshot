@@ -6,6 +6,7 @@ local Ball = require("entities.Ball")
 local Shooter = require("entities.Shooter")
 local ParticleManager = require("managers.ParticleManager")
 local ProjectileManager = require("managers.ProjectileManager")
+local TopBar = require("ui.TopBar")
 
 local GameplayScene = {}
 GameplayScene.__index = GameplayScene
@@ -46,6 +47,7 @@ function GameplayScene.new()
     shakeDuration = 0,
     shakeTime = 0,
     projectileId = "qi_orb", -- default projectile ID
+    topBar = TopBar.new(),
   }, GameplayScene)
 end
 
@@ -55,12 +57,13 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
   self.world = love.physics.newWorld(0, 0, true)
   self.world:setCallbacks(function(a, b, contact) self:beginContact(a, b, contact) end, nil, nil, nil)
 
-  -- Walls (static)
+  -- Walls (static) - account for top bar
+  local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
   local halfW, halfH = width * 0.5, height * 0.5
   self.wallBody = love.physics.newBody(self.world, 0, 0, "static")
-  local left = love.physics.newEdgeShape(0, 0, 0, height)
-  local right = love.physics.newEdgeShape(width, 0, width, height)
-  local top = love.physics.newEdgeShape(0, 0, width, 0)
+  local left = love.physics.newEdgeShape(0, topBarHeight, 0, height)
+  local right = love.physics.newEdgeShape(width, topBarHeight, width, height)
+  local top = love.physics.newEdgeShape(0, topBarHeight, width, topBarHeight)
   local bottomSensor = love.physics.newEdgeShape(0, height, width, height)
   local fL = love.physics.newFixture(self.wallBody, left)
   local fR = love.physics.newFixture(self.wallBody, right)
@@ -554,6 +557,11 @@ function GameplayScene:draw(bounds)
   end
   
   love.graphics.pop() -- Pop screenshake transform (must be last, after all drawing)
+  
+  -- Draw top bar on top (z-order)
+  if self.topBar then
+    self.topBar:draw()
+  end
 end
 
 -- Trigger screenshake
@@ -781,10 +789,11 @@ function GameplayScene:updateWalls(newWidth, newHeight)
     end
   end
   
-  -- Create new walls with updated dimensions
-  local left = love.physics.newEdgeShape(0, 0, 0, newHeight)
-  local right = love.physics.newEdgeShape(newWidth, 0, newWidth, newHeight)
-  local top = love.physics.newEdgeShape(0, 0, newWidth, 0)
+  -- Create new walls with updated dimensions (account for top bar)
+  local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
+  local left = love.physics.newEdgeShape(0, topBarHeight, 0, newHeight)
+  local right = love.physics.newEdgeShape(newWidth, topBarHeight, newWidth, newHeight)
+  local top = love.physics.newEdgeShape(0, topBarHeight, newWidth, topBarHeight)
   local bottomSensor = love.physics.newEdgeShape(0, newHeight, newWidth, newHeight)
   
   local fL = love.physics.newFixture(self.wallBody, left)

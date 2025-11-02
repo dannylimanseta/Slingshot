@@ -1,10 +1,14 @@
 local theme = require("theme")
+local TopBar = require("ui.TopBar")
 
 local EmptyScene = {}
 EmptyScene.__index = EmptyScene
 
 function EmptyScene.new()
-  return setmetatable({ message = "" }, EmptyScene)
+  return setmetatable({ 
+    message = "",
+    topBar = TopBar.new(),
+  }, EmptyScene)
 end
 
 function EmptyScene:load()
@@ -20,6 +24,11 @@ function EmptyScene:draw(bounds)
   local height = bounds and bounds.h or love.graphics.getHeight()
   theme.printfWithOutline(self.message, 0, height * 0.5 - 10, width, "center", 1, 1, 1, 0.7, 2)
   love.graphics.setColor(1, 1, 1, 1)
+  
+  -- Draw top bar on top (z-order)
+  if self.topBar then
+    self.topBar:draw()
+  end
 end
 
 function EmptyScene:resize(width, height)

@@ -5,6 +5,8 @@ local config = require("config")
 theme.colors = {
   -- Background: hex #21232E -> {33,35,46}/255
   background = { 33/255, 35/255, 46/255, 1 },
+  -- Top bar: hex #0E1014 -> {14,16,20}/255
+  topbar = { 14/255, 16/255, 20/255, 1 },
   uiText = { 1, 1, 1, 0.75 },
   aim = { 0.3, 0.8, 1, 0.7 },
   ball = { 1, 1, 1, 1 },

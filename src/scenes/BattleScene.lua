@@ -8,6 +8,8 @@ local ImpactSystem = require("scenes.battle.ImpactSystem")
 local Animations = require("scenes.battle.Animations")
 local Visuals = require("scenes.battle.Visuals")
 local TurnManager = require("core.TurnManager")
+local TopBar = require("ui.TopBar")
+local PlayerState = require("core.PlayerState")
 
 local BattleScene = {}
 BattleScene.__index = BattleScene
@@ -77,10 +79,16 @@ function BattleScene.new()
     -- Fog shader
     fogShader = nil,
     fogTime = 0, -- Time accumulator for fog animation
+    topBar = TopBar.new(),
   }, BattleScene)
 end
 
 function BattleScene:load(bounds)
+  -- Sync PlayerState with BattleScene's initial HP
+  local playerState = PlayerState.getInstance()
+  playerState:setHealth(self.playerHP)
+  playerState:setMaxHealth(config.battle.playerMaxHP)
+  
   -- Load sprites (optional); fallback to circles if missing
   local playerPath = (config.assets and config.assets.images and config.assets.images.player) or nil
   local enemyPath = (config.assets and config.assets.images and config.assets.images.enemy) or nil
@@ -267,6 +275,10 @@ function BattleScene:update(dt, bounds)
   
   -- Update impact system (slashes, flashes, knockback)
   ImpactSystem.update(self, dt)
+  
+  -- Sync PlayerState with BattleScene's playerHP (for top bar display)
+  local playerState = PlayerState.getInstance()
+  playerState:setHealth(self.playerHP)
   
   -- Tween HP bars toward actual HP values
   local hpTweenSpeed = (config.battle and config.battle.hpBarTweenSpeed) or 8
@@ -538,6 +550,11 @@ end
 
 function BattleScene:draw(bounds)
   Visuals.draw(self, bounds)
+  
+  -- Draw top bar on top (z-order)
+  if self.topBar then
+    self.topBar:draw()
+  end
 end
 
 -- (Jackpot API removed)

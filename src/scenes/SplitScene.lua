@@ -8,6 +8,7 @@ local TurnActions = require("systems.TurnActions")
 local ProjectileCard = require("ui.ProjectileCard")
 local LayoutManager = require("managers.LayoutManager")
 local battle_profiles = require("data.battle_profiles")
+local TopBar = require("ui.TopBar")
 
 -- Utility: radial gradient image for glow (alpha falls off toward edge)
 -- Shared with Ball entity for consistency
@@ -64,6 +65,7 @@ function SplitScene.new()
     _victoryDetected = false,
     _defeatDetected = false,
     _returnToMapTimer = 0,
+    topBar = TopBar.new(),
   }, SplitScene)
 end
 
@@ -543,6 +545,11 @@ function SplitScene:draw()
       
       self.projectileCard:draw(cardX, cardY, projectileIdToShow, fadeAlpha)
     end
+  end
+  
+  -- Draw top bar on top (z-order)
+  if self.topBar then
+    self.topBar:draw()
   end
 end
 

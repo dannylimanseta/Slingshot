@@ -112,7 +112,8 @@ end
 
 -- Try to place a cluster of blocks
 -- Returns: {blocks = array, centerX = number, centerY = number} if successful, nil if failed
-local function tryPlaceCluster(world, width, height, clusterSize, forNearby, addToGrid, margin, visSize, pad, maxFrac, animateSpawn, getSpawnDelay, overrideRatios)
+local function tryPlaceCluster(world, width, height, clusterSize, forNearby, addToGrid, margin, visSize, pad, maxFrac, animateSpawn, getSpawnDelay, overrideRatios, topBarHeight)
+  topBarHeight = topBarHeight or 0
   animateSpawn = animateSpawn or false
   getSpawnDelay = getSpawnDelay or function() return 0 end
   overrideRatios = overrideRatios or {}
@@ -128,8 +129,9 @@ local function tryPlaceCluster(world, width, height, clusterSize, forNearby, add
     
     -- Pick cluster center (top-left corner of cluster)
     local clusterX = love.math.random(margin, math.max(margin, width - margin - clusterWidth))
-    local maxY = math.max(margin, height * maxFrac - clusterHeight)
-    local clusterY = love.math.random(margin, maxY)
+    local topMargin = margin + topBarHeight
+    local maxY = math.max(topMargin, height * maxFrac - clusterHeight)
+    local clusterY = love.math.random(topMargin, maxY)
     
     -- Check if entire cluster fits without overlap
     local canPlace = true
@@ -209,7 +211,8 @@ local function tryPlaceCluster(world, width, height, clusterSize, forNearby, add
 end
 
 -- Place a single block (fallback when clustering fails or disabled)
-local function placeSingleBlock(world, width, height, forNearby, addToGrid, margin, visSize, pad, attemptsPerBlock, maxFrac, animateSpawn, getSpawnDelay, overrideRatios)
+local function placeSingleBlock(world, width, height, forNearby, addToGrid, margin, visSize, pad, attemptsPerBlock, maxFrac, animateSpawn, getSpawnDelay, overrideRatios, topBarHeight)
+  topBarHeight = topBarHeight or 0
   animateSpawn = animateSpawn or false
   getSpawnDelay = getSpawnDelay or function() return 0 end
   overrideRatios = overrideRatios or {}
@@ -232,9 +235,10 @@ local function placeSingleBlock(world, width, height, forNearby, addToGrid, marg
     end
 
     local halfVis = visSize * 0.5
+    local topMargin = margin + topBarHeight
     local cx = love.math.random(margin + halfVis, math.max(margin + halfVis, width - margin - halfVis))
-    local maxY = math.max(margin + halfVis, height * maxFrac - halfVis)
-    local cy = love.math.random(margin + halfVis, maxY)
+    local maxY = math.max(topMargin + halfVis, height * maxFrac - halfVis)
+    local cy = love.math.random(topMargin + halfVis, maxY)
     local x = cx - halfVis
     local y = cy - halfVis
 
@@ -327,9 +331,10 @@ function BlockManager:loadPredefinedFormation(world, width, height, predefined)
   local size = config.blocks.baseSize
   local visSize = size * scaleMul
   
-  -- Calculate playfield bounds (accounting for margin)
+  -- Calculate playfield bounds (accounting for margin and top bar)
+  local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
   local playfieldX = margin
-  local playfieldY = margin
+  local playfieldY = margin + topBarHeight
   local playfieldW = width - 2 * margin
   local maxHeightFactor = (config.playfield and config.playfield.maxHeightFactor) or 0.65
   local playfieldH = height * maxHeightFactor - margin -- Use configurable maxHeightFactor
@@ -405,6 +410,7 @@ function BlockManager:randomize(world, width, height, overrideConfig)
   self.firstClusterCenter = nil  -- Reset cluster center tracking
   self.predefinedFormation = nil  -- Clear predefined formation when using random
   local margin = config.playfield.margin
+  local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
   local attemptsPerBlock = config.blocks.attemptsPerBlock
   local pad = (config.blocks and config.blocks.minGap) or 0
   local scaleMul = math.max(1, (config.blocks and config.blocks.spriteScale) or 1)
@@ -472,7 +478,7 @@ function BlockManager:randomize(world, width, height, overrideConfig)
       if #validSizes == 0 then break end
       
       local clusterSize = validSizes[love.math.random(#validSizes)]
-      local clusterResult = tryPlaceCluster(world, width, height, clusterSize, forNearby, addToGrid, margin, visSize, pad, maxFrac, true, getNextSpawnDelay, overrideRatios)
+      local clusterResult = tryPlaceCluster(world, width, height, clusterSize, forNearby, addToGrid, margin, visSize, pad, maxFrac, true, getNextSpawnDelay, overrideRatios, topBarHeight)
       
       if clusterResult and clusterResult.blocks then
         for _, block in ipairs(clusterResult.blocks) do
@@ -492,7 +498,7 @@ function BlockManager:randomize(world, width, height, overrideConfig)
 
   -- Place remaining blocks individually
   for _ = 1, remaining do
-    local block = placeSingleBlock(world, width, height, forNearby, addToGrid, margin, visSize, pad, attemptsPerBlock, maxFrac, true, getNextSpawnDelay, overrideRatios)
+    local block = placeSingleBlock(world, width, height, forNearby, addToGrid, margin, visSize, pad, attemptsPerBlock, maxFrac, true, getNextSpawnDelay, overrideRatios, topBarHeight)
     if block then
       table.insert(self.blocks, block)
     end
@@ -511,6 +517,7 @@ end
 function BlockManager:addRandomBlocks(world, width, height, count)
   if not count or count <= 0 then return {} end
   local margin = config.playfield.margin
+  local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
   local attemptsPerBlock = config.blocks.attemptsPerBlock
   local pad = (config.blocks and config.blocks.minGap) or 0
   local scaleMul = math.max(1, (config.blocks and config.blocks.spriteScale) or 1)
@@ -543,7 +550,7 @@ function BlockManager:addRandomBlocks(world, width, height, count)
     
     -- Calculate playfield bounds (matching loadPredefinedFormation exactly)
     local playfieldX = margin
-    local playfieldY = margin
+    local playfieldY = margin + topBarHeight
     local playfieldW = formationWidth - 2 * margin
     local maxHeightFactor = (config.playfield and config.playfield.maxHeightFactor) or 0.65
     local playfieldH = formationHeight * maxHeightFactor - margin
@@ -748,7 +755,7 @@ function BlockManager:addRandomBlocks(world, width, height, count)
       if #validSizes == 0 then break end
       
       local clusterSize = validSizes[love.math.random(#validSizes)]
-      local clusterBlocks = tryPlaceCluster(world, width, height, clusterSize, forNearby, addToGrid, margin, visSize, pad, maxFrac, true)
+      local clusterBlocks = tryPlaceCluster(world, width, height, clusterSize, forNearby, addToGrid, margin, visSize, pad, maxFrac, true, function() return 0 end, {}, topBarHeight)
       
       if clusterBlocks then
         for _, block in ipairs(clusterBlocks) do
@@ -765,7 +772,7 @@ function BlockManager:addRandomBlocks(world, width, height, count)
 
   -- Place remaining blocks individually
   for _ = 1, remaining do
-    local block = placeSingleBlock(world, width, height, forNearby, addToGrid, margin, visSize, pad, attemptsPerBlock, maxFrac, true)
+    local block = placeSingleBlock(world, width, height, forNearby, addToGrid, margin, visSize, pad, attemptsPerBlock, maxFrac, true, function() return 0 end, {}, topBarHeight)
     if block then
       table.insert(self.blocks, block)
       table.insert(newBlocks, block)
