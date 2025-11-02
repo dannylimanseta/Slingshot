@@ -197,7 +197,8 @@ function SplitScene:setupTurnManagerEvents()
     if data.target == "enemy" and self.right and self.right.onPlayerTurnEnd then
       local turnData = self.turnManager:getTurnData()
       -- Call the old method but only pass damage (armor will be handled separately)
-      self.right:onPlayerTurnEnd(data.amount, turnData.armor or 0)
+      -- Pass AOE flag as third parameter
+      self.right:onPlayerTurnEnd(data.amount, turnData.armor or 0, turnData.isAOE or false)
       -- Trigger screenshake for player attack
       self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
     end
@@ -259,6 +260,7 @@ function SplitScene:endPlayerTurnWithTurnManager()
   end
   local armor = self.left and self.left.armorThisTurn or 0
   local blocksDestroyed = self.left and self.left.destroyedThisTurn or 0
+  local isAOE = (self.left and self.left.aoeThisTurn) or false
   
   -- End the turn using TurnManager
   self.turnManager:endPlayerTurn({
@@ -266,6 +268,7 @@ function SplitScene:endPlayerTurnWithTurnManager()
     armor = armor,
     crits = critCount,
     blocksDestroyed = blocksDestroyed,
+    isAOE = isAOE,
   })
   
   return true

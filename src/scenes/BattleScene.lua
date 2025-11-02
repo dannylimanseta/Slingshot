@@ -307,7 +307,7 @@ local function createBorderFragments(x, y, w, h, gap, radius)
   return fragments
 end
 
-function BattleScene:onPlayerTurnEnd(turnScore, armor)
+function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE)
   -- Check win/lose states via TurnManager
   local tmState = self.turnManager and self.turnManager:getState()
   if tmState == TurnManager.States.VICTORY or tmState == TurnManager.States.DEFEAT then return end
@@ -318,6 +318,7 @@ function BattleScene:onPlayerTurnEnd(turnScore, armor)
     self._pendingPlayerAttackDamage = {
       damage = dmg,
       armor = armor or 0,
+      isAOE = isAOE or false, -- Store AOE flag
       impactBlockCount = (self._pendingImpactParams and self._pendingImpactParams.blockCount) or 1,
       impactIsCrit = (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false
     }
@@ -601,57 +602,99 @@ function BattleScene:update(dt, bounds)
       if self._pendingPlayerAttackDamage then
         local dmg = self._pendingPlayerAttackDamage.damage
         local armor = self._pendingPlayerAttackDamage.armor
+        local isAOE = self._pendingPlayerAttackDamage.isAOE or false
         local impactBlockCount = self._pendingPlayerAttackDamage.impactBlockCount or 1
         local impactIsCrit = self._pendingPlayerAttackDamage.impactIsCrit or false
         
         -- Create impact sprite animations first (before damage effects)
+        -- Pass AOE flag so impacts appear at all enemy positions
         if impactBlockCount and impactBlockCount > 0 then
-          self:_createImpactInstances(impactBlockCount, impactIsCrit)
+          self:_createImpactInstances(impactBlockCount, impactIsCrit, isAOE)
         end
         
-        -- Apply damage only to selected enemy
-        local selectedEnemy = self:getSelectedEnemy()
-        if selectedEnemy then
-          local i = self.selectedEnemyIndex
-          if selectedEnemy.hp > 0 then
-            selectedEnemy.hp = math.max(0, selectedEnemy.hp - dmg)
-        
-            -- Trigger enemy hit visual effects (flash, knockback, popup)
-            selectedEnemy.flash = config.battle.hitFlashDuration
-            selectedEnemy.knockbackTime = 1e-6
-            table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy", enemyIndex = i })
-        
-            -- Check if enemy is defeated
-            if selectedEnemy.hp <= 0 then
-              -- Check if disintegration has already completed (prevent restarting)
-              local cfg = config.battle.disintegration or {}
-              local duration = cfg.duration or 1.5
-              local hasCompletedDisintegration = (selectedEnemy.disintegrationTime or 0) >= duration
+        -- Apply damage to all enemies if AOE, otherwise just selected enemy
+        if isAOE then
+          -- AOE attack: damage all enemies
+          for i, enemy in ipairs(self.enemies or {}) do
+            if enemy and enemy.hp > 0 then
+              enemy.hp = math.max(0, enemy.hp - dmg)
               
-              if not hasCompletedDisintegration then
-                -- Check if impact animations are still playing
-                local impactsActive = (self.impactInstances and #self.impactInstances > 0)
-                if impactsActive then
-                  -- Wait for impact animations to finish before starting disintegration
-                  selectedEnemy.pendingDisintegration = true
-                  pushLog(self, "Enemy " .. i .. " defeated!")
-                else
-                  -- Start disintegration effect immediately if no impacts
-                  if not selectedEnemy.disintegrating then
-                    selectedEnemy.disintegrating = true
-                    selectedEnemy.disintegrationTime = 0
+              -- Trigger enemy hit visual effects (flash, knockback, popup)
+              enemy.flash = config.battle.hitFlashDuration
+              enemy.knockbackTime = 1e-6
+              table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy", enemyIndex = i })
+              
+              -- Check if enemy is defeated
+              if enemy.hp <= 0 then
+                -- Check if disintegration has already completed (prevent restarting)
+                local cfg = config.battle.disintegration or {}
+                local duration = cfg.duration or 1.5
+                local hasCompletedDisintegration = (enemy.disintegrationTime or 0) >= duration
+                
+                if not hasCompletedDisintegration then
+                  -- Check if impact animations are still playing
+                  local impactsActive = (self.impactInstances and #self.impactInstances > 0)
+                  if impactsActive then
+                    -- Wait for impact animations to finish before starting disintegration
+                    enemy.pendingDisintegration = true
                     pushLog(self, "Enemy " .. i .. " defeated!")
+                  else
+                    -- Start disintegration effect immediately if no impacts
+                    if not enemy.disintegrating then
+                      enemy.disintegrating = true
+                      enemy.disintegrationTime = 0
+                      pushLog(self, "Enemy " .. i .. " defeated!")
+                    end
                   end
                 end
               end
-              
-              -- Auto-select next enemy to the right when selected enemy dies
-              self:_selectNextEnemy()
             end
           end
+          pushLog(self, "You dealt " .. dmg .. " to all enemies!")
+        else
+          -- Normal attack: damage only selected enemy
+          local selectedEnemy = self:getSelectedEnemy()
+          if selectedEnemy then
+            local i = self.selectedEnemyIndex
+            if selectedEnemy.hp > 0 then
+              selectedEnemy.hp = math.max(0, selectedEnemy.hp - dmg)
+          
+              -- Trigger enemy hit visual effects (flash, knockback, popup)
+              selectedEnemy.flash = config.battle.hitFlashDuration
+              selectedEnemy.knockbackTime = 1e-6
+              table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy", enemyIndex = i })
+          
+              -- Check if enemy is defeated
+              if selectedEnemy.hp <= 0 then
+                -- Check if disintegration has already completed (prevent restarting)
+                local cfg = config.battle.disintegration or {}
+                local duration = cfg.duration or 1.5
+                local hasCompletedDisintegration = (selectedEnemy.disintegrationTime or 0) >= duration
+                
+                if not hasCompletedDisintegration then
+                  -- Check if impact animations are still playing
+                  local impactsActive = (self.impactInstances and #self.impactInstances > 0)
+                  if impactsActive then
+                    -- Wait for impact animations to finish before starting disintegration
+                    selectedEnemy.pendingDisintegration = true
+                    pushLog(self, "Enemy " .. i .. " defeated!")
+                  else
+                    -- Start disintegration effect immediately if no impacts
+                    if not selectedEnemy.disintegrating then
+                      selectedEnemy.disintegrating = true
+                      selectedEnemy.disintegrationTime = 0
+                      pushLog(self, "Enemy " .. i .. " defeated!")
+                    end
+                  end
+                end
+                
+                -- Auto-select next enemy to the right when selected enemy dies
+                self:_selectNextEnemy()
+              end
+            end
+          end
+          pushLog(self, "You dealt " .. dmg)
         end
-        
-        pushLog(self, "You dealt " .. dmg)
         
         -- Clear pending damage
         self._pendingPlayerAttackDamage = nil
@@ -928,6 +971,95 @@ function BattleScene:_selectNextEnemy()
   self.selectedEnemyIndex = nil
 end
 
+-- Compute hit points for all enemies (screen coordinates), matching draw layout
+-- Returns array of {x, y, enemyIndex} for all alive enemies
+function BattleScene:getAllEnemyHitPoints(bounds)
+  local hitPoints = {}
+  local w = (bounds and bounds.w) or love.graphics.getWidth()
+  local h = (bounds and bounds.h) or love.graphics.getHeight()
+  local center = bounds and bounds.center or nil
+  local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
+  local centerW = center and center.w or math.floor(w * 0.5)
+  local leftWidth = math.max(0, centerX)
+  local rightStart = centerX + centerW
+  local rightWidth = math.max(0, w - rightStart)
+  local r = 24
+  local yOffset = (config.battle and config.battle.positionOffsetY) or 0
+  local baselineY = h * 0.55 + r + yOffset
+  
+  if not self.enemies or #self.enemies == 0 then
+    return hitPoints
+  end
+  
+  -- Calculate enemy positions dynamically (matching Visuals.lua logic)
+  local enemyScales = {}
+  local enemyWidths = {}
+  local totalWidth = 0
+  local battleProfile = self._battleProfile or {}
+  local gap = battleProfile.enemySpacing or -20
+  
+  for i, e in ipairs(self.enemies) do
+    local scaleCfg = e.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
+    local scale = 1
+    if e.img then
+      local ih = e.img:getHeight()
+      scale = ((2 * r) / math.max(1, ih)) * scaleCfg * (e.scaleMul or 1)
+    end
+    enemyScales[i] = scale
+    enemyWidths[i] = e.img and (e.img:getWidth() * scale) or (r * 2)
+    totalWidth = totalWidth + enemyWidths[i]
+    if i < #self.enemies then
+      totalWidth = totalWidth + gap
+    end
+  end
+  
+  local centerXPos = rightStart + rightWidth * 0.5
+  local startX = centerXPos - totalWidth * 0.5
+  
+  -- Account for current lunge
+  local function lungeOffset(enemy, t)
+    if not t or t <= 0 then return 0 end
+    local d = config.battle.lungeDuration or 0
+    local rdur = config.battle.lungeReturnDuration or 0
+    local dist = config.battle.lungeDistance or 0
+    if t < d then
+      return dist * (t / math.max(0.0001, d))
+    elseif t < d + rdur then
+      local tt = (t - d) / math.max(0.0001, rdur)
+      return dist * (1 - tt)
+    else
+      return 0
+    end
+  end
+  
+  -- Get hit points for all alive enemies
+  for i, enemy in ipairs(self.enemies) do
+    if enemy and (enemy.hp > 0 or enemy.disintegrating or enemy.pendingDisintegration) then
+      -- Calculate X position for this enemy
+      local enemyX = startX
+      for j = 1, i - 1 do
+        enemyX = enemyX + enemyWidths[j] + gap
+      end
+      enemyX = enemyX + enemyWidths[i] * 0.5
+      
+      local enemyLunge = lungeOffset(enemy, enemy.lungeTime)
+      local curEnemyX = enemyX - enemyLunge
+      
+      -- Aim mid-height of sprite if available; else circle center
+      local enemyHalfH = r
+      if enemy.img then
+        enemyHalfH = (enemy.img:getHeight() * enemyScales[i]) * 0.5
+      end
+      local hitX = curEnemyX
+      local hitY = baselineY - enemyHalfH * 0.7 -- slightly above center
+      
+      table.insert(hitPoints, { x = hitX, y = hitY, enemyIndex = i })
+    end
+  end
+  
+  return hitPoints
+end
+
 -- Compute current enemy hit point (screen coordinates), matching draw layout
 -- Returns hit point for selected enemy
 function BattleScene:getEnemyHitPoint(bounds)
@@ -1036,9 +1168,9 @@ function BattleScene:playImpact(blockCount, isCrit)
 end
 
 -- Internal helper to actually create impact instances (called after delay)
-function BattleScene:_createImpactInstances(blockCount, isCrit)
+function BattleScene:_createImpactInstances(blockCount, isCrit, isAOE)
   if not self.impactAnimation then return end
-  ImpactSystem.create(self, blockCount or 1, isCrit or false)
+  ImpactSystem.create(self, blockCount or 1, isCrit or false, isAOE or false)
 end
 
 -- Handle keyboard input for enemy selection

@@ -422,6 +422,7 @@ config.assets = {
     block_defend = "assets/images/block_defend.png",
     block_crit = "assets/images/block_crit.png",
     block_crit_2 = "assets/images/block_crit_2.png",
+    block_aoe = "assets/images/block_aoe.png",
     icon_armor = "assets/images/icon_armor.png",
     icon_attack = "assets/images/icon_attack.png",
     icon_health = "assets/images/icon_health.png",

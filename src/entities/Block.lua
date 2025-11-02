@@ -2,7 +2,7 @@ local theme = require("theme")
 local config = require("config")
 
 -- Shared sprites for blocks (loaded once)
-local SPRITES = { attack = nil, armor = nil, crit = nil, soul = nil }
+local SPRITES = { attack = nil, armor = nil, crit = nil, soul = nil, aoe = nil }
 do
   local imgs = (config.assets and config.assets.images) or {}
   if imgs.block_attack then
@@ -20,6 +20,10 @@ do
   if imgs.block_crit_2 then
     local ok, img = pcall(love.graphics.newImage, imgs.block_crit_2)
     if ok then SPRITES.soul = img end
+  end
+  if imgs.block_aoe then
+    local ok, img = pcall(love.graphics.newImage, imgs.block_aoe)
+    if ok then SPRITES.aoe = img end
   end
 end
 
@@ -165,6 +169,8 @@ function Block:draw()
     sprite = SPRITES.crit or SPRITES.attack
   elseif self.kind == "soul" then
     sprite = SPRITES.soul or SPRITES.attack
+  elseif self.kind == "aoe" then
+    sprite = SPRITES.aoe or SPRITES.attack
   else
     sprite = SPRITES.attack
   end

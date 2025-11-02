@@ -88,6 +88,7 @@ battle_profiles.data = {
 
 
 
+
       -- Predefined formation (used when type = "predefined")
       -- Format: array of {x, y, kind, hp} where x,y are normalized (0-1) coordinates relative to playfield
       -- kind: "damage", "armor", "crit", or "soul" (soul blocks should be rare, typically 0-1 per formation)
@@ -124,6 +125,10 @@ battle_profiles.data = {
       {x = 0.856, y = 0.706, kind = "armor", hp = 1},
       {x = 0.796, y = 0.618, kind = "damage", hp = 1},
       {x = 0.204, y = 0.618, kind = "damage", hp = 1},
+      {x = 0.559, y = 0.353, kind = "aoe", hp = 1},
+      {x = 0.441, y = 0.353, kind = "aoe", hp = 1},
+      {x = 0.441, y = 0.529, kind = "aoe", hp = 1},
+      {x = 0.559, y = 0.529, kind = "aoe", hp = 1},
     },
     },
   },

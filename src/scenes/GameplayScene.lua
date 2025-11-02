@@ -34,6 +34,7 @@ function GameplayScene.new()
     cursorY = 0,
     popups = {},
     critThisTurn = 0, -- count of crit blocks hit this turn
+    aoeThisTurn = false, -- true if any AOE blocks were hit this turn
     _prevCanShoot = true,
     turnManager = nil, -- reference to TurnManager (set by SplitScene)
     -- Combo tracking for multi-block shake
@@ -627,6 +628,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       self.displayScore = 0
       self.armorThisTurn = 0
       self.critThisTurn = 0
+      self.aoeThisTurn = false
       self.blocksHitThisTurn = 0
       -- Reset combo when new shot starts
       self.comboCount = 0
@@ -900,6 +902,13 @@ function GameplayScene:beginContact(fixA, fixB, contact)
       hitReward = hitReward + soulReward
       popupText = "+" .. tostring(hitReward)
       popupKind = "soul"
+    elseif block.kind == "aoe" then
+      -- AOE block gives +3 bonus damage and marks attack as AOE
+      local aoeReward = 3
+      hitReward = hitReward + aoeReward
+      self.aoeThisTurn = true
+      popupText = "+" .. tostring(hitReward)
+      popupKind = "aoe"
     end
     self.score = self.score + hitReward
     -- Popup above the block

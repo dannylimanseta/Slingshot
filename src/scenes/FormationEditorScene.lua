@@ -1,27 +1,22 @@
 local config = require("config")
 local theme = require("theme")
 local battle_profiles = require("data.battle_profiles")
+local block_types = require("data.block_types")
 local TopBar = require("ui.TopBar")
 
--- Shared sprites for blocks (same as Block.lua)
-local SPRITES = { attack = nil, armor = nil, crit = nil, soul = nil }
+-- Shared sprites for blocks (dynamically loaded from block_types registry)
+local SPRITES = {}
 do
   local imgs = (config.assets and config.assets.images) or {}
-  if imgs.block_attack then
-    local ok, img = pcall(love.graphics.newImage, imgs.block_attack)
-    if ok then SPRITES.attack = img end
-  end
-  if imgs.block_defend then
-    local ok, img = pcall(love.graphics.newImage, imgs.block_defend)
-    if ok then SPRITES.armor = img end
-  end
-  if imgs.block_crit then
-    local ok, img = pcall(love.graphics.newImage, imgs.block_crit)
-    if ok then SPRITES.crit = img end
-  end
-  if imgs.block_crit_2 then
-    local ok, img = pcall(love.graphics.newImage, imgs.block_crit_2)
-    if ok then SPRITES.soul = img end
+  -- Load sprites for all registered block types
+  for _, blockType in ipairs(block_types.types) do
+    local spriteKey = blockType.spritePath
+    if spriteKey and imgs[spriteKey] then
+      local ok, img = pcall(love.graphics.newImage, imgs[spriteKey])
+      if ok then
+        SPRITES[blockType.key] = img
+      end
+    end
   end
 end
 
@@ -32,7 +27,7 @@ function FormationEditorScene.new()
   return setmetatable({
     -- Formation data: array of {x, y, kind, hp} where x,y are normalized (0-1)
     blocks = {},
-    currentBlockType = "damage", -- "damage", "armor", "crit", "soul"
+    currentBlockType = block_types.getDefault(), -- Default to first registered block type
     currentBattleType = battle_profiles.Types.DEFAULT,
     -- Playfield bounds
     playfieldX = 0,
@@ -87,7 +82,15 @@ function FormationEditorScene:load()
   -- Load existing formation for current battle type
   self:loadFormation()
   
-  self.statusMessage = "Formation Editor - Click to place/select, Right-click/Delete to remove, 1-4 to change type, S to save, L to load, G to toggle grid, ESC to exit"
+  -- Build dynamic help message with available block types
+  local blockTypeKeys = {}
+  for _, bt in ipairs(block_types.getAllSorted()) do
+    if bt.hotkey then
+      table.insert(blockTypeKeys, bt.hotkey .. "=" .. bt.displayName)
+    end
+  end
+  local blockTypesStr = table.concat(blockTypeKeys, ", ")
+  self.statusMessage = "Formation Editor - Click to place/select, Right-click/Delete to remove, " .. blockTypesStr .. " to change type, S to save, L to load, G to toggle grid, ESC to exit"
   self.statusMessageTimer = 5.0 -- Show for 5 seconds
 end
 
@@ -210,16 +213,8 @@ function FormationEditorScene:draw()
 end
 
 function FormationEditorScene:drawBlock(x, y, kind, size)
-  local sprite
-  if kind == "armor" then
-    sprite = SPRITES.armor
-  elseif kind == "crit" then
-    sprite = SPRITES.crit or SPRITES.attack
-  elseif kind == "soul" then
-    sprite = SPRITES.soul or SPRITES.attack
-  else
-    sprite = SPRITES.attack
-  end
+  -- Get sprite from registry, fallback to damage block sprite
+  local sprite = SPRITES[kind] or SPRITES["damage"]
   
   if sprite then
     local iw, ih = sprite:getWidth(), sprite:getHeight()
@@ -238,6 +233,7 @@ function FormationEditorScene:drawBlock(x, y, kind, size)
     if kind == "armor" then
       love.graphics.setColor(theme.colors.blockArmor[1] or 0.35, theme.colors.blockArmor[2] or 0.75, theme.colors.blockArmor[3] or 0.95, 1)
     else
+      -- Use default block color for any block type without sprite
       love.graphics.setColor(theme.colors.block[1] or 0.95, theme.colors.block[2] or 0.6, theme.colors.block[3] or 0.25, 1)
     end
     love.graphics.rectangle("fill", x - halfSize, y - halfSize, size, size, 4, 4)
@@ -251,15 +247,20 @@ function FormationEditorScene:drawUI()
   local width = config.video.virtualWidth
   local font = theme.fonts.base
   
-  -- Current block type indicator
-  local typeNames = {
-    damage = "Damage",
-    armor = "Armor",
-    crit = "Crit",
-    soul = "Soul"
-  }
-  local typeName = typeNames[self.currentBlockType] or "Unknown"
-  local typeText = "Block Type: " .. typeName .. " (Press 1-4 to change)"
+  -- Current block type indicator (using registry)
+  local currentType = block_types.getByKey(self.currentBlockType)
+  local typeName = currentType and currentType.displayName or "Unknown"
+  local maxHotkey = 0
+  for _, bt in ipairs(block_types.types) do
+    if bt.hotkey and bt.hotkey > maxHotkey then
+      maxHotkey = bt.hotkey
+    end
+  end
+  local hotkeyRange = maxHotkey > 0 and ("1-" .. maxHotkey) or "keys"
+  local typeText = "Block Type: " .. typeName .. " (Press " .. hotkeyRange .. " to change)"
+  if currentType and currentType.description then
+    typeText = typeText .. " - " .. currentType.description
+  end
   theme.drawTextWithOutline(typeText, 20, 20, 1, 1, 1, 1, 2)
   
   -- Block count
@@ -277,15 +278,20 @@ function FormationEditorScene:drawUI()
     theme.drawTextWithOutline(self.statusMessage, width * 0.5, height - 40, 1, 1, 1, alpha, 2)
   end
   
-  -- Instructions
-  local instructions = {
-    "1-4: Change block type",
-    "S: Save formation",
-    "L: Load formation",
-    "G: Toggle grid",
-    "0: Toggle delete mode",
-    "ESC: Exit editor"
-  }
+  -- Instructions (dynamically generated from block types)
+  local instructions = {}
+  -- Add block type switching instructions
+  for _, blockType in ipairs(block_types.getAllSorted()) do
+    if blockType.hotkey then
+      table.insert(instructions, blockType.hotkey .. ": " .. blockType.displayName)
+    end
+  end
+  -- Add other instructions
+  table.insert(instructions, "S: Save formation")
+  table.insert(instructions, "L: Load formation")
+  table.insert(instructions, "G: Toggle grid")
+  table.insert(instructions, "0: Toggle delete mode")
+  table.insert(instructions, "ESC: Exit editor")
   for i, inst in ipairs(instructions) do
     theme.drawTextWithOutline(inst, width - 250, 20 + (i - 1) * 30, 0.8, 0.8, 0.8, 0.7, 2)
   end
@@ -402,19 +408,20 @@ function FormationEditorScene:keypressed(key, scancode, isRepeat)
     -- Exit editor and restart the game
     -- Signal to main.lua to restart with a new game
     return "restart"
-  elseif key == "1" then
-    self.currentBlockType = "damage"
-    self:showStatus("Block type: Damage")
-  elseif key == "2" then
-    self.currentBlockType = "armor"
-    self:showStatus("Block type: Armor")
-  elseif key == "3" then
-    self.currentBlockType = "crit"
-    self:showStatus("Block type: Crit")
-  elseif key == "4" then
-    self.currentBlockType = "soul"
-    self:showStatus("Block type: Soul")
-  elseif key == "s" then
+  end
+  
+  -- Check if key matches any block type hotkey
+  local keyNum = tonumber(key)
+  if keyNum then
+    local blockType = block_types.getByHotkey(keyNum)
+    if blockType then
+      self.currentBlockType = blockType.key
+      self:showStatus("Block type: " .. blockType.displayName .. (blockType.description and (" - " .. blockType.description) or ""))
+      return -- Don't continue processing
+    end
+  end
+  
+  if key == "s" then
     self:saveFormation()
   elseif key == "l" then
     self:loadFormation()

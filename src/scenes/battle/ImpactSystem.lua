@@ -4,10 +4,12 @@ local SpriteAnimation = require("utils.SpriteAnimation")
 local ImpactSystem = {}
 
 -- Create multiple staggered impact instances and schedule flash/knockback events
-function ImpactSystem.create(scene, blockCount, isCrit)
+-- isAOE: if true, create impacts at all enemy positions
+function ImpactSystem.create(scene, blockCount, isCrit, isAOE)
   if not scene or not scene.impactAnimation then return end
   blockCount = blockCount or 1
   isCrit = isCrit or false
+  isAOE = isAOE or false
 
   -- If crit, always spawn 5 slashes; otherwise cap at 4 sprites max
   local spriteCount = isCrit and 5 or math.min(blockCount, 4)
@@ -17,9 +19,22 @@ function ImpactSystem.create(scene, blockCount, isCrit)
   local center = scene._lastBounds and scene._lastBounds.center or nil
   local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
   local centerW = center and center.w or math.floor(w * 0.5)
-  local hitX, hitY = scene:getEnemyHitPoint({ x = 0, y = 0, w = w, h = h, center = { x = centerX, w = centerW, h = h } })
-  -- Shift impact sprites slightly to the left for better visual centering
-  hitX = hitX - 20
+  
+  -- Get hit points: all enemies if AOE, otherwise just selected enemy
+  local hitPoints = {}
+  if isAOE and scene.getAllEnemyHitPoints then
+    -- Get hit points for all enemies
+    hitPoints = scene:getAllEnemyHitPoints({ x = 0, y = 0, w = w, h = h, center = { x = centerX, w = centerW, h = h } })
+  else
+    -- Get hit point for selected enemy only
+    local hitX, hitY = scene:getEnemyHitPoint({ x = 0, y = 0, w = w, h = h, center = { x = centerX, w = centerW, h = h } })
+    -- Shift impact sprites slightly to the left for better visual centering
+    hitX = hitX - 20
+    table.insert(hitPoints, { x = hitX, y = hitY, enemyIndex = scene.selectedEnemyIndex })
+  end
+  
+  -- If no hit points found, return early
+  if #hitPoints == 0 then return end
 
   local staggerDelay = (config.battle and config.battle.impactStaggerDelay) or 0.05
   local fps = (config.battle and config.battle.impactFps) or 30
@@ -32,41 +47,58 @@ function ImpactSystem.create(scene, blockCount, isCrit)
   scene.enemyFlashEvents = scene.enemyFlashEvents or {}
   scene.enemyKnockbackEvents = scene.enemyKnockbackEvents or {}
 
-  for i = 1, spriteCount do
-    local anim = {
-      image = baseImage,
-      quads = baseQuads,
-      frameW = 512,
-      frameH = 512,
-      fps = fps,
-      time = 0,
-      index = 1,
-      playing = false,
-      loop = false,
-      active = false,
-    }
-    setmetatable(anim, SpriteAnimation)
+  -- Create impact instances for each hit point (each enemy in AOE mode)
+  for hitPointIdx, hitPoint in ipairs(hitPoints) do
+    local hitX = hitPoint.x
+    local hitY = hitPoint.y
+    local enemyIndex = hitPoint.enemyIndex
+    
+    -- Shift impact sprites slightly to the left for better visual centering (only for first hit point in non-AOE)
+    if hitPointIdx == 1 and not isAOE then
+      hitX = hitX - 20
+    end
+    
+    for i = 1, spriteCount do
+      local anim = {
+        image = baseImage,
+        quads = baseQuads,
+        frameW = 512,
+        frameH = 512,
+        fps = fps,
+        time = 0,
+        index = 1,
+        playing = false,
+        loop = false,
+        active = false,
+      }
+      setmetatable(anim, SpriteAnimation)
 
-    local delay = (i - 1) * staggerDelay
-    local rotation = love.math.random() * 2 * math.pi
-    -- Random offset with slight leftward bias for better centering
-    local offsetX = (love.math.random() - 0.5) * 20
-    local offsetY = (love.math.random() - 0.5) * 20
+      -- Stagger delay: start with delay based on hit point index, then sprite index within that
+      local baseDelay = (hitPointIdx - 1) * staggerDelay * 0.5 -- Small delay between enemies in AOE
+      local spriteDelay = (i - 1) * staggerDelay
+      local delay = baseDelay + spriteDelay
+      
+      local rotation = love.math.random() * 2 * math.pi
+      -- Random offset with slight leftward bias for better centering
+      local offsetX = (love.math.random() - 0.5) * 20
+      local offsetY = (love.math.random() - 0.5) * 20
 
-    table.insert(scene.impactInstances, {
-      anim = anim,
-      x = hitX,
-      y = hitY,
-      rotation = rotation,
-      delay = delay,
-      offsetX = offsetX,
-      offsetY = offsetY,
-    })
+      table.insert(scene.impactInstances, {
+        anim = anim,
+        x = hitX,
+        y = hitY,
+        rotation = rotation,
+        delay = delay,
+        offsetX = offsetX,
+        offsetY = offsetY,
+        enemyIndex = enemyIndex, -- Store enemy index for flash/knockback events
+      })
 
-    -- Schedule per-sprite flash and knockback
-    local flashDuration = (config.battle and config.battle.hitFlashDuration) or 0.5
-    table.insert(scene.enemyFlashEvents, { delay = delay, duration = flashDuration })
-    table.insert(scene.enemyKnockbackEvents, { delay = delay, startTime = nil })
+      -- Schedule per-sprite flash and knockback (store enemy index for AOE)
+      local flashDuration = (config.battle and config.battle.hitFlashDuration) or 0.5
+      table.insert(scene.enemyFlashEvents, { delay = delay, duration = flashDuration, enemyIndex = enemyIndex })
+      table.insert(scene.enemyKnockbackEvents, { delay = delay, startTime = nil, enemyIndex = enemyIndex })
+    end
   end
 end
 
@@ -94,21 +126,26 @@ function ImpactSystem.update(scene, dt)
         if not event.triggered then
           event.triggered = true
           event.startTime = 0
-          -- Apply flash and rotation to selected enemy (or first enemy as fallback)
+          -- Apply flash and rotation to the specified enemy (or selected/first as fallback)
           local enemy = nil
-          if scene.getSelectedEnemy then
+          if event.enemyIndex and scene.enemies and scene.enemies[event.enemyIndex] then
+            -- Use the stored enemy index from AOE mode
+            enemy = scene.enemies[event.enemyIndex]
+          elseif scene.getSelectedEnemy then
+            -- Fallback to selected enemy
             enemy = scene:getSelectedEnemy()
           end
           if not enemy and scene.enemies and #scene.enemies > 0 then
-            enemy = scene.enemies[1] -- Fallback to first enemy
+            -- Fallback to first enemy
+            enemy = scene.enemies[1]
           end
-            if enemy then
-              enemy.flash = math.max(enemy.flash or 0, flashDuration)
-          -- Apply slight rotation nudge on hit
-          local rotationDegrees = love.math.random(1, 3)
-          local rotationRadians = math.rad(rotationDegrees)
-          if love.math.random() < 0.5 then rotationRadians = -rotationRadians end
-              enemy.rotation = (enemy.rotation or 0) + rotationRadians
+          if enemy then
+            enemy.flash = math.max(enemy.flash or 0, flashDuration)
+            -- Apply slight rotation nudge on hit
+            local rotationDegrees = love.math.random(1, 3)
+            local rotationRadians = math.rad(rotationDegrees)
+            if love.math.random() < 0.5 then rotationRadians = -rotationRadians end
+            enemy.rotation = (enemy.rotation or 0) + rotationRadians
           end
         end
         event.startTime = (event.startTime or 0) + dt
