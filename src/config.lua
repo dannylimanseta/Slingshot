@@ -428,6 +428,8 @@ config.assets = {
     icon_health = "assets/images/icon_health.png",
     icon_gold = "assets/images/icon_gold.png",
     impact = "assets/images/fx/impact_1.png",
+    end_turn = "assets/images/icon_end_turn.png",
+    key_space = "assets/images/key_space.png",
   },
   fonts = {
     ui = "assets/fonts/BarlowCondensed-Bold.ttf",

@@ -38,6 +38,22 @@ function MapScene.new()
     playerFacingRight = true, -- track player facing direction for sprite flipping
     _movementTime = 0, -- time elapsed during current movement for bobbing animation
     topBar = TopBar.new(),
+    -- UI assets for End Day button
+    endDayIcon = nil,
+    keySpaceIcon = nil,
+    endDayBtnRect = nil,
+    _endDayFadeAlpha = 0,
+    _endDayHoverScale = 1, -- tweened scale for hover effect
+    _endDayHovered = false, -- track hover state for text/key alpha
+    _endDaySpinAngle = 0, -- rotation angle for spin animation
+    _endDaySpinTime = 0, -- time elapsed in spin animation
+    _endDaySpinDuration = 0.6, -- duration of spin animation
+    _endDayFadeOutAlpha = 1, -- fade out alpha after press
+    _endDayFadeOutTime = 0, -- time elapsed in fade out
+    _endDayFadeOutDuration = 0.2, -- duration of fade out (faster)
+    _endDayPressed = false, -- track if button was pressed
+    _mouseX = 0,
+    _mouseY = 0,
   }, MapScene)
 end
 
@@ -67,6 +83,19 @@ function MapScene:load()
   do
     local ok, glow = pcall(love.graphics.newImage, "assets/images/map/orange_glow.png")
     if ok then self.restGlow = glow end
+  end
+
+  -- Load End Day button icons (optional, with linear filtering)
+  do
+    local imgs = (config.assets and config.assets.images) or {}
+    if imgs.end_turn then
+      local ok, img = pcall(love.graphics.newImage, imgs.end_turn)
+      if ok then pcall(function() img:setFilter('linear', 'linear') end); self.endDayIcon = img end
+    end
+    if imgs.key_space then
+      local ok, img = pcall(love.graphics.newImage, imgs.key_space)
+      if ok then pcall(function() img:setFilter('linear', 'linear') end); self.keySpaceIcon = img end
+    end
   end
   
   -- Generate map on first load only; preserve state when returning from battle
@@ -253,6 +282,100 @@ function MapScene:update(deltaTime)
       -- No delay (0), transition immediately
       self._battleTransitionDelay = nil
       return "enter_battle"
+    end
+  end
+
+  -- Update End Day button fade-in (shows only when out of moves)
+  do
+    local target = self.daySystem and (self.daySystem:canMove() and 0 or 1) or 0
+    local speed = 6 -- fade speed
+    if target > self._endDayFadeAlpha then
+      self._endDayFadeAlpha = math.min(1, self._endDayFadeAlpha + deltaTime * speed)
+    else
+      -- snap back to 0 when moves are available (fade-in only is required)
+      self._endDayFadeAlpha = target
+      -- Only reset pressed/animation state AFTER animations have finished
+      if target == 0 then
+        local animating = self._endDayPressed and ((self._endDaySpinTime < self._endDaySpinDuration) or (self._endDayFadeOutTime < self._endDayFadeOutDuration))
+        if not animating then
+          self._endDayPressed = false
+          self._endDaySpinTime = 0
+          self._endDaySpinAngle = 0
+          self._endDayFadeOutTime = 0
+          self._endDayFadeOutAlpha = 1
+        end
+      end
+    end
+  end
+  
+  -- Update End Day button hover scale tween
+  local isAnimating = self._endDayPressed and ((self._endDaySpinTime < self._endDaySpinDuration) or (self._endDayFadeOutTime < self._endDayFadeOutDuration))
+  if (not self.daySystem:canMove()) or isAnimating then
+    if isAnimating then
+      -- Disable hover interaction during animation to avoid visual conflicts
+      self._endDayHovered = false
+      self._endDayHoverScale = 1
+    else
+    -- Compute button rect for hover detection (same logic as drawUI)
+    local vw = config.video.virtualWidth
+    local vh = config.video.virtualHeight
+    local btnH = 42
+    local gap = 12
+    
+    local font = theme.fonts.base or love.graphics.getFont()
+    local textW = font:getWidth("END DAY")
+    local contentH = btnH - 16
+    
+    local leftIconW = 0
+    if self.endDayIcon then
+      local iw, ih = self.endDayIcon:getDimensions()
+      local baseScale = (contentH * 1.69) / math.max(iw, ih)
+      leftIconW = iw * baseScale
+    end
+    
+    local keyIconW = 0
+    if self.keySpaceIcon then
+      local iw, ih = self.keySpaceIcon:getDimensions()
+      local keyScale = contentH * 0.68 / math.max(iw, ih)
+      keyIconW = iw * keyScale
+    end
+    
+    local btnMargin = 32 -- Match tooltip padding from battle scene
+    local gap = 9 -- Match reduced gap from drawUI
+    -- Calculate content width and reduce by 20%
+    local contentWidth = leftIconW + (self.endDayIcon and gap or 0) + textW + (self.keySpaceIcon and (gap + keyIconW) or 0)
+    local btnW = math.floor(btnMargin + contentWidth * 0.8 + btnMargin + 0.5) -- Reduce content width by 20%
+    local btnX = btnMargin
+    local btnY = vh - btnH - btnMargin
+    
+    local hovered = self._mouseX >= btnX and self._mouseX <= btnX + btnW and 
+                    self._mouseY >= btnY and self._mouseY <= btnY + btnH
+    self._endDayHovered = hovered -- track hover state for text/key alpha
+    local targetScale = hovered and 1.5 or 1 -- 50% larger on hover
+    local tweenSpeed = 12 -- tween speed
+    local diff = targetScale - self._endDayHoverScale
+    self._endDayHoverScale = self._endDayHoverScale + diff * math.min(1, tweenSpeed * deltaTime)
+    end
+  else
+    self._endDayHoverScale = 1 -- reset when button not visible
+    self._endDayHovered = false
+  end
+  
+  -- Update spin animation after button press
+  if self._endDayPressed and self._endDaySpinTime < self._endDaySpinDuration then
+    self._endDaySpinTime = self._endDaySpinTime + deltaTime
+    local progress = math.min(1, self._endDaySpinTime / self._endDaySpinDuration)
+    -- Ease out cubic for smooth spin
+    local eased = 1 - math.pow(1 - progress, 3)
+    self._endDaySpinAngle = eased * math.pi -- 180 degrees
+  end
+  
+  -- Update fade out animation after spin completes
+  if self._endDayPressed and self._endDaySpinTime >= self._endDaySpinDuration then
+    if self._endDayFadeOutTime < self._endDayFadeOutDuration then
+      self._endDayFadeOutTime = self._endDayFadeOutTime + deltaTime
+      local progress = math.min(1, self._endDayFadeOutTime / self._endDayFadeOutDuration)
+      self._endDayFadeOutAlpha = 1 - progress -- fade from 1 to 0
     end
   end
   
@@ -724,19 +847,130 @@ function MapScene:drawUI()
   
   -- Day and steps are now rendered by the TopBar
   
-  -- Draw instructions
-  if not self.daySystem:canMove() then
-    local instructionText = "No moves remaining. Press SPACE to advance to next day."
-    theme.drawTextWithOutline(instructionText, 20, vh - 40, 0.9, 0.7, 0.2, 1, 2)
+  -- End Day button (bottom-left) when no moves remain OR while animating after press
+  self.endDayBtnRect = nil
+  local isAnimating = self._endDayPressed and ((self._endDaySpinTime < self._endDaySpinDuration) or (self._endDayFadeOutTime < self._endDayFadeOutDuration))
+  if (not self.daySystem:canMove()) or isAnimating then
+    local paddingX = 20
+    local paddingY = 16
+    local btnH = 42 -- reduced by 20% (52 * 0.8)
+    local cornerR = 6 -- reduced corner radius
+    local gap = 9 -- reduced by 25% to decrease button width by ~20%
+
+    -- Text using theme font
+    local label = "END DAY"
+    local font = theme.fonts.base or love.graphics.getFont()
+    love.graphics.setFont(font)
+    local textW = font:getWidth(label)
+    local textH = font:getHeight()
+
+    -- Icon sizes (fit inside button height with vertical padding)
+    local contentH = btnH - 16
+    local leftIconW, leftIconH = 0, 0
+    local keyIconW, keyIconH = 0, 0
+    local leftScale, keyScale = 1, 1
+
+    local baseLeftScale = 1
+    if self.endDayIcon then
+      local iw, ih = self.endDayIcon:getDimensions()
+      -- Base size increased by 30% (1.3 * 1.3 = 1.69)
+      baseLeftScale = (contentH * 1.69) / math.max(iw, ih) -- +69% total (30% on top of existing 30%)
+      -- Apply hover scale for visual effect only (not for layout)
+      leftScale = baseLeftScale * (self._endDayHoverScale or 1)
+      -- Use base scale for width calculation to prevent button from growing
+      leftIconW = iw * baseLeftScale
+      leftIconH = ih * baseLeftScale
+    end
+    if self.keySpaceIcon then
+      local iw, ih = self.keySpaceIcon:getDimensions()
+      keyScale = contentH * 0.68 / math.max(iw, ih)
+      keyIconW = iw * keyScale
+      keyIconH = ih * keyScale
+    end
+
+    local btnMargin = 32 -- Match tooltip padding from battle scene
+    local btnInternalPad = 12 -- Reduced internal padding to decrease button width
+    -- Calculate content width and reduce by 20%
+    local contentWidth = leftIconW + (self.endDayIcon and gap or 0) + textW + (self.keySpaceIcon and (gap + keyIconW) or 0)
+    local btnW = math.floor(btnMargin + contentWidth * 0.8 + btnMargin + 0.5) -- Reduce content width by 20%
+    local btnX = btnMargin
+    local btnY = vh - btnH - btnMargin
+
+    -- During animation, show at full base alpha (ignore fade-in), then apply fade-out
+    local baseAlpha = isAnimating and 1.0 or (self._endDayFadeAlpha or 1)
+    local a = baseAlpha * (self._endDayFadeOutAlpha or 1) -- Apply fade out
+    -- Background
+    love.graphics.setColor(0.06, 0.07, 0.10, 0.92 * a)
+    love.graphics.rectangle("fill", btnX, btnY, btnW, btnH, cornerR, cornerR)
+    -- Subtle border
+    love.graphics.setColor(1, 1, 1, 0.06 * a)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", btnX, btnY, btnW, btnH, cornerR, cornerR)
+
+    -- Layout content
+    local cx = btnX + btnInternalPad
+    local cy = btnY + btnH * 0.5
+
+    if self.endDayIcon then
+      love.graphics.setColor(1, 1, 1, 0.95 * a)
+      local iconW, iconH = self.endDayIcon:getDimensions()
+      -- Shift icon to the right by 10px
+      local iconX = cx + 20
+      -- Apply spin rotation and scale from center pivot
+      love.graphics.push()
+      love.graphics.translate(iconX, cy)
+      love.graphics.rotate(self._endDaySpinAngle or 0)
+      love.graphics.draw(self.endDayIcon, 0, 0, 0, leftScale, leftScale, iconW * 0.5, iconH * 0.5)
+      love.graphics.pop()
+      -- Use base scale for spacing calculation to prevent layout jump
+      cx = cx + (iconW * baseLeftScale) + gap
+    end
+
+    -- Label - use hover alpha (0.7 normally, 1.0 on hover)
+    local textAlpha = (self._endDayHovered and 1.0 or 0.7) * a
+    love.graphics.setColor(1, 1, 1, textAlpha)
+    local textY = cy - textH * 0.5
+    love.graphics.print(label, cx, textY)
+    cx = cx + textW
+
+    if self.keySpaceIcon then
+      cx = cx + gap
+      -- Use hover alpha (0.7 normally, 1.0 on hover)
+      local keyAlpha = (self._endDayHovered and 1.0 or 0.7) * a
+      love.graphics.setColor(1, 1, 1, keyAlpha)
+      love.graphics.draw(self.keySpaceIcon, cx, cy, 0, keyScale, keyScale, 0, (self.keySpaceIcon:getHeight() * 0.5))
+    end
+
+    -- Save button rect for clicks
+    self.endDayBtnRect = { x = btnX, y = btnY, w = btnW, h = btnH }
   end
   
   -- Hover tooltip removed
 end
 
 function MapScene:mousepressed(x, y, button)
-  if button ~= 1 or self.isMoving or not self.daySystem:canMove() then
+  if button ~= 1 then return end
+
+  -- Handle End Day button click when out of moves
+  if not self.daySystem:canMove() then
+    if self.endDayBtnRect then
+      local r = self.endDayBtnRect
+      if x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h then
+        -- Start spin and fade out animations
+        self._endDayPressed = true
+        self._endDaySpinTime = 0
+        self._endDayFadeOutTime = 0
+        self._endDayFadeOutAlpha = 1
+        -- Advance day immediately (animations will play while transitioning)
+        self.daySystem:advanceDay()
+        return
+      end
+    end
+    -- When out of moves and not clicking the button, ignore map movement
     return
   end
+
+  if self.isMoving then return end
   
   -- Convert screen coordinates to world coordinates
   local vw = config.video.virtualWidth
@@ -773,6 +1007,10 @@ function MapScene:mousepressed(x, y, button)
 end
 
 function MapScene:mousemoved(x, y, dx, dy)
+  -- Store mouse position for UI hover detection
+  self._mouseX = x
+  self._mouseY = y
+  
   -- Convert screen coordinates to world coordinates
   local vw = config.video.virtualWidth
   local vh = config.video.virtualHeight
@@ -795,6 +1033,12 @@ end
 function MapScene:keypressed(key, scancode, isRepeat)
   -- Advance to next day when out of moves
   if key == "space" and not self.daySystem:canMove() and not self.isMoving then
+    -- Start spin and fade out animations
+    self._endDayPressed = true
+    self._endDaySpinTime = 0
+    self._endDayFadeOutTime = 0
+    self._endDayFadeOutAlpha = 1
+    -- Advance day immediately (animations will play while transitioning)
     self.daySystem:advanceDay()
     return
   end
