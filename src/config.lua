@@ -421,6 +421,13 @@ config.assets = {
   },
   fonts = {
     ui = "assets/fonts/BarlowCondensed-Bold.ttf",
+  },
+  -- Scene transition settings
+  transition = {
+    duration = 2.0, -- seconds for transition animation
+    gridWidth = 28, -- grid cells horizontally
+    gridHeight = 15, -- grid cells vertically
+    fadeType = 1, -- 0 = vertical, 1 = horizontal, 2 = center
   }
 }
 

@@ -1,21 +1,91 @@
+local config = require("config")
+local TransitionShader = require("utils.TransitionShader")
+
 local SceneManager = {}
 SceneManager.__index = SceneManager
 
 function SceneManager.new()
-  return setmetatable({ currentScene = nil }, SceneManager)
+  return setmetatable({
+    currentScene = nil,
+    previousScene = nil,
+    previousSceneCanvas = nil,
+    currentSceneCanvas = nil, -- Reusable canvas for current scene during transition
+    transitionTimer = 0,
+    transitionDuration = 0,
+    isTransitioning = false,
+    transitionShader = TransitionShader.getShader(),
+  }, SceneManager)
 end
 
-function SceneManager:set(scene)
-  if self.currentScene and self.currentScene.unload then
-    self.currentScene:unload()
+function SceneManager:set(scene, skipTransition)
+  -- If skipTransition is true, switch immediately without transition
+  if skipTransition then
+    if self.currentScene and self.currentScene.unload then
+      self.currentScene:unload()
+    end
+    self.currentScene = scene
+    if self.currentScene and self.currentScene.load then
+      self.currentScene:load()
+    end
+    self.isTransitioning = false
+    self.previousSceneCanvas = nil
+    return
   end
+  
+  -- Start transition
+  if self.currentScene then
+    -- Capture current scene to canvas before switching
+    local virtualW = (config.video and config.video.virtualWidth) or 1280
+    local virtualH = (config.video and config.video.virtualHeight) or 720
+    local canvas = love.graphics.newCanvas(virtualW, virtualH)
+    love.graphics.setCanvas(canvas)
+    love.graphics.clear(0, 0, 0, 0)
+    if self.currentScene.draw then
+      self.currentScene:draw()
+    end
+    love.graphics.setCanvas()
+    
+    self.previousScene = self.currentScene
+    self.previousSceneCanvas = canvas
+    
+    -- Unload previous scene
+    if self.currentScene.unload then
+      self.currentScene:unload()
+    end
+  end
+  
+  -- Set new scene
   self.currentScene = scene
   if self.currentScene and self.currentScene.load then
     self.currentScene:load()
   end
+  
+  -- Start transition animation
+  self.isTransitioning = true
+  self.transitionTimer = 0
+  self.transitionDuration = (config.transition and config.transition.duration) or 0.6
+  
+  -- Create reusable canvas for current scene
+  local virtualW = (config.video and config.video.virtualWidth) or 1280
+  local virtualH = (config.video and config.video.virtualHeight) or 720
+  if not self.currentSceneCanvas then
+    self.currentSceneCanvas = love.graphics.newCanvas(virtualW, virtualH)
+  end
 end
 
 function SceneManager:update(deltaTime)
+  -- Update transition timer
+  if self.isTransitioning then
+    self.transitionTimer = self.transitionTimer + deltaTime
+    if self.transitionTimer >= self.transitionDuration then
+      self.isTransitioning = false
+      self.previousSceneCanvas = nil
+      self.previousScene = nil
+      -- Keep currentSceneCanvas for reuse in next transition
+    end
+  end
+  
+  -- Update current scene
   if self.currentScene and self.currentScene.update then
     return self.currentScene:update(deltaTime)
   end
@@ -23,8 +93,41 @@ function SceneManager:update(deltaTime)
 end
 
 function SceneManager:draw()
-  if self.currentScene and self.currentScene.draw then
-    self.currentScene:draw()
+  -- If transitioning, render with transition shader
+  if self.isTransitioning and self.previousSceneCanvas and self.currentSceneCanvas then
+    -- Render current scene to reusable canvas (reuse instead of creating new one each frame)
+    love.graphics.setCanvas(self.currentSceneCanvas)
+    love.graphics.clear(0, 0, 0, 0)
+    if self.currentScene and self.currentScene.draw then
+      self.currentScene:draw()
+    end
+    love.graphics.setCanvas()
+    
+    -- Calculate fade timer
+    -- Progress goes from 0 (start) to 1 (end)
+    -- fadeTimer should go from very negative (all previous scene) to very positive (all current scene)
+    -- For horizontal fade: -1.5 (all previous) to 1.5 (all current)
+    -- This ensures the transition is visible from the very beginning
+    local progress = self.transitionTimer / self.transitionDuration
+    local fadeTimer = progress * 3.0 - 1.5
+    
+    -- Set shader uniforms
+    self.transitionShader:send("u_fadeTimer", fadeTimer)
+    self.transitionShader:send("u_fadeType", (config.transition and config.transition.fadeType) or 1)
+    self.transitionShader:send("u_gridWidth", (config.transition and config.transition.gridWidth) or 28)
+    self.transitionShader:send("u_gridHeight", (config.transition and config.transition.gridHeight) or 15)
+    self.transitionShader:send("u_previousScene", self.previousSceneCanvas)
+    
+    -- Draw current scene canvas with transition shader
+    love.graphics.setShader(self.transitionShader)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(self.currentSceneCanvas, 0, 0)
+    love.graphics.setShader()
+  else
+    -- Normal rendering without transition
+    if self.currentScene and self.currentScene.draw then
+      self.currentScene:draw()
+    end
   end
 end
 
