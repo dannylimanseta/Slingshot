@@ -21,18 +21,22 @@ function Bar:draw(x, y, w, h, current, max, color)
   love.graphics.setColor(0.25, 0.25, 0.25, 1) -- dark grey
   love.graphics.setLineWidth(2)
   love.graphics.rectangle("line", x, y, w, h, 6, 6)
-  -- Centered HP text (current/max)
+  -- Centered HP text (current/max) - scaled down by 30%
   do
     local font = theme.fonts.base
+    local fontScale = 0.7 -- 30% reduction
+    love.graphics.push()
+    love.graphics.scale(fontScale, fontScale)
     love.graphics.setFont(font)
     local cur = math.max(0, math.floor(current or 0))
     local mx = math.max(0, math.floor(max or 0))
     local text = tostring(cur) .. "/" .. tostring(mx)
-    local tw = font:getWidth(text)
-    local th = font:getHeight()
-    local tx = x + (w - tw) * 0.5
-    local ty = y + (h - th) * 0.5
+    local tw = font:getWidth(text) * fontScale
+    local th = font:getHeight() * fontScale
+    local tx = (x + (w - tw) * 0.5) / fontScale
+    local ty = (y + (h - th) * 0.5) / fontScale
     theme.drawTextWithOutline(text, tx, ty, 1, 1, 1, 0.95, 2)
+    love.graphics.pop()
   end
   love.graphics.setColor(1, 1, 1, 1)
 end

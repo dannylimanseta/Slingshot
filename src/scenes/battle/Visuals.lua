@@ -121,8 +121,10 @@ function Visuals.draw(scene, bounds)
 
   local playerScaleCfg = (config.battle and (config.battle.playerSpriteScale or config.battle.spriteScale)) or 1
   local enemyScaleCfg = (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 1
+  local enemy2ScaleCfg = (config.battle and (config.battle.enemy2SpriteScale or config.battle.spriteScale)) or 0.9
   local playerScale = 1
   local enemyScale = 1
+  local enemy2Scale = 1
   if scene.playerImg then
     local ih = scene.playerImg:getHeight()
     playerScale = ((2 * r) / math.max(1, ih)) * playerScaleCfg * (scene.playerScaleMul or 1)
@@ -131,13 +133,49 @@ function Visuals.draw(scene, bounds)
     local ih = scene.enemyImg:getHeight()
     enemyScale = ((2 * r) / math.max(1, ih)) * enemyScaleCfg * (scene.enemyScaleMul or 1)
   end
+  if scene.enemy2Img then
+    local ih2 = scene.enemy2Img:getHeight()
+    enemy2Scale = ((2 * r) / math.max(1, ih2)) * enemy2ScaleCfg * (scene.enemy2ScaleMul or 1)
+  end
+  
+  -- Calculate enemy2 position based on sprite dimensions
+  -- Spacing: half of enemy1 width + 20px gap + half of enemy2 width
+  local enemy2X = curEnemyX
+  local enemy2Y = baselineY -- Same y-axis at bottom as enemy1
+  local gap = -40 -- Fixed 20px gap between enemies
+  if scene.enemyImg and scene.enemy2Img then
+    local enemy1Width = scene.enemyImg:getWidth() * enemyScale
+    local enemy2Width = scene.enemy2Img:getWidth() * enemy2Scale
+    enemy2X = curEnemyX - (enemy1Width * 0.5 + gap + enemy2Width * 0.5)
+  elseif scene.enemyImg then
+    -- Fallback: use enemy1 width if enemy2 sprite not loaded
+    local enemy1Width = scene.enemyImg:getWidth() * enemyScale
+    enemy2X = curEnemyX - (enemy1Width * 0.5 + gap + enemy1Width * 0.5)
+  elseif scene.enemy2Img then
+    -- Fallback: use enemy2 width if enemy1 sprite not loaded
+    local enemy2Width = scene.enemy2Img:getWidth() * enemy2Scale
+    enemy2X = curEnemyX - (enemy2Width * 0.5 + gap + enemy2Width * 0.5)
+  else
+    -- Fallback: use radius-based spacing if no sprites
+    enemy2X = curEnemyX - (r * 2 + gap)
+  end
 
   local playerHalfH = scene.playerImg and ((scene.playerImg:getHeight() * playerScale) * 0.5) or r
   local enemyHalfH = scene.enemyImg and ((scene.enemyImg:getHeight() * enemyScale) * 0.5) or r
 
   local barH = 12
   local playerBarW = math.max(120, math.min(220, leftWidth - pad * 2)) * 0.7
-  local enemyBarW = math.max(120, math.min(220, rightWidth - pad * 2)) * 0.7
+  
+  -- Calculate enemy bar widths based on sprite dimensions (80% of sprite width)
+  local enemyBarW = math.max(120, math.min(220, rightWidth - pad * 2)) * 0.7 -- Fallback width
+  if scene.enemyImg then
+    enemyBarW = scene.enemyImg:getWidth() * enemyScale * 0.7
+  end
+  
+  local enemy2BarW = enemyBarW -- Default to same as enemy1
+  if scene.enemy2Img then
+    enemy2BarW = scene.enemy2Img:getWidth() * enemy2Scale * 0.7
+  end
 
   local barY = baselineY + 16
 
@@ -163,7 +201,7 @@ function Visuals.draw(scene, bounds)
     love.graphics.setColor(1, 1, 1, 1)
   end
   if enemyBarW > 0 and scene.state ~= "win" then
-    local enemyBarX = enemyX - enemyBarW * 0.5
+    local enemyBarX = curEnemyX - enemyBarW * 0.5
 
     local barAlpha = 1.0
     if scene.enemyDisintegrating then
@@ -197,18 +235,76 @@ function Visuals.draw(scene, bounds)
       love.graphics.rectangle("line", enemyBarX, barY, enemyBarW, barH, 6, 6)
       do
         local font = theme.fonts.base
+        local fontScale = 0.7 -- 30% reduction
+        love.graphics.push()
+        love.graphics.scale(fontScale, fontScale)
         love.graphics.setFont(font)
         local cur = math.max(0, math.floor(currentHP or 0))
         local mx = math.max(0, math.floor(maxHP or 0))
         local text = tostring(cur) .. "/" .. tostring(mx)
-        local tw = font:getWidth(text)
-        local th = font:getHeight()
-        local tx = enemyBarX + (enemyBarW - tw) * 0.5
-        local ty = barY + (barH - th) * 0.5
+        local tw = font:getWidth(text) * fontScale
+        local th = font:getHeight() * fontScale
+        local tx = (enemyBarX + (enemyBarW - tw) * 0.5) / fontScale
+        local ty = (barY + (barH - th) * 0.5) / fontScale
         theme.drawTextWithOutline(text, tx, ty, 1, 1, 1, 0.95 * barAlpha, 2)
+        love.graphics.pop()
       end
       love.graphics.setColor(theme.colors.uiText[1], theme.colors.uiText[2], theme.colors.uiText[3], theme.colors.uiText[4] * barAlpha)
       drawCenteredText("Enemy", enemyBarX, barY + barH + 6, enemyBarW)
+      love.graphics.pop()
+      love.graphics.setColor(1, 1, 1, 1)
+    end
+  end
+  
+  -- Enemy2 HP bar
+  if enemy2BarW > 0 and scene.state ~= "win" and (scene.enemy2HP and scene.enemy2HP > 0) then
+    local enemy2BarX = enemy2X - enemy2BarW * 0.5
+    local enemy2BarY = barY -- Same y-axis as enemy1 HP bar
+
+    local barAlpha = 1.0
+    if scene.enemy2Disintegrating then
+      local cfg = config.battle.disintegration or {}
+      local duration = cfg.duration or 1.5
+      local progress = math.min(1, (scene.enemy2DisintegrationTime or 0) / duration)
+      barAlpha = math.max(0, 1.0 - (progress / 0.7))
+    end
+
+    if barAlpha > 0 then
+      love.graphics.push()
+      love.graphics.setColor(1, 1, 1, barAlpha)
+
+      love.graphics.setColor(0, 0, 0, 0.35 * barAlpha)
+      love.graphics.rectangle("fill", enemy2BarX, enemy2BarY, enemy2BarW, barH, 6, 6)
+      local barColor = { 153/255, 224/255, 122/255 }
+      local ratio = 0
+      local maxHP = config.battle.enemy2MaxHP
+      local currentHP = scene.displayEnemy2HP or scene.enemy2HP
+      if maxHP > 0 then ratio = math.max(0, math.min(1, currentHP / maxHP)) end
+      if ratio > 0 then
+        love.graphics.setColor(barColor[1], barColor[2], barColor[3], barAlpha)
+        love.graphics.rectangle("fill", enemy2BarX, enemy2BarY, enemy2BarW * ratio, barH, 6, 6)
+      end
+      love.graphics.setColor(0.25, 0.25, 0.25, barAlpha)
+      love.graphics.setLineWidth(2)
+      love.graphics.rectangle("line", enemy2BarX, enemy2BarY, enemy2BarW, barH, 6, 6)
+      do
+        local font = theme.fonts.base
+        local fontScale = 0.7 -- 30% reduction
+        love.graphics.push()
+        love.graphics.scale(fontScale, fontScale)
+        love.graphics.setFont(font)
+        local cur = math.max(0, math.floor(currentHP or 0))
+        local mx = math.max(0, math.floor(maxHP or 0))
+        local text = tostring(cur) .. "/" .. tostring(mx)
+        local tw = font:getWidth(text) * fontScale
+        local th = font:getHeight() * fontScale
+        local tx = (enemy2BarX + (enemy2BarW - tw) * 0.5) / fontScale
+        local ty = (enemy2BarY + (barH - th) * 0.5) / fontScale
+        theme.drawTextWithOutline(text, tx, ty, 1, 1, 1, 0.95 * barAlpha, 2)
+        love.graphics.pop()
+      end
+      love.graphics.setColor(theme.colors.uiText[1], theme.colors.uiText[2], theme.colors.uiText[3], theme.colors.uiText[4] * barAlpha)
+      drawCenteredText("Enemy 2", enemy2BarX, enemy2BarY + barH + 6, enemy2BarW)
       love.graphics.pop()
       love.graphics.setColor(1, 1, 1, 1)
     end
@@ -418,6 +514,70 @@ function Visuals.draw(scene, bounds)
     love.graphics.setColor(1, 1, 1, 1)
   end
 
+  -- Enemy2 sprite or fallback (skip if win or enemy2 defeated)
+  if scene.enemy2Img and scene.state ~= "win" and (scene.enemy2HP and scene.enemy2HP > 0) then
+    local iw2, ih2 = scene.enemy2Img:getWidth(), scene.enemy2Img:getHeight()
+    local s2 = enemy2Scale
+    local bobA = (config.battle and config.battle.idleBobScaleY) or 0
+    local bobF = (config.battle and config.battle.idleBobSpeed) or 1
+    local bob2 = 1 + bobA * (0.5 - 0.5 * math.cos(2 * math.pi * bobF * (scene.idleT or 0) + math.pi * 0.5)) -- Phase offset for variety
+    local sx2, sy2 = s2, s2 * bob2
+    local tilt2 = scene.enemy2Rotation or 0
+    if scene.enemy2Disintegrating and scene.disintegrationShader then
+      local cfg = config.battle.disintegration or {}
+      local duration = cfg.duration or 1.5
+      local progress = math.min(1, (scene.enemy2DisintegrationTime or 0) / duration)
+      local noiseScale = cfg.noiseScale or 20
+      local thickness = cfg.thickness or 0.25
+      local lineColor = cfg.lineColor or {1.0, 0.3, 0.1, 1.0}
+      local colorIntensity = cfg.colorIntensity or 2.0
+      love.graphics.setShader(scene.disintegrationShader)
+      scene.disintegrationShader:send("u_time", scene.enemy2DisintegrationTime)
+      scene.disintegrationShader:send("u_noiseScale", noiseScale)
+      scene.disintegrationShader:send("u_thickness", thickness)
+      scene.disintegrationShader:send("u_lineColor", lineColor)
+      scene.disintegrationShader:send("u_colorIntensity", colorIntensity)
+      scene.disintegrationShader:send("u_progress", progress)
+    end
+    local brightnessMultiplier2 = 1
+    local pulseConfig = config.battle.pulse
+    if pulseConfig and (pulseConfig.enabled ~= false) then
+      local variation = pulseConfig.brightnessVariation or 0.08
+      brightnessMultiplier2 = 1 + math.sin(scene.enemy2PulseTime or 0) * variation
+    end
+    love.graphics.setColor(brightnessMultiplier2, brightnessMultiplier2, brightnessMultiplier2, 1)
+    love.graphics.draw(scene.enemy2Img, enemy2X, enemy2Y, tilt2, sx2, sy2, iw2 * 0.5, ih2)
+    if scene.enemy2Disintegrating and scene.disintegrationShader then
+      love.graphics.setShader()
+    end
+    if scene.enemy2Flash and scene.enemy2Flash > 0 and not scene.enemy2Disintegrating then
+      local base = scene.enemy2Flash / math.max(0.0001, config.battle.hitFlashDuration)
+      local a = math.min(1, base * ((config.battle and config.battle.hitFlashAlphaScale) or 1))
+      local passes = (config.battle and config.battle.hitFlashPasses) or 1
+      love.graphics.setBlendMode("add")
+      love.graphics.setColor(1, 1, 1, a)
+      for i = 1, math.max(1, passes) do
+        love.graphics.draw(scene.enemy2Img, enemy2X, enemy2Y, scene.enemy2Rotation or 0, sx2, sy2, iw2 * 0.5, ih2)
+      end
+      love.graphics.setBlendMode("alpha")
+      love.graphics.setColor(brightnessMultiplier2, brightnessMultiplier2, brightnessMultiplier2, 1)
+    end
+  elseif scene.state ~= "win" and (scene.enemy2HP and scene.enemy2HP > 0) then
+    local brightnessMultiplier2 = 1
+    local pulseConfig = config.battle.pulse
+    if pulseConfig and (pulseConfig.enabled ~= false) then
+      local variation = pulseConfig.brightnessVariation or 0.08
+      brightnessMultiplier2 = 1 + math.sin(scene.enemy2PulseTime or 0) * variation
+    end
+    if scene.enemy2Flash and scene.enemy2Flash > 0 then
+      love.graphics.setColor(brightnessMultiplier2, brightnessMultiplier2, brightnessMultiplier2, 1)
+    else
+      love.graphics.setColor(0.9 * brightnessMultiplier2, 0.2 * brightnessMultiplier2, 0.2 * brightnessMultiplier2, 1)
+    end
+    love.graphics.circle("fill", enemy2X, enemy2Y - r, r)
+    love.graphics.setColor(1, 1, 1, 1)
+  end
+
   -- Draw impacts between sprites and popups (maintain original z-order)
   ImpactSystem.draw(scene)
 
@@ -431,12 +591,21 @@ function Visuals.draw(scene, bounds)
   for _, p in ipairs(scene.popups or {}) do
     local life = math.max(0.0001, config.battle.popupLifetime)
     local prog = 1 - math.max(0, p.t / life)
-    local baseTop = (p.who == "enemy") and (baselineY - (scene.enemyImg and (scene.enemyImg:getHeight() * enemyScale) or (2 * r)))
-                                   or (baselineY - (scene.playerImg and (scene.playerImg:getHeight() * playerScale) or (2 * r)))
+    local baseTop
+    local x
+    if p.who == "enemy" then
+      baseTop = baselineY - (scene.enemyImg and (scene.enemyImg:getHeight() * enemyScale) or (2 * r))
+      x = curEnemyX
+    elseif p.who == "enemy2" then
+      baseTop = enemy2Y - (scene.enemy2Img and (scene.enemy2Img:getHeight() * enemy2Scale) or (2 * r))
+      x = enemy2X
+    else
+      baseTop = baselineY - (scene.playerImg and (scene.playerImg:getHeight() * playerScale) or (2 * r))
+      x = curPlayerX
+    end
     local bounce = singleSoftBounce(math.min(1, prog))
     local height = (config.battle and config.battle.popupBounceHeight) or 60
     local y = baseTop - 20 - bounce * height
-    local x = (p.who == "enemy") and curEnemyX or curPlayerX
     local start = (config.battle and config.battle.popupFadeStart) or 0.7
     local mul = (config.battle and config.battle.popupFadeMultiplier) or 0.5
     local alpha

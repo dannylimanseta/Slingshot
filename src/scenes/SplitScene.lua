@@ -211,7 +211,7 @@ function SplitScene:setupTurnManagerEvents()
   
   -- Check victory event
   self.turnManager:on("check_victory", function()
-    if self.right and self.right.enemyHP and self.right.enemyHP <= 0 then
+    if self.right and self.right.enemyHP and self.right.enemyHP <= 0 and self.right.enemy2HP and self.right.enemy2HP <= 0 then
       self.turnManager:transitionTo(TurnManager.States.VICTORY)
     end
   end)
@@ -730,8 +730,8 @@ function SplitScene:update(dt)
   local isVictory = false
   if self.right then
     -- Check multiple victory conditions
-    if (self.right.enemyHP and self.right.enemyHP <= 0) or
-       (self.right.displayEnemyHP and self.right.displayEnemyHP <= 0.1) or
+    if ((self.right.enemyHP and self.right.enemyHP <= 0) or (self.right.displayEnemyHP and self.right.displayEnemyHP <= 0.1)) and
+       ((self.right.enemy2HP and self.right.enemy2HP <= 0) or (self.right.displayEnemy2HP and self.right.displayEnemy2HP <= 0.1)) or
        (self.right.state == "win") then
       isVictory = true
     end

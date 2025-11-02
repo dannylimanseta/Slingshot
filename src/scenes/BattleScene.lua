@@ -18,24 +18,31 @@ function BattleScene.new()
   return setmetatable({
     playerHP = config.battle.playerMaxHP,
     enemyHP = config.battle.enemyMaxHP,
+    enemy2HP = config.battle.enemy2MaxHP,
     displayPlayerHP = config.battle.playerMaxHP, -- Display HP for smooth tweening
     displayEnemyHP = config.battle.enemyMaxHP, -- Display HP for smooth tweening
+    displayEnemy2HP = config.battle.enemy2MaxHP, -- Display HP for smooth tweening
     playerArmor = 0,
     prevPlayerArmor = 0,
     enemyFlash = 0,
+    enemy2Flash = 0,
     playerFlash = 0,
     popups = {},
     log = {},
     state = "idle", -- idle | win | lose (deprecated, use TurnManager state)
     _enemyTurnDelay = nil, -- Delay timer for enemy turn start (after armor popup)
     _pendingEnemyTurnStart = false, -- Flag to track if enemy turn is waiting for player attack to complete
+    _enemy2AttackDelay = nil, -- Delay timer for enemy2 attack
+    _pendingEnemy2Attack = false, -- Flag to track if enemy2 attack is pending
     _playerAttackDelayTimer = nil, -- Delay timer for player attack animation (after ball despawn)
     _pendingPlayerAttackDamage = nil, -- { damage, armor, wasJackpot, impactBlockCount, impactIsCrit } - stored when turn ends, applied after delay
     _pendingImpactParams = nil, -- { blockCount, isCrit } - stored by playImpact, merged into pending damage
     playerImg = nil,
     enemyImg = nil,
+    enemy2Img = nil,
     playerScaleMul = 1,
     enemyScaleMul = 1,
+    enemy2ScaleMul = 1,
     playerLungeTime = 0,
     enemyLungeTime = 0,
     shakeTime = 0,
@@ -46,8 +53,10 @@ function BattleScene.new()
     iconArmor = nil,
     playerKnockbackTime = 0,
     enemyKnockbackTime = 0,
+    enemy2KnockbackTime = 0,
     playerRotation = 0, -- Current rotation angle in radians (tweens back to 0)
     enemyRotation = 0, -- Current rotation angle in radians (tweens back to 0)
+    enemy2Rotation = 0, -- Current rotation angle in radians (tweens back to 0)
     idleT = 0,
     borderFragments = {}, -- For shatter effect
     borderFadeInTime = 0, -- Fade-in animation timer for border
@@ -68,7 +77,10 @@ function BattleScene.new()
     -- Enemy disintegration effect
     enemyDisintegrating = false,
     enemyDisintegrationTime = 0,
+    enemy2Disintegrating = false,
+    enemy2DisintegrationTime = 0,
     pendingDisintegration = false, -- Set to true when HP reaches 0 but waiting for impact animations
+    pendingEnemy2Disintegration = false,
     disintegrationShader = nil,
     -- Lunge speed streaks
     lungeStreaks = {},
@@ -76,6 +88,7 @@ function BattleScene.new()
     -- Pulse animation timers (different phase offsets for visual variety)
     playerPulseTime = love.math.random() * (2 * math.pi),
     enemyPulseTime = love.math.random() * (2 * math.pi),
+    enemy2PulseTime = love.math.random() * (2 * math.pi),
     -- Fog shader
     fogShader = nil,
     fogTime = 0, -- Time accumulator for fog animation
@@ -92,6 +105,7 @@ function BattleScene:load(bounds)
   -- Load sprites (optional); fallback to circles if missing
   local playerPath = (config.assets and config.assets.images and config.assets.images.player) or nil
   local enemyPath = (config.assets and config.assets.images and config.assets.images.enemy) or nil
+  local enemy2Path = (config.assets and config.assets.images and config.assets.images.enemy2) or nil
   if playerPath then
     local ok, img = pcall(love.graphics.newImage, playerPath)
     if ok then self.playerImg = img end
@@ -99,6 +113,14 @@ function BattleScene:load(bounds)
   if enemyPath then
     local ok, img = pcall(love.graphics.newImage, enemyPath)
     if ok then self.enemyImg = img end
+  end
+  if enemy2Path then
+    local ok, img = pcall(love.graphics.newImage, enemy2Path)
+    if ok then 
+      self.enemy2Img = img
+      -- Set scale multiplier from config
+      self.enemy2ScaleMul = (config.battle and config.battle.enemy2SpriteScale) or 0.9
+    end
   end
   local iconArmorPath = (config.assets and config.assets.images and config.assets.images.icon_armor) or nil
   if iconArmorPath then
@@ -271,6 +293,7 @@ function BattleScene:update(dt, bounds)
   self._lastBounds = bounds or self._lastBounds
 
   if self.enemyFlash > 0 then self.enemyFlash = math.max(0, self.enemyFlash - dt) end
+  if self.enemy2Flash > 0 then self.enemy2Flash = math.max(0, self.enemy2Flash - dt) end
   if self.playerFlash > 0 then self.playerFlash = math.max(0, self.playerFlash - dt) end
   
   -- Update impact system (slashes, flashes, knockback)
@@ -298,6 +321,14 @@ function BattleScene:update(dt, bounds)
   else
     self.displayEnemyHP = self.enemyHP
   end
+  -- Enemy2 HP bar tween (exponential interpolation)
+  local enemy2Delta = self.enemy2HP - (self.displayEnemy2HP or self.enemy2HP)
+  if math.abs(enemy2Delta) > 0.01 then
+    local k = math.min(1, hpTweenSpeed * dt) -- Fraction to move this frame
+    self.displayEnemy2HP = (self.displayEnemy2HP or self.enemy2HP) + enemy2Delta * k
+  else
+    self.displayEnemy2HP = self.enemy2HP
+  end
   
   -- Check if enemy should start disintegrating (safeguard for any code path)
   -- Only auto-start if no impact animations are active and disintegration isn't pending
@@ -313,15 +344,46 @@ function BattleScene:update(dt, bounds)
     end
   end
   
+  -- Check if enemy2 should start disintegrating
+  if self.enemy2HP <= 0 and not self.enemy2Disintegrating and not self.pendingEnemy2Disintegration and self.state ~= "win" then
+    local impactsActive = (self.impactInstances and #self.impactInstances > 0)
+    if impactsActive then
+      -- Wait for impact animations to finish
+      self.pendingEnemy2Disintegration = true
+    else
+      -- No impacts, start disintegration immediately
+      self.enemy2Disintegrating = true
+      self.enemy2DisintegrationTime = 0
+    end
+  end
+  
   -- Update enemy disintegration effect
   if self.enemyDisintegrating then
     local cfg = config.battle.disintegration or {}
     local duration = cfg.duration or 1.5
     self.enemyDisintegrationTime = self.enemyDisintegrationTime + dt
     if self.enemyDisintegrationTime >= duration then
-      -- Disintegration complete, transition to win state
-      self.state = "win"
       self.enemyDisintegrating = false
+    end
+  end
+  
+  -- Update enemy2 disintegration effect
+  if self.enemy2Disintegrating then
+    local cfg = config.battle.disintegration or {}
+    local duration = cfg.duration or 1.5
+    self.enemy2DisintegrationTime = self.enemy2DisintegrationTime + dt
+    if self.enemy2DisintegrationTime >= duration then
+      self.enemy2Disintegrating = false
+    end
+  end
+  
+  -- Check victory condition: both enemies must be defeated
+  if (self.enemyHP <= 0 or self.enemyDisintegrating) and 
+     (self.enemy2HP <= 0 or self.enemy2Disintegrating) and 
+     self.state ~= "win" then
+    -- Both enemies defeated, wait for disintegration animations if needed
+    if not self.enemyDisintegrating and not self.enemy2Disintegrating then
+      self.state = "win"
     end
   end
   
@@ -439,6 +501,48 @@ function BattleScene:update(dt, bounds)
     end
   end
 
+  -- Handle enemy2 attack delay
+  if self._enemy2AttackDelay and self._enemy2AttackDelay > 0 then
+    self._enemy2AttackDelay = self._enemy2AttackDelay - dt
+    if self._enemy2AttackDelay <= 0 then
+      self._enemy2AttackDelay = nil
+      if self._pendingEnemy2Attack and (self.enemy2HP and self.enemy2HP > 0) then
+        self._pendingEnemy2Attack = false
+        -- Perform enemy2 attack
+        local minDmg2 = config.battle.enemy2DamageMin or 3
+        local maxDmg2 = config.battle.enemy2DamageMax or 5
+        local dmg2 = love.math.random(minDmg2, maxDmg2)
+        local blocked2 = math.min(self.playerArmor or 0, dmg2)
+        local net2 = dmg2 - blocked2
+        self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked2)
+        self.playerHP = math.max(0, self.playerHP - net2)
+        
+        if net2 <= 0 then
+          self.armorIconFlashTimer = 0.5
+          table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+        else
+          self.playerFlash = config.battle.hitFlashDuration
+          self.playerKnockbackTime = 1e-6
+          table.insert(self.popups, { x = 0, y = 0, text = tostring(net2), t = config.battle.popupLifetime, who = "player" })
+          pushLog(self, "Enemy 2 dealt " .. net2)
+          if self.onPlayerDamage then
+            self.onPlayerDamage()
+          end
+        end
+        self.enemyLungeTime = 1e-6
+        self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+        
+        if self.playerHP <= 0 then
+          self.state = "lose"
+          pushLog(self, "You were defeated!")
+          if self.turnManager then
+            self.turnManager:transitionTo(TurnManager.States.DEFEAT)
+          end
+        end
+      end
+    end
+  end
+
   -- Handle player attack delay (between ball despawn and attack animation)
   if self._playerAttackDelayTimer and self._playerAttackDelayTimer > 0 then
     self._playerAttackDelayTimer = self._playerAttackDelayTimer - dt
@@ -457,13 +561,23 @@ function BattleScene:update(dt, bounds)
           self:_createImpactInstances(impactBlockCount, impactIsCrit)
         end
         
-        -- Apply damage to enemy HP
+        -- Apply damage to both enemies
         self.enemyHP = math.max(0, self.enemyHP - dmg)
+        if self.enemy2HP and self.enemy2HP > 0 then
+          self.enemy2HP = math.max(0, self.enemy2HP - dmg)
+        end
         
         -- Trigger enemy hit visual effects (flash, knockback, popup)
         self.enemyFlash = config.battle.hitFlashDuration
         self.enemyKnockbackTime = 1e-6
+        if self.enemy2HP and self.enemy2HP > 0 then
+          self.enemy2Flash = config.battle.hitFlashDuration
+          self.enemy2KnockbackTime = 1e-6
+        end
         table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy" })
+        if self.enemy2HP and self.enemy2HP > 0 then
+          table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy2" })
+        end
         pushLog(self, "You dealt " .. dmg)
         
         -- Check if enemy is defeated
@@ -480,6 +594,21 @@ function BattleScene:update(dt, bounds)
               self.enemyDisintegrating = true
               self.enemyDisintegrationTime = 0
               pushLog(self, "Enemy defeated!")
+            end
+          end
+        end
+        
+        -- Check if enemy2 is defeated
+        if self.enemy2HP and self.enemy2HP <= 0 then
+          local impactsActive = (self.impactInstances and #self.impactInstances > 0)
+          if impactsActive then
+            self.pendingEnemy2Disintegration = true
+            pushLog(self, "Enemy 2 defeated!")
+          else
+            if not self.enemy2Disintegrating then
+              self.enemy2Disintegrating = true
+              self.enemy2DisintegrationTime = 0
+              pushLog(self, "Enemy 2 defeated!")
             end
           end
         end
@@ -577,13 +706,9 @@ end
 
 -- Perform enemy attack (called by TurnManager)
 function BattleScene:performEnemyAttack(minDamage, maxDamage)
-  -- Don't attack if enemy is already defeated
-  if (self.enemyHP and self.enemyHP <= 0) or 
-     (self.displayEnemyHP and self.displayEnemyHP <= 0.1) or
-     (self.turnManager and self.turnManager:getState() == TurnManager.States.VICTORY) then
-    return
-  end
-  
+  -- Perform enemy1 attack if alive
+  if (self.enemyHP and self.enemyHP > 0) and 
+     (self.displayEnemyHP and self.displayEnemyHP > 0.1) then
   minDamage = minDamage or config.battle.enemyDamageMin
   maxDamage = maxDamage or config.battle.enemyDamageMax
   local dmg = love.math.random(minDamage, maxDamage)
@@ -611,6 +736,16 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
   self.enemyLungeTime = 1e-6
   -- Trigger screenshake
   self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+  end
+  
+  -- Schedule enemy2 attack if alive (with delay for visual clarity)
+  if (self.enemy2HP and self.enemy2HP > 0) and 
+     (self.displayEnemy2HP and self.displayEnemy2HP > 0.1) then
+    -- Use a delay timer for enemy2 attack
+    self._enemy2AttackDelay = 0.3
+    self._pendingEnemy2Attack = true
+  end
+  
   if self.playerHP <= 0 then
     self.state = "lose"
     pushLog(self, "You were defeated!")
@@ -647,8 +782,8 @@ function BattleScene:setTurnManager(turnManager)
     -- Start enemy turn event - handle armor popup timing, then let TurnManager continue
     turnManager:on("start_enemy_turn", function()
       -- Don't start enemy turn if enemy is already defeated
-      if (self.enemyHP and self.enemyHP <= 0) or 
-         (self.displayEnemyHP and self.displayEnemyHP <= 0.1) or
+      if ((self.enemyHP and self.enemyHP <= 0) or (self.displayEnemyHP and self.displayEnemyHP <= 0.1)) and
+         ((self.enemy2HP and self.enemy2HP <= 0) or (self.displayEnemy2HP and self.displayEnemy2HP <= 0.1)) or
          (turnManager:getState() == TurnManager.States.VICTORY) then
         return
       end

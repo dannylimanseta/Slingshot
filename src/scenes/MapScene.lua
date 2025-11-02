@@ -242,10 +242,10 @@ function MapScene:update(deltaTime)
   
   -- Handle battle transition delay
   if self._battleTransitionDelay ~= nil then
-    if self._battleTransitionDelay > 0 then
-      self._battleTransitionDelay = self._battleTransitionDelay - deltaTime
-      if self._battleTransitionDelay <= 0 then
-        -- Transition to battle
+  if self._battleTransitionDelay > 0 then
+    self._battleTransitionDelay = self._battleTransitionDelay - deltaTime
+    if self._battleTransitionDelay <= 0 then
+      -- Transition to battle
         self._battleTransitionDelay = nil
         return "enter_battle"
       end
