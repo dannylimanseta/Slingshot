@@ -102,13 +102,13 @@ function ImpactSystem.update(scene, dt)
           if not enemy and scene.enemies and #scene.enemies > 0 then
             enemy = scene.enemies[1] -- Fallback to first enemy
           end
-          if enemy then
-            enemy.flash = math.max(enemy.flash or 0, flashDuration)
-            -- Apply slight rotation nudge on hit
-            local rotationDegrees = love.math.random(1, 3)
-            local rotationRadians = math.rad(rotationDegrees)
-            if love.math.random() < 0.5 then rotationRadians = -rotationRadians end
-            enemy.rotation = (enemy.rotation or 0) + rotationRadians
+            if enemy then
+              enemy.flash = math.max(enemy.flash or 0, flashDuration)
+          -- Apply slight rotation nudge on hit
+          local rotationDegrees = love.math.random(1, 3)
+          local rotationRadians = math.rad(rotationDegrees)
+          if love.math.random() < 0.5 then rotationRadians = -rotationRadians end
+              enemy.rotation = (enemy.rotation or 0) + rotationRadians
           end
         end
         event.startTime = (event.startTime or 0) + dt

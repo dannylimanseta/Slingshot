@@ -125,7 +125,8 @@ float gradient(vec2 uv) {
 }
 
 vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
-    // Normalize screen coordinates to [0,1]
+    // Normalize screen coordinates to [0,1] based on canvas dimensions
+    // When drawing to a canvas, sc is canvas-relative, so u_resolution should be canvas size
     vec2 screenUV = sc / u_resolution;
     
     // Create 3D position for noise with time component
@@ -135,7 +136,7 @@ vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
     // Apply noise distortion
     vec2 duv = vec2(fBm(p), fBm(p + someRandomOffset)) * u_noisiness;
     
-    // Calculate fog density using gradient and noise
+    // Calculate fog density using normalized screen coordinates
     float q = gradient(screenUV + duv) * u_cloudDensity;
     
     // Clamp density to [0,1]

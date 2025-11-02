@@ -318,7 +318,27 @@ function Visuals.draw(scene, bounds)
     love.graphics.setBlendMode("alpha")
     love.graphics.setShader(scene.fogShader)
     scene.fogShader:send("u_time", scene.fogTime or 0)
-    scene.fogShader:send("u_resolution", {w, h})
+    -- For shader resolution: use canvas dimensions scaled to match where the rectangle actually renders
+    -- The rectangle is drawn at (0,0,w,h) on the canvas, but sc coordinates depend on Retina
+    local currentCanvas = love.graphics.getCanvas()
+    local logicalW, logicalH = love.graphics.getDimensions()
+    local pixelW, pixelH = love.graphics.getPixelDimensions()
+    
+    -- Check if we're on a Retina display
+    local isRetina = (pixelW > logicalW + 1) or (pixelH > logicalH + 1)
+    
+    if currentCanvas and isRetina then
+      -- Retina + canvas: sc appears to be window pixel coordinates
+      -- Map canvas space to the portion of window pixels it occupies
+      -- The canvas fills a portion of the window, so we need to scale accordingly
+      local dpiScaleX = pixelW / logicalW
+      local dpiScaleY = pixelH / logicalH
+      -- Canvas dimensions in pixel space (how many pixels the canvas occupies)
+      scene.fogShader:send("u_resolution", {w * dpiScaleX, h * dpiScaleY})
+    else
+      -- Non-Retina or no canvas: sc is canvas/logical relative
+      scene.fogShader:send("u_resolution", {w, h})
+    end
     scene.fogShader:send("u_cloudDensity", fogConfig.cloudDensity or 0.15)
     scene.fogShader:send("u_noisiness", fogConfig.noisiness or 0.35)
     scene.fogShader:send("u_speed", fogConfig.speed or 0.1)
