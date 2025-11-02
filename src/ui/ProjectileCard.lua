@@ -122,7 +122,7 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   if not projectile then return end
   
   -- Card dimensions
-  local cardW = 280
+  local cardW = 240 -- Reduced by 25% (was 280)
   local cardH = self:calculateHeight(projectile) -- Dynamic height
   local padding = 12
   local iconSize = 24 * 1.3 -- Increased by 30% (was 24)

@@ -16,7 +16,7 @@ battle_profiles.data = {
     -- Enemy configuration
     -- enemyCount: number of enemies (1-3)
     -- enemySpacing: spacing between enemies in pixels (default: 40)
-    enemySpacing = -20, -- Gap between enemies in pixels
+    enemySpacing = -10, -- Gap between enemies in pixels
     -- enemies: array of enemy configs, each with:
     --   sprite: path to sprite image (relative to assets/images/)
     --   maxHP: maximum HP for this enemy
