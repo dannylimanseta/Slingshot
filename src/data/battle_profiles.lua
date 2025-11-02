@@ -30,7 +30,7 @@ battle_profiles.data = {
         maxHP = 80,
         damageMin = 3,
         damageMax = 8,
-        spriteScale = 3.5,
+        spriteScale = 3,
         scaleMul = 1,
       },
       {
@@ -38,11 +38,19 @@ battle_profiles.data = {
         maxHP = 50,
         damageMin = 3,
         damageMax = 5,
-        spriteScale = 3.5,
+        spriteScale = 3,
+        scaleMul = 1,
+      },
+      {
+        sprite = "enemy_2.png",
+        maxHP = 50,
+        damageMin = 3,
+        damageMax = 5,
+        spriteScale = 3,
         scaleMul = 1,
       },
     },
-    enemyCount = 2, -- Number of enemies (will use first N entries from enemies array)
+    enemyCount = 3, -- Number of enemies (will use first N entries from enemies array)
     -- Block formation configuration
     -- Type: "random" (uses clustering/random placement) or "predefined" (uses exact positions)
     blockFormation = {

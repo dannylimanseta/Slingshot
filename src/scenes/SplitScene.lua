@@ -302,7 +302,7 @@ function SplitScene:draw()
   local h = (config.video and config.video.virtualHeight) or 720
   local centerRect = self.layoutManager:getCenterRect(w, h)
   local centerW = centerRect.w
-  local centerX = centerRect.x
+  local centerX = centerRect.x - 100 -- Shift breakout canvas 100px to the left
 
   -- Apply screenshake as a camera translation (ease-out)
   love.graphics.push()
@@ -416,7 +416,7 @@ function SplitScene:draw()
   love.graphics.setScissor() -- Disable scissor
   love.graphics.setBlendMode("add") -- Use additive blending for glows
   
-  -- Left edge glow (aligned to right of boundary_left)
+  -- Left edge glow (aligned to left edge of shifted canvas)
   if self.edgeGlowLeftTimer > 0 then
     local glowAlpha = (self.edgeGlowLeftTimer / self.edgeGlowDuration) * 0.8 -- Fade from 0.8 to 0
     
@@ -570,7 +570,8 @@ function SplitScene:mousepressed(x, y, button)
   local w = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
   local h = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
   local centerRect = self.layoutManager:getCenterRect(w, h)
-  local centerBounds = { x = centerRect.x, y = 0, w = centerRect.w, h = h }
+  local centerX = centerRect.x - 100 -- Shift breakout canvas 100px to the left
+  local centerBounds = { x = centerX, y = 0, w = centerRect.w, h = h }
   if pointInBounds(x, y, centerBounds) and self.left and self.left.mousepressed then
     self.left:mousepressed(x - centerBounds.x, y - centerBounds.y, button, centerBounds)
   elseif self.right and self.right.mousepressed then
@@ -583,7 +584,8 @@ function SplitScene:mousereleased(x, y, button)
   local w = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
   local h = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
   local centerRect = self.layoutManager:getCenterRect(w, h)
-  local centerBounds = { x = centerRect.x, y = 0, w = centerRect.w, h = h }
+  local centerX = centerRect.x - 100 -- Shift breakout canvas 100px to the left
+  local centerBounds = { x = centerX, y = 0, w = centerRect.w, h = h }
   if pointInBounds(x, y, centerBounds) and self.left and self.left.mousereleased then
     self.left:mousereleased(x - centerBounds.x, y - centerBounds.y, button, centerBounds)
   elseif self.right and self.right.mousereleased then
@@ -595,7 +597,8 @@ function SplitScene:mousemoved(x, y, dx, dy)
   local w = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
   local h = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
   local centerRect = self.layoutManager:getCenterRect(w, h)
-  local centerBounds = { x = centerRect.x, y = 0, w = centerRect.w, h = h }
+  local centerX = centerRect.x - 100 -- Shift breakout canvas 100px to the left
+  local centerBounds = { x = centerX, y = 0, w = centerRect.w, h = h }
   if pointInBounds(x, y, centerBounds) and self.left and self.left.mousemoved then
     self.left:mousemoved(x - centerBounds.x, y - centerBounds.y, dx, dy, centerBounds)
   elseif self.right and self.right.mousemoved then

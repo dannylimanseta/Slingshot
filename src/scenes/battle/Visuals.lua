@@ -490,6 +490,42 @@ function Visuals.draw(scene, bounds)
     end
   end
 
+  -- Draw selection indicators above HP bars (after enemy sprites for higher z-order)
+  if scene.selectedEnemyIndex and scene.selectedIndicatorImg then
+    local selectedEnemy = scene.enemies and scene.enemies[scene.selectedEnemyIndex]
+    if selectedEnemy and (selectedEnemy.hp > 0 or selectedEnemy.disintegrating or selectedEnemy.pendingDisintegration) then
+      local selectedPos = enemyPositions[scene.selectedEnemyIndex]
+      if selectedPos then
+        local enemyBarW = selectedPos.width * 0.7 -- 70% of sprite width
+        local enemyBarX = selectedPos.curX - enemyBarW * 0.5
+        
+        local barAlpha = 1.0
+        if selectedEnemy.disintegrating then
+          local cfg = config.battle.disintegration or {}
+          local duration = cfg.duration or 1.5
+          local progress = math.min(1, (selectedEnemy.disintegrationTime or 0) / duration)
+          barAlpha = math.max(0, 1.0 - (progress / 0.7))
+        end
+        
+        if barAlpha > 0 then
+          local indicatorImg = scene.selectedIndicatorImg
+          local indicatorW, indicatorH = indicatorImg:getWidth(), indicatorImg:getHeight()
+          local indicatorScale = (enemyBarW * 0.9) / indicatorW -- Scale to 90% of HP bar width
+          
+          -- Bobbing animation: slight up and down movement
+          local bobSpeed = 1.0 -- Speed of bobbing (slowed down by 50%)
+          local bobAmplitude = 1 -- Amplitude in pixels (reduced for subtler movement)
+          local bobOffset = math.sin((scene.idleT or 0) * bobSpeed * 2 * math.pi) * bobAmplitude
+          
+          -- Position below HP bar (shifted down more)
+          local indicatorY = barY - (indicatorH * indicatorScale * 0.5) - 4 + bobOffset -- 4px gap above HP bar (shifted down)
+          love.graphics.setColor(1, 1, 1, barAlpha) -- Use same alpha as HP bar
+          love.graphics.draw(indicatorImg, selectedPos.curX, indicatorY, 0, indicatorScale, indicatorScale, indicatorW * 0.5, indicatorH * 0.5)
+        end
+      end
+    end
+  end
+
   -- Draw impacts between sprites and popups (maintain original z-order)
   ImpactSystem.draw(scene)
 

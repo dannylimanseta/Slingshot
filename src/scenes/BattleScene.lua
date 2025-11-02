@@ -94,6 +94,9 @@ function BattleScene.new()
     fogShader = nil,
     fogTime = 0, -- Time accumulator for fog animation
     topBar = TopBar.new(),
+    -- Enemy selection
+    selectedEnemyIndex = 1, -- Index of currently selected enemy (1 = leftmost)
+    selectedIndicatorImg = nil, -- Image for selection indicator
   }, BattleScene)
 end
 
@@ -169,6 +172,24 @@ function BattleScene:load(bounds, battleProfile)
   else
     -- Shader failed to load, disable fog effect
     self.fogShader = nil
+  end
+  
+  -- Load selection indicator image
+  local indicatorPath = "assets/images/selected_indicator.png"
+  local ok, img = pcall(love.graphics.newImage, indicatorPath)
+  if ok then
+    self.selectedIndicatorImg = img
+  else
+    self.selectedIndicatorImg = nil
+  end
+  
+  -- Initialize selection to leftmost enemy (index 1)
+  self.selectedEnemyIndex = 1
+  -- Ensure selection is valid
+  if #self.enemies > 0 then
+    self.selectedEnemyIndex = math.min(self.selectedEnemyIndex, #self.enemies)
+  else
+    self.selectedEnemyIndex = nil
   end
 end
 
@@ -379,6 +400,10 @@ function BattleScene:update(dt, bounds)
       enemy.disintegrationTime = enemy.disintegrationTime + dt
       if enemy.disintegrationTime >= duration then
         enemy.disintegrating = false
+        -- If this was the selected enemy, select next one
+        if self.selectedEnemyIndex and self.enemies[self.selectedEnemyIndex] == enemy then
+          self:_selectNextEnemy()
+        end
       end
     end
   end
@@ -582,39 +607,44 @@ function BattleScene:update(dt, bounds)
           self:_createImpactInstances(impactBlockCount, impactIsCrit)
         end
         
-        -- Apply damage to all enemies
-        for i, enemy in ipairs(self.enemies or {}) do
-          if enemy.hp > 0 then
-            enemy.hp = math.max(0, enemy.hp - dmg)
+        -- Apply damage only to selected enemy
+        local selectedEnemy = self:getSelectedEnemy()
+        if selectedEnemy then
+          local i = self.selectedEnemyIndex
+          if selectedEnemy.hp > 0 then
+            selectedEnemy.hp = math.max(0, selectedEnemy.hp - dmg)
         
-        -- Trigger enemy hit visual effects (flash, knockback, popup)
-            enemy.flash = config.battle.hitFlashDuration
-            enemy.knockbackTime = 1e-6
+            -- Trigger enemy hit visual effects (flash, knockback, popup)
+            selectedEnemy.flash = config.battle.hitFlashDuration
+            selectedEnemy.knockbackTime = 1e-6
             table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy", enemyIndex = i })
         
-        -- Check if enemy is defeated
-            if enemy.hp <= 0 then
-          -- Check if disintegration has already completed (prevent restarting)
-          local cfg = config.battle.disintegration or {}
-          local duration = cfg.duration or 1.5
-          local hasCompletedDisintegration = (enemy.disintegrationTime or 0) >= duration
-          
-          if not hasCompletedDisintegration then
-            -- Check if impact animations are still playing
-            local impactsActive = (self.impactInstances and #self.impactInstances > 0)
-            if impactsActive then
-              -- Wait for impact animations to finish before starting disintegration
-              enemy.pendingDisintegration = true
-              pushLog(self, "Enemy " .. i .. " defeated!")
-            else
-              -- Start disintegration effect immediately if no impacts
-              if not enemy.disintegrating then
-                enemy.disintegrating = true
-                enemy.disintegrationTime = 0
-                pushLog(self, "Enemy " .. i .. " defeated!")
+            -- Check if enemy is defeated
+            if selectedEnemy.hp <= 0 then
+              -- Check if disintegration has already completed (prevent restarting)
+              local cfg = config.battle.disintegration or {}
+              local duration = cfg.duration or 1.5
+              local hasCompletedDisintegration = (selectedEnemy.disintegrationTime or 0) >= duration
+              
+              if not hasCompletedDisintegration then
+                -- Check if impact animations are still playing
+                local impactsActive = (self.impactInstances and #self.impactInstances > 0)
+                if impactsActive then
+                  -- Wait for impact animations to finish before starting disintegration
+                  selectedEnemy.pendingDisintegration = true
+                  pushLog(self, "Enemy " .. i .. " defeated!")
+                else
+                  -- Start disintegration effect immediately if no impacts
+                  if not selectedEnemy.disintegrating then
+                    selectedEnemy.disintegrating = true
+                    selectedEnemy.disintegrationTime = 0
+                    pushLog(self, "Enemy " .. i .. " defeated!")
+                  end
+                end
               end
-            end
-          end
+              
+              -- Auto-select next enemy to the right when selected enemy dies
+              self:_selectNextEnemy()
             end
           end
         end
@@ -866,8 +896,38 @@ function BattleScene:setTurnManager(turnManager)
   end
 end
 
+-- Get currently selected enemy
+function BattleScene:getSelectedEnemy()
+  if self.selectedEnemyIndex and self.enemies and self.enemies[self.selectedEnemyIndex] then
+    return self.enemies[self.selectedEnemyIndex]
+  end
+  return nil
+end
+
+-- Select next enemy to the right (or wrap to first if at end)
+function BattleScene:_selectNextEnemy()
+  if not self.enemies or #self.enemies == 0 then
+    self.selectedEnemyIndex = nil
+    return
+  end
+  
+  -- Find next alive enemy to the right
+  local startIndex = self.selectedEnemyIndex or 1
+  for i = 1, #self.enemies do
+    local checkIndex = ((startIndex + i - 1) % #self.enemies) + 1
+    local enemy = self.enemies[checkIndex]
+    if enemy and (enemy.hp > 0 or enemy.disintegrating or enemy.pendingDisintegration) then
+      self.selectedEnemyIndex = checkIndex
+      return
+    end
+  end
+  
+  -- No alive enemies found
+  self.selectedEnemyIndex = nil
+end
+
 -- Compute current enemy hit point (screen coordinates), matching draw layout
--- Returns hit point for first enemy (primary target)
+-- Returns hit point for selected enemy
 function BattleScene:getEnemyHitPoint(bounds)
   local w = (bounds and bounds.w) or love.graphics.getWidth()
   local h = (bounds and bounds.h) or love.graphics.getHeight()
@@ -881,14 +941,17 @@ function BattleScene:getEnemyHitPoint(bounds)
   local yOffset = (config.battle and config.battle.positionOffsetY) or 0
   local baselineY = h * 0.55 + r + yOffset
   
-  -- Get first enemy position (primary target)
-  if self.enemies and #self.enemies > 0 then
-    local enemy = self.enemies[1]
+  -- Get selected enemy position (or first enemy as fallback)
+  local selectedEnemy = self:getSelectedEnemy()
+  if selectedEnemy and self.enemies and #self.enemies > 0 then
+    local enemy = selectedEnemy
+    local enemyIndex = self.selectedEnemyIndex
     -- Calculate enemy position dynamically (matching Visuals.lua logic)
     local enemyScales = {}
     local enemyWidths = {}
     local totalWidth = 0
-    local gap = 40
+    local battleProfile = self._battleProfile or {}
+    local gap = battleProfile.enemySpacing or -20
     
     for i, e in ipairs(self.enemies) do
       local scaleCfg = e.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
@@ -907,7 +970,13 @@ function BattleScene:getEnemyHitPoint(bounds)
     
     local centerX = rightStart + rightWidth * 0.5
     local startX = centerX - totalWidth * 0.5
-    local enemyX = startX + enemyWidths[1] * 0.5
+    
+    -- Calculate X position for the selected enemy
+    local enemyX = startX
+    for i = 1, enemyIndex - 1 do
+      enemyX = enemyX + enemyWidths[i] + gap
+    end
+    enemyX = enemyX + enemyWidths[enemyIndex] * 0.5
 
   -- Account for current lunge
   local function lungeOffset(t)
@@ -927,15 +996,15 @@ function BattleScene:getEnemyHitPoint(bounds)
     local enemyLunge = lungeOffset(enemy.lungeTime)
   local curEnemyX = enemyX - enemyLunge
 
-  -- Aim mid-height of sprite if available; else circle center
+    -- Aim mid-height of sprite if available; else circle center
     local enemyHalfH = r
     if enemy.img then
       local ih = enemy.img:getHeight()
-      enemyHalfH = (enemy.img:getHeight() * enemyScales[1]) * 0.5
-  end
-  local hitX = curEnemyX
-  local hitY = baselineY - enemyHalfH * 0.7 -- slightly above center
-  return hitX, hitY
+      enemyHalfH = (enemy.img:getHeight() * enemyScales[enemyIndex]) * 0.5
+    end
+    local hitX = curEnemyX
+    local hitY = baselineY - enemyHalfH * 0.7 -- slightly above center
+    return hitX, hitY
   else
     -- Fallback if no enemies
     local enemyX = (rightWidth > 0) and (rightStart + rightWidth * 0.5) or (w - 12 - r)
@@ -968,6 +1037,135 @@ end
 function BattleScene:_createImpactInstances(blockCount, isCrit)
   if not self.impactAnimation then return end
   ImpactSystem.create(self, blockCount or 1, isCrit or false)
+end
+
+-- Handle keyboard input for enemy selection
+function BattleScene:keypressed(key, scancode, isRepeat)
+  if key == "q" then
+    -- Cycle to next enemy
+    self:_cycleEnemySelection()
+  end
+end
+
+-- Cycle enemy selection to the next alive enemy
+function BattleScene:_cycleEnemySelection()
+  if not self.enemies or #self.enemies == 0 then
+    self.selectedEnemyIndex = nil
+    return
+  end
+  
+  local startIndex = self.selectedEnemyIndex or 1
+  -- Find next alive enemy (start from next index, wrapping around)
+  for i = 1, #self.enemies do
+    local checkIndex = ((startIndex + i - 1) % #self.enemies) + 1
+    -- Skip the current enemy
+    if checkIndex == startIndex then
+      checkIndex = ((startIndex + i) % #self.enemies) + 1
+    end
+    local enemy = self.enemies[checkIndex]
+    if enemy and (enemy.hp > 0 or enemy.disintegrating or enemy.pendingDisintegration) then
+      self.selectedEnemyIndex = checkIndex
+      return
+    end
+  end
+  
+  -- No other alive enemies found, keep current selection or set to nil
+  if self.selectedEnemyIndex then
+    local currentEnemy = self.enemies[self.selectedEnemyIndex]
+    if not currentEnemy or (currentEnemy.hp <= 0 and not currentEnemy.disintegrating and not currentEnemy.pendingDisintegration) then
+      self.selectedEnemyIndex = nil
+    end
+  end
+end
+
+-- Handle mouse clicks for enemy selection
+function BattleScene:mousepressed(x, y, button, bounds)
+  if button ~= 1 then return end -- Only handle left mouse button
+  
+  -- Get enemy positions to check which one was clicked
+  local w = (bounds and bounds.w) or love.graphics.getWidth()
+  local h = (bounds and bounds.h) or love.graphics.getHeight()
+  local center = bounds and bounds.center or nil
+  local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
+  local centerW = center and center.w or math.floor(w * 0.5)
+  local rightStart = centerX + centerW
+  local rightWidth = math.max(0, w - rightStart)
+  local r = 24
+  local yOffset = (config.battle and config.battle.positionOffsetY) or 0
+  local baselineY = h * 0.55 + r + yOffset
+  
+  -- Calculate enemy positions (matching Visuals.lua logic)
+  local enemyPositions = {}
+  local battleProfile = self._battleProfile or {}
+  local gap = battleProfile.enemySpacing or -20
+  local enemyScales = {}
+  local enemyWidths = {}
+  local totalWidth = 0
+  
+  for i, enemy in ipairs(self.enemies or {}) do
+    local scaleCfg = enemy.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
+    local scale = 1
+    if enemy.img then
+      local ih = enemy.img:getHeight()
+      scale = ((2 * r) / math.max(1, ih)) * scaleCfg * (enemy.scaleMul or 1)
+    end
+    enemyScales[i] = scale
+    enemyWidths[i] = enemy.img and (enemy.img:getWidth() * scale) or (r * 2)
+    totalWidth = totalWidth + enemyWidths[i]
+    if i < #self.enemies then
+      totalWidth = totalWidth + gap
+    end
+  end
+  
+  local centerXPos = rightStart + rightWidth * 0.5
+  local startX = centerXPos - totalWidth * 0.5
+  
+  -- Check enemies in reverse order (right to left) so rightmost enemy gets priority when overlapping
+  for i = #self.enemies, 1, -1 do
+    local enemy = self.enemies[i]
+    if not enemy then goto continue end
+    
+    -- Calculate currentX position for this enemy (matching Visuals.lua logic exactly)
+    local currentX = startX
+    for j = 1, i - 1 do
+      currentX = currentX + enemyWidths[j] + (j < #self.enemies and gap or 0)
+    end
+    
+    -- Calculate enemy X position (matching Visuals.lua logic exactly)
+    local enemyX = currentX + enemyWidths[i] * 0.5
+    local enemyHalfW = enemyWidths[i] * 0.5
+    local enemyHalfH = enemy.img and ((enemy.img:getHeight() * enemyScales[i]) * 0.5) or r
+    
+    -- Account for enemy lunge animation offset (enemies can move during attacks)
+    local enemyLunge = 0
+    if enemy.lungeTime and enemy.lungeTime > 0 then
+      local lungeD = config.battle.lungeDuration or 0
+      local lungeRD = config.battle.lungeReturnDuration or 0
+      local lungeDist = config.battle.lungeDistance or 0
+      if enemy.lungeTime < lungeD then
+        enemyLunge = lungeDist * (enemy.lungeTime / math.max(0.0001, lungeD))
+      elseif enemy.lungeTime < lungeD + lungeRD then
+        local tt = (enemy.lungeTime - lungeD) / math.max(0.0001, lungeRD)
+        enemyLunge = lungeDist * (1 - tt)
+      end
+    end
+    local curEnemyX = enemyX - enemyLunge
+    
+    -- Check if click is within enemy bounds (with some padding)
+    local clickPadding = 30 -- Increased padding for easier clicking
+    if x >= curEnemyX - enemyHalfW - clickPadding and 
+       x <= curEnemyX + enemyHalfW + clickPadding and
+       y >= baselineY - enemyHalfH * 2 - clickPadding and
+       y <= baselineY + clickPadding then
+      -- Clicked on this enemy, select it if it's alive
+      if enemy.hp > 0 or enemy.disintegrating or enemy.pendingDisintegration then
+        self.selectedEnemyIndex = i
+        return
+      end
+    end
+    
+    ::continue::
+  end
 end
 
 return BattleScene
