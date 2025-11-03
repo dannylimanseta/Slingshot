@@ -2,9 +2,10 @@ local theme = require("theme")
 local config = require("config")
 
 -- Shared sprites for blocks (loaded once)
-local SPRITES = { attack = nil, armor = nil, crit = nil, soul = nil, aoe = nil }
+local SPRITES = { attack = nil, armor = nil, crit = nil, soul = nil, aoe = nil, potion = nil }
 local ICON_ATTACK = nil
 local ICON_ARMOR = nil
+local ICON_POTION = nil
 do
   local imgs = (config.assets and config.assets.images) or {}
   if imgs.block_attack then
@@ -27,6 +28,10 @@ do
     local ok, img = pcall(love.graphics.newImage, imgs.block_aoe)
     if ok then SPRITES.aoe = img end
   end
+  if imgs.block_potion then
+    local ok, img = pcall(love.graphics.newImage, imgs.block_potion)
+    if ok then SPRITES.potion = img end
+  end
   -- Load attack icon
   if imgs.icon_attack then
     local ok, img = pcall(love.graphics.newImage, imgs.icon_attack)
@@ -43,6 +48,15 @@ do
       -- Ensure anti-aliased sampling when scaling
       pcall(function() img:setFilter('linear', 'linear') end)
       ICON_ARMOR = img
+    end
+  end
+  -- Load potion icon
+  if imgs.icon_potion then
+    local ok, img = pcall(love.graphics.newImage, imgs.icon_potion)
+    if ok then
+      -- Ensure anti-aliased sampling when scaling
+      pcall(function() img:setFilter('linear', 'linear') end)
+      ICON_POTION = img
     end
   end
 end
@@ -210,6 +224,8 @@ function Block:draw()
     sprite = SPRITES.soul or SPRITES.attack
   elseif self.kind == "aoe" then
     sprite = SPRITES.aoe or SPRITES.attack
+  elseif self.kind == "potion" then
+    sprite = SPRITES.potion or SPRITES.attack
   else
     sprite = SPRITES.attack
   end
@@ -279,7 +295,7 @@ function Block:draw()
   local valueText = nil
   local iconToUse = nil
   if self.kind == "damage" or self.kind == "attack" then
-    valueText = "1"
+    valueText = "+1"
     iconToUse = ICON_ATTACK
   elseif self.kind == "crit" then
     valueText = "x2"
@@ -291,8 +307,11 @@ function Block:draw()
     -- Get armor value based on HP
     local armorMap = config.armor and config.armor.rewardByHp or { [1] = 3, [2] = 2, [3] = 1 }
     local armorValue = armorMap[math.max(1, math.min(3, self.hp))] or 0
-    valueText = tostring(armorValue)
+    valueText = "+" .. tostring(armorValue)
     iconToUse = ICON_ARMOR
+  elseif self.kind == "potion" then
+    valueText = "+8"
+    iconToUse = ICON_POTION
   end
   
   if valueText and iconToUse then

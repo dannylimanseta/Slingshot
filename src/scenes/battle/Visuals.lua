@@ -611,7 +611,7 @@ function Visuals.draw(scene, bounds)
       alpha = math.max(0, 1 - scaled)
     end
     local r1, g1, b1 = 1, 1, 1
-    if p.who == "player" and p.kind ~= "armor" then
+    if p.who == "player" and p.kind ~= "armor" and p.kind ~= "heal" then
       r1, g1, b1 = 224/255, 112/255, 126/255
     end
     if p.kind == "armor" and scene.iconArmor then
@@ -623,6 +623,18 @@ function Visuals.draw(scene, bounds)
       local startX = x - totalW * 0.5
       love.graphics.setColor(r1, g1, b1, alpha)
       love.graphics.draw(scene.iconArmor, startX, y - 40 + (theme.fonts.large:getHeight() - iconH * s) * 0.5, 0, s, s)
+      theme.printfWithOutline(valueStr, startX + iconW * s + 6, y - 40, totalW - (iconW * s + 6), "left", r1, g1, b1, alpha, 2)
+    elseif p.kind == "heal" and scene.iconPotion then
+      local valueStr = "+" .. tostring(p.value or 0)
+      local textW = theme.fonts.large:getWidth(valueStr)
+      local iconW, iconH = scene.iconPotion:getWidth(), scene.iconPotion:getHeight()
+      local s = 28 / math.max(1, iconH)
+      local totalW = textW + iconW * s + 6
+      local startX = x - totalW * 0.5
+      -- Heal popup uses green color
+      r1, g1, b1 = 112/255, 224/255, 126/255
+      love.graphics.setColor(r1, g1, b1, alpha)
+      love.graphics.draw(scene.iconPotion, startX, y - 40 + (theme.fonts.large:getHeight() - iconH * s) * 0.5, 0, s, s)
       theme.printfWithOutline(valueStr, startX + iconW * s + 6, y - 40, totalW - (iconW * s + 6), "left", r1, g1, b1, alpha, 2)
     elseif p.kind == "armor_blocked" and scene.iconArmor then
       local iconW, iconH = scene.iconArmor:getWidth(), scene.iconArmor:getHeight()

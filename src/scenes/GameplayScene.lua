@@ -24,6 +24,7 @@ function GameplayScene.new()
     score = 0,
     displayScore = 0,
     armorThisTurn = 0,
+    healThisTurn = 0,
     destroyedThisTurn = 0,
     blocksHitThisTurn = 0, -- Track total blocks hit this turn
     guideAlpha = 1,
@@ -53,20 +54,46 @@ function GameplayScene.new()
   }, GameplayScene)
 end
 
+-- Helper function to calculate grid bounds (matching editor exactly)
+local function calculateGridBounds(width, height)
+  local margin = config.playfield.margin
+  local playfieldW = width - 2 * margin
+  local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+  local effectivePlayfieldW = playfieldW * horizontalSpacingFactor
+  local playfieldXOffset = playfieldW * (1 - horizontalSpacingFactor) * 0.5
+  
+  local gridPadding = (config.blocks.gridSnap.padding) or 30
+  local sidePadding = (config.blocks.gridSnap.sidePadding) or 40
+  local gridAvailableWidth = effectivePlayfieldW - 2 * gridPadding - 2 * sidePadding
+  local cellSize = (config.blocks.gridSnap.cellSize) or 38
+  local numCellsX = math.floor(gridAvailableWidth / cellSize)
+  local gridWidth = numCellsX * cellSize
+  local gridOffsetX = sidePadding + gridPadding + (gridAvailableWidth - gridWidth) * 0.5
+  
+  -- Grid starts at margin + playfieldXOffset + gridOffsetX
+  local gridStartX = margin + playfieldXOffset + gridOffsetX
+  local gridEndX = gridStartX + gridWidth
+  
+  return gridStartX, gridEndX
+end
+
 function GameplayScene:load(bounds, projectileId, battleProfile)
   local width = (bounds and bounds.w) or love.graphics.getWidth()
   local height = (bounds and bounds.h) or love.graphics.getHeight()
   self.world = love.physics.newWorld(0, 0, true)
   self.world:setCallbacks(function(a, b, contact) self:beginContact(a, b, contact) end, nil, nil, nil)
 
-  -- Walls (static) - account for top bar
+  -- Calculate grid bounds to match editor exactly
+  local gridStartX, gridEndX = calculateGridBounds(width, height)
+  
+  -- Walls (static) - account for top bar and use grid boundaries
   local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
   local halfW, halfH = width * 0.5, height * 0.5
   self.wallBody = love.physics.newBody(self.world, 0, 0, "static")
-  local left = love.physics.newEdgeShape(0, topBarHeight, 0, height)
-  local right = love.physics.newEdgeShape(width, topBarHeight, width, height)
-  local top = love.physics.newEdgeShape(0, topBarHeight, width, topBarHeight)
-  local bottomSensor = love.physics.newEdgeShape(0, height, width, height)
+  local left = love.physics.newEdgeShape(gridStartX, topBarHeight, gridStartX, height)
+  local right = love.physics.newEdgeShape(gridEndX, topBarHeight, gridEndX, height)
+  local top = love.physics.newEdgeShape(gridStartX, topBarHeight, gridEndX, topBarHeight)
+  local bottomSensor = love.physics.newEdgeShape(gridStartX, height, gridEndX, height)
   local fL = love.physics.newFixture(self.wallBody, left)
   local fR = love.physics.newFixture(self.wallBody, right)
   local fT = love.physics.newFixture(self.wallBody, top)
@@ -78,13 +105,18 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
   fB:setSensor(true)
   -- Store fixtures for wall updates
   self.wallFixtures = { left = fL, right = fR, top = fT, bottom = fB }
+  -- Store grid bounds for aim guide and other calculations
+  self.gridStartX = gridStartX
+  self.gridEndX = gridEndX
 
   self.blocks = BlockManager.new()
   -- Load formation from battle profile (or use default random)
   local formationConfig = (battleProfile and battleProfile.blockFormation) or nil
   self.blocks:loadFormation(self.world, width, height, formationConfig)
   self.projectileId = projectileId or "qi_orb" -- Store projectile ID
-  self.shooter = Shooter.new(width * 0.5, height - config.shooter.spawnYFromBottom, self.projectileId)
+  -- Center shooter within grid bounds
+  local shooterX = (gridStartX + gridEndX) * 0.5
+  self.shooter = Shooter.new(shooterX, height - config.shooter.spawnYFromBottom, self.projectileId)
   -- Give shooter access to TurnManager for turn-based display
   if self.shooter and self.shooter.setTurnManager and self.turnManager then
     self.shooter:setTurnManager(self.turnManager)
@@ -192,7 +224,13 @@ function GameplayScene:update(dt, bounds)
   self._prevCanShoot = self.canShoot
   if self.particles then self.particles:update(dt) end
   if self.shooter then
-    self.shooter:update(dt, bounds)
+    -- Pass grid bounds to shooter for movement clamping
+    local shooterBounds = bounds or {}
+    if self.gridStartX and self.gridEndX then
+      shooterBounds.gridStartX = self.gridStartX
+      shooterBounds.gridEndX = self.gridEndX
+    end
+    self.shooter:update(dt, shooterBounds)
   end
   -- Update block popups
   do
@@ -454,33 +492,36 @@ function GameplayScene:draw(bounds)
             end
           end
         end
-        -- Left wall at x = 0 + ballR
+        -- Left wall at gridStartX + ballR (matching editor grid)
+        local gridStartX = self.gridStartX or 0
+        local gridEndX = self.gridEndX or width
         if dirX < 0 then
-          local t = ((0 + ballR) - originX) / dirX
+          local t = ((gridStartX + ballR) - originX) / dirX
           if t > 1e-4 then
             local y = originY + dirY * t
             if y >= 0 and y <= height and t < tHit then
-              considerHit(t, 0 + ballR, y, 1, 0)
+              considerHit(t, gridStartX + ballR, y, 1, 0)
             end
           end
         end
-        -- Right wall at x = width - ballR
+        -- Right wall at gridEndX - ballR (matching editor grid)
         if dirX > 0 then
-          local t = ((width - ballR) - originX) / dirX
+          local t = ((gridEndX - ballR) - originX) / dirX
           if t > 1e-4 then
             local y = originY + dirY * t
             if y >= 0 and y <= height and t < tHit then
-              considerHit(t, width - ballR, y, -1, 0)
+              considerHit(t, gridEndX - ballR, y, -1, 0)
             end
           end
         end
-        -- Top wall at y = 0 + ballR
+        -- Top wall at y = topBarHeight (matching editor grid)
+        local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
         if dirY < 0 then
-          local t = ((0 + ballR) - originY) / dirY
+          local t = ((topBarHeight + ballR) - originY) / dirY
           if t > 1e-4 then
             local x = originX + dirX * t
-            if x >= 0 and x <= width and t < tHit then
-              considerHit(t, x, 0 + ballR, 0, 1)
+            if x >= gridStartX and x <= gridEndX and t < tHit then
+              considerHit(t, x, topBarHeight + ballR, 0, 1)
             end
           end
         end
@@ -628,6 +669,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       self.score = 0
       self.displayScore = 0
       self.armorThisTurn = 0
+      self.healThisTurn = 0
       self.critThisTurn = 0
       self.soulThisTurn = 0
       self.aoeThisTurn = false
@@ -793,12 +835,15 @@ function GameplayScene:updateWalls(newWidth, newHeight)
     end
   end
   
-  -- Create new walls with updated dimensions (account for top bar)
+  -- Calculate grid bounds to match editor exactly
+  local gridStartX, gridEndX = calculateGridBounds(newWidth, newHeight)
+  
+  -- Create new walls with updated dimensions (account for top bar and use grid boundaries)
   local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
-  local left = love.physics.newEdgeShape(0, topBarHeight, 0, newHeight)
-  local right = love.physics.newEdgeShape(newWidth, topBarHeight, newWidth, newHeight)
-  local top = love.physics.newEdgeShape(0, topBarHeight, newWidth, topBarHeight)
-  local bottomSensor = love.physics.newEdgeShape(0, newHeight, newWidth, newHeight)
+  local left = love.physics.newEdgeShape(gridStartX, topBarHeight, gridStartX, newHeight)
+  local right = love.physics.newEdgeShape(gridEndX, topBarHeight, gridEndX, newHeight)
+  local top = love.physics.newEdgeShape(gridStartX, topBarHeight, gridEndX, topBarHeight)
+  local bottomSensor = love.physics.newEdgeShape(gridStartX, newHeight, gridEndX, newHeight)
   
   local fL = love.physics.newFixture(self.wallBody, left)
   local fR = love.physics.newFixture(self.wallBody, right)
@@ -812,10 +857,13 @@ function GameplayScene:updateWalls(newWidth, newHeight)
   fB:setSensor(true)
   
   self.wallFixtures = { left = fL, right = fR, top = fT, bottom = fB }
+  -- Update stored grid bounds
+  self.gridStartX = gridStartX
+  self.gridEndX = gridEndX
   
-  -- Update shooter position if needed
+  -- Update shooter position if needed (center within grid bounds)
   if self.shooter then
-    self.shooter.x = newWidth * 0.5
+    self.shooter.x = (gridStartX + gridEndX) * 0.5
   end
 end
 
@@ -911,6 +959,9 @@ function GameplayScene:beginContact(fixA, fixB, contact)
         local reward = armorMap[math.max(1, math.min(3, hpBeforeHit))] or 0
         self.armorThisTurn = self.armorThisTurn + reward
       end
+    elseif block.kind == "potion" then
+      -- Potion block heals player for 8 HP
+      self.healThisTurn = self.healThisTurn + 8
     end
   end
   if ball and (aType == "bottom" or bType == "bottom") then

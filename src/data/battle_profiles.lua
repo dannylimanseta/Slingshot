@@ -12,7 +12,7 @@ battle_profiles.Types = {
 -- Each profile contains layout configuration and block formation settings
 battle_profiles.data = {
   [battle_profiles.Types.DEFAULT] = {
-    centerWidthFactor = 0.45,
+    centerWidthFactor = 0.43,
     -- Enemy configuration
     -- enemyCount: number of enemies (1-3)
     -- enemySpacing: spacing between enemies in pixels (default: 40)
@@ -89,46 +89,64 @@ battle_profiles.data = {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
       -- Predefined formation (used when type = "predefined")
       -- Format: array of {x, y, kind, hp} where x,y are normalized (0-1) coordinates relative to playfield
       -- kind: "damage", "armor", "crit", or "soul" (soul blocks should be rare, typically 0-1 per formation)
       -- hp: starting HP (defaults to 1 if not specified)
       predefined = {
-      {x = 0.500, y = 0.176, kind = "damage", hp = 1},
-      {x = 0.381, y = 0.353, kind = "damage", hp = 1},
-      {x = 0.619, y = 0.353, kind = "damage", hp = 1},
-      {x = 0.500, y = 0.353, kind = "damage", hp = 1},
-      {x = 0.441, y = 0.441, kind = "damage", hp = 1},
-      {x = 0.559, y = 0.441, kind = "damage", hp = 1},
-      {x = 0.500, y = 0.529, kind = "damage", hp = 1},
-      {x = 0.500, y = 0.441, kind = "soul", hp = 1},
-      {x = 0.559, y = 0.265, kind = "crit", hp = 1},
-      {x = 0.441, y = 0.265, kind = "crit", hp = 1},
-      {x = 0.441, y = 0.618, kind = "armor", hp = 1},
-      {x = 0.559, y = 0.618, kind = "armor", hp = 1},
-      {x = 0.678, y = 0.441, kind = "armor", hp = 1},
-      {x = 0.322, y = 0.441, kind = "armor", hp = 1},
-      {x = 0.381, y = 0.529, kind = "damage", hp = 1},
-      {x = 0.500, y = 0.706, kind = "damage", hp = 1},
-      {x = 0.619, y = 0.529, kind = "damage", hp = 1},
-      {x = 0.204, y = 0.176, kind = "damage", hp = 1},
-      {x = 0.144, y = 0.088, kind = "damage", hp = 1},
-      {x = 0.263, y = 0.088, kind = "damage", hp = 1},
-      {x = 0.737, y = 0.088, kind = "damage", hp = 1},
-      {x = 0.796, y = 0.176, kind = "damage", hp = 1},
-      {x = 0.856, y = 0.088, kind = "damage", hp = 1},
-      {x = 0.796, y = 0.088, kind = "crit", hp = 1},
-      {x = 0.204, y = 0.088, kind = "crit", hp = 1},
-      {x = 0.856, y = 0.529, kind = "armor", hp = 1},
-      {x = 0.144, y = 0.529, kind = "armor", hp = 1},
-      {x = 0.144, y = 0.706, kind = "armor", hp = 1},
-      {x = 0.856, y = 0.706, kind = "armor", hp = 1},
-      {x = 0.796, y = 0.618, kind = "damage", hp = 1},
-      {x = 0.204, y = 0.618, kind = "damage", hp = 1},
-      {x = 0.559, y = 0.353, kind = "aoe", hp = 1},
-      {x = 0.441, y = 0.353, kind = "aoe", hp = 1},
-      {x = 0.441, y = 0.529, kind = "aoe", hp = 1},
-      {x = 0.559, y = 0.529, kind = "aoe", hp = 1},
+      {x = 0.847, y = 0.406, kind = "damage", hp = 1},
+      {x = 0.153, y = 0.406, kind = "damage", hp = 1},
+      {x = 0.468, y = 0.048, kind = "damage", hp = 1},
+      {x = 0.532, y = 0.048, kind = "damage", hp = 1},
+      {x = 0.468, y = 0.836, kind = "damage", hp = 1},
+      {x = 0.532, y = 0.836, kind = "damage", hp = 1},
+      {x = 0.595, y = 0.048, kind = "damage", hp = 1},
+      {x = 0.405, y = 0.048, kind = "damage", hp = 1},
+      {x = 0.405, y = 0.836, kind = "damage", hp = 1},
+      {x = 0.595, y = 0.836, kind = "damage", hp = 1},
+      {x = 0.658, y = 0.836, kind = "damage", hp = 1},
+      {x = 0.721, y = 0.836, kind = "damage", hp = 1},
+      {x = 0.784, y = 0.836, kind = "damage", hp = 1},
+      {x = 0.847, y = 0.836, kind = "damage", hp = 1},
+      {x = 0.342, y = 0.836, kind = "damage", hp = 1},
+      {x = 0.279, y = 0.836, kind = "damage", hp = 1},
+      {x = 0.216, y = 0.836, kind = "damage", hp = 1},
+      {x = 0.153, y = 0.836, kind = "damage", hp = 1},
+      {x = 0.153, y = 0.048, kind = "damage", hp = 1},
+      {x = 0.216, y = 0.048, kind = "damage", hp = 1},
+      {x = 0.279, y = 0.048, kind = "damage", hp = 1},
+      {x = 0.342, y = 0.048, kind = "damage", hp = 1},
+      {x = 0.658, y = 0.048, kind = "damage", hp = 1},
+      {x = 0.721, y = 0.048, kind = "damage", hp = 1},
+      {x = 0.847, y = 0.048, kind = "damage", hp = 1},
+      {x = 0.784, y = 0.048, kind = "damage", hp = 1},
     },
     },
   },

@@ -337,7 +337,9 @@ function BlockManager:loadPredefinedFormation(world, width, height, predefined)
   local playfieldY = margin + topBarHeight
   local playfieldW = width - 2 * margin
   local maxHeightFactor = (config.playfield and config.playfield.maxHeightFactor) or 0.65
-  local playfieldH = height * maxHeightFactor - margin -- Use configurable maxHeightFactor
+  -- Match editor height (30% increase)
+  local editorHeightMultiplier = 1.3
+  local playfieldH = (height * maxHeightFactor - margin) * editorHeightMultiplier
   
   local staggerDelay = (config.blocks.spawnAnim and config.blocks.spawnAnim.staggerDelay) or 0.03
   local blockIndex = 0
@@ -359,17 +361,37 @@ function BlockManager:loadPredefinedFormation(world, width, height, predefined)
   local effectivePlayfieldW = playfieldW * horizontalSpacingFactor
   local playfieldXOffset = playfieldW * (1 - horizontalSpacingFactor) * 0.5 -- Center the scaled area
   
+  -- Match editor grid width (subtract padding to match editor's grid bounds)
+  local gridPadding = (config.blocks.gridSnap.padding) or 30
+  local sidePadding = (config.blocks.gridSnap.sidePadding) or 40
+  local gridAvailableWidth = effectivePlayfieldW - 2 * gridPadding - 2 * sidePadding
+  local cellSize = (config.blocks.gridSnap.cellSize) or 38
+  local numCellsX = math.floor(gridAvailableWidth / cellSize)
+  local gridWidth = numCellsX * cellSize
+  local gridOffsetX = sidePadding + gridPadding + (gridAvailableWidth - gridWidth) * 0.5
+  
   for i, blockDef in ipairs(predefined) do
     if blockDef and type(blockDef) == "table" and blockDef.x and blockDef.y then
-      -- Convert normalized coordinates to world coordinates with horizontal spacing
-      local worldX = playfieldX + playfieldXOffset + blockDef.x * effectivePlayfieldW
+      -- Convert normalized coordinates to world coordinates matching editor grid
+      -- Editor stores normalized coords (0-1) relative to effectivePlayfieldW
+      -- But grid is narrower, so we need to map them to grid space
+      -- Grid spans from gridOffsetX to gridOffsetX + gridWidth within effectivePlayfieldW
+      local gridStartNormX = gridOffsetX / effectivePlayfieldW
+      local gridEndNormX = (gridOffsetX + gridWidth) / effectivePlayfieldW
+      -- Map blockDef.x (0-1 relative to effectivePlayfieldW) to grid space (0-1 relative to gridWidth)
+      local gridNormX = (blockDef.x - gridStartNormX) / math.max(0.0001, gridEndNormX - gridStartNormX)
+      gridNormX = math.max(0, math.min(1, gridNormX)) -- Clamp to [0, 1]
+      local worldX = playfieldX + playfieldXOffset + gridOffsetX + gridNormX * gridWidth
       local worldY = playfieldY + blockDef.y * playfieldH
       
       -- Clamp to ensure blocks stay within bounds
       local halfVis = visSize * 0.5
       local maxHeightFactor = (config.playfield and config.playfield.maxHeightFactor) or 0.65
+      -- Match editor height (30% increase)
+      local editorHeightMultiplier = 1.3
+      local maxPlayfieldH = (height * maxHeightFactor - margin) * editorHeightMultiplier
       worldX = math.max(margin + halfVis, math.min(width - margin - halfVis, worldX))
-      worldY = math.max(margin + halfVis, math.min(height * maxHeightFactor - halfVis, worldY))
+      worldY = math.max(margin + topBarHeight + halfVis, math.min(margin + topBarHeight + maxPlayfieldH - halfVis, worldY))
       
       -- Determine block kind and HP
       local kind = blockDef.kind or "damage"
@@ -553,18 +575,37 @@ function BlockManager:addRandomBlocks(world, width, height, count)
     local playfieldY = margin + topBarHeight
     local playfieldW = formationWidth - 2 * margin
     local maxHeightFactor = (config.playfield and config.playfield.maxHeightFactor) or 0.65
-    local playfieldH = formationHeight * maxHeightFactor - margin
+    -- Match editor height (30% increase)
+    local editorHeightMultiplier = 1.3
+    local playfieldH = (formationHeight * maxHeightFactor - margin) * editorHeightMultiplier
     
     -- Tolerance for checking if a position matches a formation slot (in normalized coordinates)
     local tolerance = 0.02 -- 2% of playfield size (roughly ~25 pixels)
     
     -- Helper to check if a world position matches a formation slot
+    -- Match editor grid width calculation
+    local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+    local effectivePlayfieldW = playfieldW * horizontalSpacingFactor
+    local playfieldXOffset = playfieldW * (1 - horizontalSpacingFactor) * 0.5
+    local gridPadding = (config.blocks.gridSnap.padding) or 30
+    local sidePadding = (config.blocks.gridSnap.sidePadding) or 40
+    local gridAvailableWidth = effectivePlayfieldW - 2 * gridPadding - 2 * sidePadding
+    local cellSize = (config.blocks.gridSnap.cellSize) or 38
+    local numCellsX = math.floor(gridAvailableWidth / cellSize)
+    local gridWidth = numCellsX * cellSize
+    local gridOffsetX = sidePadding + gridPadding + (gridAvailableWidth - gridWidth) * 0.5
+    
     local function isFormationSlot(worldX, worldY)
-      local normX = (worldX - playfieldX) / playfieldW
+      local normX = (worldX - playfieldX - playfieldXOffset - gridOffsetX) / gridWidth
       local normY = (worldY - playfieldY) / playfieldH
+      -- Convert saved formation X (effective-normalized) to grid-normalized
+      local gridStartNormX = gridOffsetX / effectivePlayfieldW
+      local gridEndNormX = (gridOffsetX + gridWidth) / effectivePlayfieldW
       
       for _, slot in ipairs(self.predefinedFormation) do
-        local dx = math.abs(normX - slot.x)
+        local slotGridNormX = (slot.x - gridStartNormX) / math.max(0.0001, (gridEndNormX - gridStartNormX))
+        slotGridNormX = math.max(0, math.min(1, slotGridNormX))
+        local dx = math.abs(normX - slotGridNormX)
         local dy = math.abs(normY - slot.y)
         if dx <= tolerance and dy <= tolerance then
           return true, slot
@@ -579,12 +620,27 @@ function BlockManager:addRandomBlocks(world, width, height, count)
     local effectivePlayfieldW = playfieldW * horizontalSpacingFactor
     local playfieldXOffset = playfieldW * (1 - horizontalSpacingFactor) * 0.5
     
+    -- Match editor grid width (subtract padding to match editor's grid bounds)
+    local gridPadding = (config.blocks.gridSnap.padding) or 30
+    local sidePadding = (config.blocks.gridSnap.sidePadding) or 40
+    local gridAvailableWidth = effectivePlayfieldW - 2 * gridPadding - 2 * sidePadding
+    local cellSize = (config.blocks.gridSnap.cellSize) or 38
+    local numCellsX = math.floor(gridAvailableWidth / cellSize)
+    local gridWidth = numCellsX * cellSize
+    local gridOffsetX = sidePadding + gridPadding + (gridAvailableWidth - gridWidth) * 0.5
+    
     local function isSlotOccupied(slot)
-      local worldX = playfieldX + playfieldXOffset + slot.x * effectivePlayfieldW
+      -- Convert saved formation X (normalized to effectivePlayfieldW) to grid-normalized X (0..1 of gridWidth)
+      local gridStartNormX = gridOffsetX / effectivePlayfieldW
+      local gridEndNormX = (gridOffsetX + gridWidth) / effectivePlayfieldW
+      local slotGridNormX = (slot.x - gridStartNormX) / math.max(0.0001, (gridEndNormX - gridStartNormX))
+      slotGridNormX = math.max(0, math.min(1, slotGridNormX))
+      -- Convert normalized coordinates to world coordinates matching editor grid
+      local worldX = playfieldX + playfieldXOffset + gridOffsetX + slotGridNormX * gridWidth
       local worldY = playfieldY + slot.y * playfieldH
       
       -- Convert slot position to normalized coordinates for comparison
-      local slotNormX = slot.x
+      local slotNormX = slotGridNormX
       local slotNormY = slot.y
       
       -- Tolerance in normalized coordinates (more reliable than pixels)
@@ -619,8 +675,8 @@ function BlockManager:addRandomBlocks(world, width, height, count)
           
           -- Check if block is at this slot position
           if blockCenterX and blockCenterY then
-            -- Convert block position back to normalized coordinates
-            local blockNormX = (blockCenterX - playfieldX) / playfieldW
+            -- Convert block position back to normalized coordinates (matching editor grid)
+            local blockNormX = (blockCenterX - playfieldX - playfieldXOffset - gridOffsetX) / gridWidth
             local blockNormY = (blockCenterY - playfieldY) / playfieldH
             
             -- Check distance in normalized space
@@ -661,16 +717,34 @@ function BlockManager:addRandomBlocks(world, width, height, count)
     local effectivePlayfieldW = playfieldW * horizontalSpacingFactor
     local playfieldXOffset = playfieldW * (1 - horizontalSpacingFactor) * 0.5
     
+    -- Match editor grid width (subtract padding to match editor's grid bounds)
+    local gridPadding = (config.blocks.gridSnap.padding) or 30
+    local sidePadding = (config.blocks.gridSnap.sidePadding) or 40
+    local gridAvailableWidth = effectivePlayfieldW - 2 * gridPadding - 2 * sidePadding
+    local cellSize = (config.blocks.gridSnap.cellSize) or 38
+    local numCellsX = math.floor(gridAvailableWidth / cellSize)
+    local gridWidth = numCellsX * cellSize
+    local gridOffsetX = sidePadding + gridPadding + (gridAvailableWidth - gridWidth) * 0.5
+    
     for i = 1, slotsToFill do
       local slot = emptySlots[i]
-      local worldX = playfieldX + playfieldXOffset + slot.x * effectivePlayfieldW
+      -- Convert saved formation X (normalized to effectivePlayfieldW) to grid-normalized X
+      local gridStartNormX = gridOffsetX / effectivePlayfieldW
+      local gridEndNormX = (gridOffsetX + gridWidth) / effectivePlayfieldW
+      local slotGridNormX = (slot.x - gridStartNormX) / math.max(0.0001, (gridEndNormX - gridStartNormX))
+      slotGridNormX = math.max(0, math.min(1, slotGridNormX))
+      -- Convert normalized coordinates to world coordinates matching editor grid
+      local worldX = playfieldX + playfieldXOffset + gridOffsetX + slotGridNormX * gridWidth
       local worldY = playfieldY + slot.y * playfieldH
       
-      -- Clamp to ensure blocks stay within bounds (use formation dimensions)
+      -- Clamp to ensure blocks stay within bounds (match editor playfield with top bar and height multiplier)
       local halfVis = visSize * 0.5
-      local maxHeightFactor = (config.playfield and config.playfield.maxHeightFactor) or 0.65
-      worldX = math.max(margin + halfVis, math.min(formationWidth - margin - halfVis, worldX))
-      worldY = math.max(margin + halfVis, math.min(formationHeight * maxHeightFactor - halfVis, worldY))
+      local leftX = margin + halfVis
+      local rightX = (formationWidth - margin) - halfVis
+      local topY = playfieldY + halfVis
+      local bottomY = playfieldY + playfieldH - halfVis
+      worldX = math.max(leftX, math.min(rightX, worldX))
+      worldY = math.max(topY, math.min(bottomY, worldY))
       
       -- Preserve the original kind for predefined formation slots, so blocks don't appear to "change"
       local kind = slot.kind
@@ -693,9 +767,12 @@ function BlockManager:addRandomBlocks(world, width, height, count)
       -- Double-check no overlap - use the same method as isSlotOccupied for consistency
       -- Check all alive blocks to see if any are actually at this position
       local overlap = false
-      local slotNormX = slot.x
+      local slotNormX = slotGridNormX
       local slotNormY = slot.y
       local normTolerance = 0.05
+      
+      -- Match editor grid width calculation (reuse variables from above scope)
+      -- gridOffsetX and gridWidth are already calculated above in this function
       
       for _, b in ipairs(self.blocks) do
         if b and b.alive then
@@ -719,7 +796,8 @@ function BlockManager:addRandomBlocks(world, width, height, count)
           end
           
           if blockCenterX and blockCenterY then
-            local blockNormX = (blockCenterX - playfieldX) / playfieldW
+            -- Convert block position back to normalized coordinates (matching editor grid)
+            local blockNormX = (blockCenterX - playfieldX - playfieldXOffset - gridOffsetX) / gridWidth
             local blockNormY = (blockCenterY - playfieldY) / playfieldH
             local dx = math.abs(blockNormX - slotNormX)
             local dy = math.abs(blockNormY - slotNormY)
@@ -786,6 +864,7 @@ end
 -- Returns the number of empty formation slots (if using predefined formation) or an estimate
 function BlockManager:countAvailableSpaces(width, height)
   local margin = config.playfield.margin
+  local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
   
   -- If we have a predefined formation, count empty slots
   if self.predefinedFormation and type(self.predefinedFormation) == "table" and #self.predefinedFormation > 0 then
@@ -793,21 +872,37 @@ function BlockManager:countAvailableSpaces(width, height)
     local formationHeight = self.playfieldHeight or height
     
     local playfieldX = margin
-    local playfieldY = margin
+    local playfieldY = margin + topBarHeight
     local playfieldW = formationWidth - 2 * margin
     local maxHeightFactor = (config.playfield and config.playfield.maxHeightFactor) or 0.65
-    local playfieldH = formationHeight * maxHeightFactor - margin
+    -- Match editor height (30% increase)
+    local editorHeightMultiplier = 1.3
+    local playfieldH = (formationHeight * maxHeightFactor - margin) * editorHeightMultiplier
     
     local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
     local effectivePlayfieldW = playfieldW * horizontalSpacingFactor
     local playfieldXOffset = playfieldW * (1 - horizontalSpacingFactor) * 0.5
     
+    -- Match editor grid width (subtract padding to match editor's grid bounds)
+    local gridPadding = (config.blocks.gridSnap.padding) or 30
+    local sidePadding = (config.blocks.gridSnap.sidePadding) or 40
+    local gridAvailableWidth = effectivePlayfieldW - 2 * gridPadding - 2 * sidePadding
+    local cellSize = (config.blocks.gridSnap.cellSize) or 38
+    local numCellsX = math.floor(gridAvailableWidth / cellSize)
+    local gridWidth = numCellsX * cellSize
+    local gridOffsetX = sidePadding + gridPadding + (gridAvailableWidth - gridWidth) * 0.5
+    
     -- Helper to check if a formation slot is currently occupied (same logic as addRandomBlocks)
     local function isSlotOccupied(slot)
-      local worldX = playfieldX + playfieldXOffset + slot.x * effectivePlayfieldW
+      -- Convert normalized coordinates to world coordinates matching editor grid
+      local gridStartNormX = gridOffsetX / effectivePlayfieldW
+      local gridEndNormX = (gridOffsetX + gridWidth) / effectivePlayfieldW
+      local slotGridNormX = (slot.x - gridStartNormX) / math.max(0.0001, (gridEndNormX - gridStartNormX))
+      slotGridNormX = math.max(0, math.min(1, slotGridNormX))
+      local worldX = playfieldX + playfieldXOffset + gridOffsetX + slotGridNormX * gridWidth
       local worldY = playfieldY + slot.y * playfieldH
       
-      local slotNormX = slot.x
+      local slotNormX = slotGridNormX
       local slotNormY = slot.y
       local normTolerance = 0.05
       
@@ -833,7 +928,8 @@ function BlockManager:countAvailableSpaces(width, height)
           end
           
           if blockCenterX and blockCenterY then
-            local blockNormX = (blockCenterX - playfieldX) / playfieldW
+            -- Convert block position back to normalized coordinates (matching editor grid)
+            local blockNormX = (blockCenterX - playfieldX - playfieldXOffset - gridOffsetX) / gridWidth
             local blockNormY = (blockCenterY - playfieldY) / playfieldH
             local dx = math.abs(blockNormX - slotNormX)
             local dy = math.abs(blockNormY - slotNormY)

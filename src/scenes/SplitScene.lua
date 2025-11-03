@@ -29,6 +29,29 @@ local function makeRadialGlow(diameter)
   return love.graphics.newImage(data)
 end
 
+-- Helper function to calculate grid bounds (matching editor exactly)
+local function calculateGridBounds(width, height)
+  local margin = config.playfield.margin
+  local playfieldW = width - 2 * margin
+  local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+  local effectivePlayfieldW = playfieldW * horizontalSpacingFactor
+  local playfieldXOffset = playfieldW * (1 - horizontalSpacingFactor) * 0.5
+  
+  local gridPadding = (config.blocks.gridSnap.padding) or 30
+  local sidePadding = (config.blocks.gridSnap.sidePadding) or 40
+  local gridAvailableWidth = effectivePlayfieldW - 2 * gridPadding - 2 * sidePadding
+  local cellSize = (config.blocks.gridSnap.cellSize) or 38
+  local numCellsX = math.floor(gridAvailableWidth / cellSize)
+  local gridWidth = numCellsX * cellSize
+  local gridOffsetX = sidePadding + gridPadding + (gridAvailableWidth - gridWidth) * 0.5
+  
+  -- Grid starts at margin + playfieldXOffset + gridOffsetX
+  local gridStartX = margin + playfieldXOffset + gridOffsetX
+  local gridEndX = gridStartX + gridWidth
+  
+  return gridStartX, gridEndX
+end
+
 local SplitScene = {}
 SplitScene.__index = SplitScene
 
@@ -199,6 +222,10 @@ function SplitScene:setupTurnManagerEvents()
       -- Call the old method but only pass damage (armor will be handled separately)
       -- Pass AOE flag as third parameter
       self.right:onPlayerTurnEnd(data.amount, turnData.armor or 0, turnData.isAOE or false)
+      -- Apply healing if any
+      if turnData.heal and turnData.heal > 0 and self.right and self.right.applyHealing then
+        self.right:applyHealing(turnData.heal)
+      end
       -- Trigger screenshake for player attack
       self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
     end
@@ -269,6 +296,7 @@ function SplitScene:endPlayerTurnWithTurnManager()
   end
   
   local armor = self.left and self.left.armorThisTurn or 0
+  local heal = self.left and self.left.healThisTurn or 0
   local blocksDestroyed = self.left and self.left.destroyedThisTurn or 0
   local isAOE = (self.left and self.left.aoeThisTurn) or false
   
@@ -276,6 +304,7 @@ function SplitScene:endPlayerTurnWithTurnManager()
   self.turnManager:endPlayerTurn({
     score = turnScore,
     armor = armor,
+    heal = heal,
     crits = critCount,
     blocksDestroyed = blocksDestroyed,
     isAOE = isAOE,
@@ -316,6 +345,12 @@ function SplitScene:draw()
   local centerRect = self.layoutManager:getCenterRect(w, h)
   local centerW = centerRect.w
   local centerX = centerRect.x - 100 -- Shift breakout canvas 100px to the left
+  
+  -- Calculate grid bounds (matching editor exactly)
+  -- Note: grid bounds are relative to the center canvas, so we need to add centerX offset
+  local gridStartX, gridEndX = calculateGridBounds(centerW, h)
+  local gridStartXAbsolute = centerX + gridStartX
+  local gridEndXAbsolute = centerX + gridEndX
 
   -- Apply screenshake as a camera translation (ease-out)
   love.graphics.push()
@@ -398,8 +433,8 @@ function SplitScene:draw()
         love.graphics.setColor(r, g, b, baseAlpha)
       end
       
-      -- Align right edge of image to left canvas edge (origin at top-right, extends leftward, 100px up)
-      love.graphics.draw(self.boundaryLeft, centerX, -100, 0, widthScale, scale, scaledWidth, 0)
+      -- Align right edge of image to left grid edge (origin at top-right, extends leftward, 100px up)
+      love.graphics.draw(self.boundaryLeft, gridStartXAbsolute, -100, 0, widthScale, scale, scaledWidth, 0)
     end
   end
   
@@ -411,8 +446,8 @@ function SplitScene:draw()
     if iw > 0 and ih > 0 then
       local scale = h / ih -- Scale to match canvas height
       local widthScale = scale * 1.1 -- Increase width by 10%
-      -- Align left edge of image to right canvas edge (extends rightward, 100px up)
-      love.graphics.draw(self.boundaryRight, centerX + centerW, -100, 0, widthScale, scale)
+      -- Align left edge of image to right grid edge (extends rightward, 100px up)
+      love.graphics.draw(self.boundaryRight, gridEndXAbsolute, -100, 0, widthScale, scale)
     end
   end
   
@@ -439,16 +474,16 @@ function SplitScene:draw()
         local scale = (h / ih) * 0.5 -- Reduce size by 50%
         local scaledWidth = iw * scale
         love.graphics.setColor(1, 1, 1, glowAlpha)
-        -- Align right edge of glow to left canvas edge (centerX)
+        -- Align right edge of glow to left grid edge
         -- Flip horizontally (negative x-scale) with origin at top-right for x, center for y
         -- When flipped, origin (0, ih/2) becomes the right edge at center vertically
-        -- Position at centerX and bounce y-position (y-position is now at center of glow)
-        love.graphics.draw(self.edgeGlowImage, centerX, self.edgeGlowLeftY, 0, -scale, scale, 0, ih * 0.5)
+        -- Position at gridStartXAbsolute and bounce y-position (y-position is now at center of glow)
+        love.graphics.draw(self.edgeGlowImage, gridStartXAbsolute, self.edgeGlowLeftY, 0, -scale, scale, 0, ih * 0.5)
       end
     else
       -- Fallback: draw a simple rectangle if image doesn't load
       love.graphics.setColor(1, 0.5, 0, glowAlpha)
-      love.graphics.rectangle("fill", centerX - 20, self.edgeGlowLeftY, 20, h)
+      love.graphics.rectangle("fill", gridStartXAbsolute - 20, self.edgeGlowLeftY, 20, h)
     end
   end
   
@@ -461,16 +496,16 @@ function SplitScene:draw()
       if iw > 0 and ih > 0 then
         local scale = (h / ih) * 0.5 -- Reduce size by 50%
         love.graphics.setColor(1, 1, 1, glowAlpha)
-        -- Align left edge of glow to right canvas edge (centerX + centerW)
+        -- Align left edge of glow to right grid edge
         -- Don't flip - draw normally so it extends rightward outward
         -- Position at bounce y-position (y-position is now at center of glow)
         -- Origin at (0, ih/2) so vertically centered
-        love.graphics.draw(self.edgeGlowImage, centerX + centerW, self.edgeGlowRightY, 0, scale, scale, 0, ih * 0.5)
+        love.graphics.draw(self.edgeGlowImage, gridEndXAbsolute, self.edgeGlowRightY, 0, scale, scale, 0, ih * 0.5)
       end
     else
       -- Fallback: draw a simple rectangle if image doesn't load
       love.graphics.setColor(1, 0.5, 0, glowAlpha)
-      love.graphics.rectangle("fill", centerX + centerW, self.edgeGlowRightY, 20, h)
+      love.graphics.rectangle("fill", gridEndXAbsolute, self.edgeGlowRightY, 20, h)
     end
   end
   

@@ -47,6 +47,13 @@ block_types.types = {
     hotkey = 5,
     description = "Area of Effect block (+3 damage, attacks all enemies)"
   },
+  {
+    key = "potion",
+    displayName = "Potion",
+    spritePath = "block_potion",
+    hotkey = 6,
+    description = "Potion block (heals player for 8 HP)"
+  },
 }
 
 -- Get block type by key

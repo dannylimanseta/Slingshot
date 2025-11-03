@@ -65,6 +65,7 @@ function BattleScene.new()
     pendingArmor = 0,
     armorPopupShown = false,
     iconArmor = nil,
+    iconPotion = nil,
     playerKnockbackTime = 0,
     playerRotation = 0, -- Current rotation angle in radians (tweens back to 0)
     idleT = 0,
@@ -147,6 +148,13 @@ function BattleScene:load(bounds, battleProfile)
   if iconArmorPath then
     local ok, img = pcall(love.graphics.newImage, iconArmorPath)
     if ok then self.iconArmor = img end
+  end
+  
+  -- Load potion icon
+  local iconPotionPath = (config.assets and config.assets.images and config.assets.images.icon_potion) or nil
+  if iconPotionPath then
+    local ok, img = pcall(love.graphics.newImage, iconPotionPath)
+    if ok then self.iconPotion = img end
   end
   
   -- Load impact animation (optional)
@@ -330,6 +338,16 @@ function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE)
     self.pendingArmor = armor or 0
     self.armorPopupShown = false
   end
+end
+
+function BattleScene:applyHealing(amount)
+  if not amount or amount <= 0 then return end
+  -- Heal player (clamp to max HP)
+  local maxHP = config.battle.playerMaxHP
+  self.playerHP = math.min(maxHP, self.playerHP + amount)
+  
+  -- Show healing popup
+  table.insert(self.popups, { x = 0, y = 0, kind = "heal", value = amount, t = config.battle.popupLifetime, who = "player" })
 end
 
 function BattleScene:update(dt, bounds)

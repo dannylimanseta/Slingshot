@@ -225,10 +225,16 @@ function Shooter:update(dt, bounds)
   if love.keyboard.isDown("d") then move = move + 1 end
   self.x = self.x + move * speed * dt
 
-  -- Clamp to bounds
-  local w = (bounds and bounds.w) or love.graphics.getWidth()
+  -- Clamp to grid bounds (if provided) or fallback to full width
   local r = config.shooter.radius
-  self.x = math.max(r, math.min(w - r, self.x))
+  if bounds and bounds.gridStartX and bounds.gridEndX then
+    -- Use grid bounds (matching editor)
+    self.x = math.max(bounds.gridStartX + r, math.min(bounds.gridEndX - r, self.x))
+  else
+    -- Fallback to full width bounds
+    local w = (bounds and bounds.w) or love.graphics.getWidth()
+    self.x = math.max(r, math.min(w - r, self.x))
+  end
   
   -- Get current turn number
   local turnNumber = 1

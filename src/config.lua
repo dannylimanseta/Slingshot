@@ -101,8 +101,10 @@ config.blocks = {
   -- Grid snapping for formation editor
   gridSnap = {
     enabled = true,
-    cellSize = 41, -- pixels per grid cell (increased by 5 to match +5px spacing)
+    cellSize = 38, -- pixels per grid cell (reduced slightly for better spacing)
     showGrid = false, -- show grid visually (toggle with G key)
+    padding = 30, -- padding around grid edges (pixels) to allow edge block placement
+    sidePadding = 40, -- additional padding on left and right sides (pixels)
   },
   -- Spawn animation for newly added blocks
   spawnAnim = {
@@ -423,8 +425,10 @@ config.assets = {
     block_crit = "assets/images/block_crit.png",
     block_crit_2 = "assets/images/block_crit_2.png",
     block_aoe = "assets/images/block_aoe.png",
+    block_potion = "assets/images/block_potion.png",
     icon_armor = "assets/images/icon_armor.png",
     icon_attack = "assets/images/icon_attack.png",
+    icon_potion = "assets/images/icon_potion.png",
     icon_health = "assets/images/icon_health.png",
     icon_gold = "assets/images/icon_gold.png",
     impact = "assets/images/fx/impact_1.png",

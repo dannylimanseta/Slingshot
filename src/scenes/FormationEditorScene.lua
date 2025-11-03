@@ -41,6 +41,7 @@ function FormationEditorScene.new()
     hoveredBlockIndex = nil,
     selectedBlockIndex = nil, -- Currently selected block
     deleteMode = false, -- When true, clicking blocks deletes them instead of selecting
+    gridSnapEnabled = true, -- Toggle for grid snapping (can be disabled for free placement)
     -- Status
     statusMessage = "",
     statusMessageTimer = 0,
@@ -71,16 +72,24 @@ function FormationEditorScene:load()
   -- BlockManager calculates: playfieldX = margin, playfieldY = margin + topBarHeight
   -- playfieldW = width - 2 * margin, playfieldH = height * maxHeightFactor - margin
   -- Where width = centerW and height = h (full screen height)
-  -- Note: Top bar is hidden in editor, so we use margin instead of margin + topBarHeight
+  -- In SplitScene, GameplayScene is drawn at centerX - 100 (shifted 100px left)
+  -- So we need to match that offset for proper alignment
+  local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
   local maxHeightFactor = (config.playfield and config.playfield.maxHeightFactor) or 0.65
-  self.playfieldX = centerX + margin -- Offset by centerX to position on screen
-  self.playfieldY = margin -- No top bar in editor, so start at margin
+  local gameCenterX = centerX - 100 -- Match SplitScene's centerX shift
+  self.playfieldX = gameCenterX + margin -- Offset by gameCenterX to match game positioning
+  self.playfieldY = margin + topBarHeight -- Match game's playfieldY exactly
   self.playfieldW = centerW - 2 * margin -- Use center canvas width, not full screen width
   self.actualPlayfieldW = self.playfieldW -- Store actual breakout area width (matches game exactly)
-  self.playfieldH = h * maxHeightFactor - margin -- Use same height and maxHeightFactor as BlockManager
+  -- Increase editor grid height by 30% for more placement space
+  local editorHeightMultiplier = 1.3
+  self.playfieldH = (h * maxHeightFactor - margin) * editorHeightMultiplier
   
   -- Load existing formation for current battle type
   self:loadFormation()
+  
+  -- Initialize grid snap enabled from config
+  self.gridSnapEnabled = config.blocks.gridSnap.enabled or true
   
   -- Build dynamic help message with available block types
   local blockTypeKeys = {}
@@ -90,7 +99,7 @@ function FormationEditorScene:load()
     end
   end
   local blockTypesStr = table.concat(blockTypeKeys, ", ")
-  self.statusMessage = "Formation Editor - Click to place/select, Right-click/Delete to remove, " .. blockTypesStr .. " to change type, S to save, L to load, G to toggle grid, ESC to exit"
+  self.statusMessage = "Formation Editor - Click to place/select, Right-click/Delete to remove, " .. blockTypesStr .. " to change type, S to save, L to load, G to toggle grid snap, H to toggle grid visibility, ESC to exit"
   self.statusMessageTimer = 5.0 -- Show for 5 seconds
 end
 
@@ -180,7 +189,7 @@ function FormationEditorScene:draw()
     local normY = self:screenToNormalizedY(self.mouseY)
     
     -- Apply grid snapping to preview
-    if config.blocks.gridSnap.enabled then
+    if self.gridSnapEnabled then
       normX, normY = self:snapToGrid(normX, normY)
     end
     
@@ -188,12 +197,19 @@ function FormationEditorScene:draw()
     local previewY = self.playfieldY + normY * self.playfieldH
     
     -- Check if preview block would exceed actual playfield bounds
+    -- Extend top boundary to accommodate extra grid row
+    local cellSize = config.blocks.gridSnap.cellSize
     local halfSize = blockSize * 0.5
     local blockLeft = previewX - halfSize
     local blockRight = previewX + halfSize
+    local blockTop = previewY - halfSize
+    local blockBottom = previewY + halfSize
     local actualPlayfieldLeft = self.playfieldX
     local actualPlayfieldRight = self.playfieldX + self.actualPlayfieldW
-    local canPlace = blockLeft >= actualPlayfieldLeft and blockRight <= actualPlayfieldRight
+    local actualPlayfieldTop = self.playfieldY - cellSize * 0.5 -- Extend upward by half cellSize
+    local actualPlayfieldBottom = self.playfieldY + self.playfieldH
+    local canPlace = blockLeft >= actualPlayfieldLeft and blockRight <= actualPlayfieldRight and
+                     blockTop >= actualPlayfieldTop and blockBottom <= actualPlayfieldBottom
     
     -- Draw preview with color indicating if placement is allowed
     if canPlace then
@@ -247,29 +263,13 @@ function FormationEditorScene:drawUI()
   local width = config.video.virtualWidth
   local font = theme.fonts.base
   
-  -- Current block type indicator (using registry)
-  local currentType = block_types.getByKey(self.currentBlockType)
-  local typeName = currentType and currentType.displayName or "Unknown"
-  local maxHotkey = 0
-  for _, bt in ipairs(block_types.types) do
-    if bt.hotkey and bt.hotkey > maxHotkey then
-      maxHotkey = bt.hotkey
-    end
-  end
-  local hotkeyRange = maxHotkey > 0 and ("1-" .. maxHotkey) or "keys"
-  local typeText = "Block Type: " .. typeName .. " (Press " .. hotkeyRange .. " to change)"
-  if currentType and currentType.description then
-    typeText = typeText .. " - " .. currentType.description
-  end
-  theme.drawTextWithOutline(typeText, 20, 20, 1, 1, 1, 1, 2)
-  
   -- Block count
   local countText = "Blocks: " .. #self.blocks
-  theme.drawTextWithOutline(countText, 20, 50, 1, 1, 1, 1, 2)
+  theme.drawTextWithOutline(countText, 20, 20, 1, 1, 1, 1, 2)
   
   -- Battle type
   local battleText = "Battle Type: " .. self.currentBattleType
-  theme.drawTextWithOutline(battleText, 20, 80, 1, 1, 1, 1, 2)
+  theme.drawTextWithOutline(battleText, 20, 50, 1, 1, 1, 1, 2)
   
   -- Status message
   if self.statusMessageTimer > 0 then
@@ -289,20 +289,25 @@ function FormationEditorScene:drawUI()
   -- Add other instructions
   table.insert(instructions, "S: Save formation")
   table.insert(instructions, "L: Load formation")
-  table.insert(instructions, "G: Toggle grid")
+  table.insert(instructions, "G: Toggle grid snap")
+  table.insert(instructions, "H: Toggle grid visibility")
   table.insert(instructions, "0: Toggle delete mode")
   table.insert(instructions, "ESC: Exit editor")
   for i, inst in ipairs(instructions) do
     theme.drawTextWithOutline(inst, width - 250, 20 + (i - 1) * 30, 0.8, 0.8, 0.8, 0.7, 2)
   end
   
-  -- Show selection info or delete mode status
+  -- Show selection info, delete mode status, or grid snap status
   if self.deleteMode then
-    theme.drawTextWithOutline("DELETE MODE: Click blocks to delete", 20, 110, 1, 0.3, 0.3, 1, 2)
+    theme.drawTextWithOutline("DELETE MODE: Click blocks to delete", 20, 80, 1, 0.3, 0.3, 1, 2)
   elseif self.selectedBlockIndex then
     local block = self.blocks[self.selectedBlockIndex]
     local infoText = string.format("Selected: %s block (Delete to remove)", block.kind)
-    theme.drawTextWithOutline(infoText, 20, 110, 0.4, 0.8, 1, 1, 2)
+    theme.drawTextWithOutline(infoText, 20, 80, 0.4, 0.8, 1, 1, 2)
+  else
+    -- Show grid snap status when nothing is selected
+    local snapStatus = self.gridSnapEnabled and "Grid snap: ON (G to toggle)" or "Grid snap: OFF - Free placement (G to toggle)"
+    theme.drawTextWithOutline(snapStatus, 20, 80, 0.6, 0.6, 0.6, 0.8, 2)
   end
 end
 
@@ -336,7 +341,7 @@ function FormationEditorScene:mousepressed(x, y, button)
         local normY = self:screenToNormalizedY(y)
         
         -- Apply grid snapping if enabled
-        if config.blocks.gridSnap.enabled then
+        if self.gridSnapEnabled then
           normX, normY = self:snapToGrid(normX, normY)
         end
         
@@ -357,9 +362,11 @@ function FormationEditorScene:mousepressed(x, y, button)
         local blockRight = blockX + halfSize
         local blockTop = blockY - halfSize
         local blockBottom = blockY + halfSize
+        -- Extend top boundary to accommodate extra grid row
+        local cellSize = config.blocks.gridSnap.cellSize
         local actualPlayfieldLeft = self.playfieldX
         local actualPlayfieldRight = self.playfieldX + self.actualPlayfieldW
-        local actualPlayfieldTop = self.playfieldY
+        local actualPlayfieldTop = self.playfieldY - cellSize * 0.5 - 50 -- Extend upward by half cellSize + 50px
         local actualPlayfieldBottom = self.playfieldY + self.playfieldH
         
         if blockLeft >= actualPlayfieldLeft and blockRight <= actualPlayfieldRight and
@@ -435,6 +442,10 @@ function FormationEditorScene:keypressed(key, scancode, isRepeat)
       self:showStatus("Block removed")
     end
   elseif key == "g" then
+    -- Toggle grid snapping (enables/disables snapping to grid)
+    self.gridSnapEnabled = not self.gridSnapEnabled
+    self:showStatus(self.gridSnapEnabled and "Grid snap ON" or "Grid snap OFF (free placement)")
+  elseif key == "h" then
     -- Toggle grid visibility
     config.blocks.gridSnap.showGrid = not config.blocks.gridSnap.showGrid
     self:showStatus(config.blocks.gridSnap.showGrid and "Grid shown" or "Grid hidden")
@@ -482,20 +493,40 @@ function FormationEditorScene:snapToGrid(normX, normY)
   local screenX = effectivePlayfieldX + normX * effectivePlayfieldW
   local screenY = self.playfieldY + normY * self.playfieldH
   
-  -- Calculate centered grid position (matching drawGrid)
+  -- Calculate grid with padding (matching drawGrid)
+  -- Add one extra row at the top: reduce top padding by cellSize to accommodate extra row
   local cellSize = config.blocks.gridSnap.cellSize
-  local numCells = math.floor(effectivePlayfieldW / cellSize)
-  local gridWidth = numCells * cellSize
-  local gridOffset = (effectivePlayfieldW - gridWidth) * 0.5
-  local gridStartX = effectivePlayfieldX + gridOffset
+  local gridPadding = (config.blocks.gridSnap.padding) or 30
+  local sidePadding = (config.blocks.gridSnap.sidePadding) or 40
+  local availableWidth = effectivePlayfieldW - 2 * gridPadding - 2 * sidePadding
+  local availableHeight = self.playfieldH - 2 * gridPadding + cellSize -- Add cellSize for extra row
+  local numCellsX = math.floor(availableWidth / cellSize)
+  local numCellsY = math.floor(availableHeight / cellSize)
+  local gridWidth = numCellsX * cellSize
+  local gridHeight = numCellsY * cellSize
+  -- Center grid within the padded area (account for sidePadding when centering)
+  -- Shift grid up by half cellSize to add row at top, plus 50px additional shift
+  local gridOffsetX = sidePadding + gridPadding + (availableWidth - gridWidth) * 0.5
+  local gridOffsetY = gridPadding - cellSize * 0.5 - 50 + (availableHeight - gridHeight) * 0.5
+  local gridStartX = effectivePlayfieldX + gridOffsetX
+  local gridStartY = self.playfieldY + gridOffsetY
   
-  -- Snap to centered grid (no clamping - placement will be prevented if out of bounds)
-  local snappedX = math.floor((screenX - gridStartX) / cellSize + 0.5) * cellSize
-  local snappedY = math.floor((screenY - self.playfieldY) / cellSize + 0.5) * cellSize
+  -- Snap to center of grid cells (not intersections)
+  -- Calculate which cell the point is in, then snap to center of that cell
+  local cellX = math.floor((screenX - gridStartX) / cellSize)
+  local cellY = math.floor((screenY - gridStartY) / cellSize)
+  
+  -- Clamp to valid cell indices
+  cellX = math.max(0, math.min(numCellsX - 1, cellX))
+  cellY = math.max(0, math.min(numCellsY - 1, cellY))
+  
+  -- Snap to center of the cell (cell center = cellIndex * cellSize + cellSize/2)
+  local snappedX = cellX * cellSize + cellSize * 0.5
+  local snappedY = cellY * cellSize + cellSize * 0.5
   
   -- Convert snapped position to absolute screen coordinates (snappedX is relative to gridStartX)
   local absoluteX = gridStartX + snappedX
-  local absoluteY = self.playfieldY + snappedY
+  local absoluteY = gridStartY + snappedY
   
   -- Convert back to relative position (relative to effectivePlayfieldX for normalization)
   snappedX = absoluteX - effectivePlayfieldX
@@ -517,33 +548,38 @@ function FormationEditorScene:drawGrid()
   local effectivePlayfieldX = self.playfieldX + playfieldXOffset
   
   local cellSize = config.blocks.gridSnap.cellSize
+  local gridPadding = (config.blocks.gridSnap.padding) or 30
+  local sidePadding = (config.blocks.gridSnap.sidePadding) or 40
   love.graphics.setColor(0.3, 0.3, 0.4, 0.3)
   love.graphics.setLineWidth(1)
   
-  -- Center the grid horizontally within the effective playfield
-  -- Calculate how many full cells fit in the effective playfield width
-  local numCells = math.floor(effectivePlayfieldW / cellSize)
-  local gridWidth = numCells * cellSize
-  local gridOffset = (effectivePlayfieldW - gridWidth) * 0.5
-  local gridStartX = effectivePlayfieldX + gridOffset
+  -- Calculate grid with padding (matching snapToGrid)
+  -- Add one extra row at the top: reduce top padding by cellSize to accommodate extra row
+  local availableWidth = effectivePlayfieldW - 2 * gridPadding - 2 * sidePadding
+  local availableHeight = self.playfieldH - 2 * gridPadding + cellSize -- Add cellSize for extra row
+  local numCellsX = math.floor(availableWidth / cellSize)
+  local numCellsY = math.floor(availableHeight / cellSize)
+  local gridWidth = numCellsX * cellSize
+  local gridHeight = numCellsY * cellSize
+  -- Center grid within the padded area (account for sidePadding when centering)
+  -- Shift grid up by half cellSize to add row at top, plus 50px additional shift
+  local gridOffsetX = sidePadding + gridPadding + (availableWidth - gridWidth) * 0.5
+  local gridOffsetY = gridPadding - cellSize * 0.5 - 50 + (availableHeight - gridHeight) * 0.5
+  local gridStartX = effectivePlayfieldX + gridOffsetX
+  local gridStartY = self.playfieldY + gridOffsetY
   local gridEndX = gridStartX + gridWidth
+  local gridEndY = gridStartY + gridHeight
   
-  local y1 = self.playfieldY
-  local y2 = self.playfieldY + self.playfieldH
-  
-  -- Draw vertical lines (centered within effective playfield bounds)
+  -- Draw vertical lines (within padded grid bounds)
   local x = gridStartX
   while x <= gridEndX do
-    love.graphics.line(x, y1, x, y2)
+    love.graphics.line(x, gridStartY, x, gridEndY)
     x = x + cellSize
   end
   
-  -- Draw horizontal lines
-  local startY = self.playfieldY
-  local endY = self.playfieldY + self.playfieldH
-  
-  local y = startY
-  while y <= endY do
+  -- Draw horizontal lines (within padded grid bounds)
+  local y = gridStartY
+  while y <= gridEndY do
     love.graphics.line(gridStartX, y, gridEndX, y)
     y = y + cellSize
   end
@@ -561,10 +597,8 @@ function FormationEditorScene:loadFormation()
       local normX = block.x or 0.5
       local normY = block.y or 0.5
       
-      -- Optionally snap loaded blocks to grid (comment out if you want exact positions)
-      if config.blocks.gridSnap.enabled then
-        normX, normY = self:snapToGrid(normX, normY)
-      end
+      -- Preserve exact saved coordinates (don't snap loaded blocks)
+      -- Grid snapping only applies to new placements, not loading existing formations
       
       table.insert(self.blocks, {
         x = normX,
