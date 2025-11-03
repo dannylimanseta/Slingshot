@@ -279,7 +279,7 @@ function Block:draw()
   local valueText = nil
   local iconToUse = nil
   if self.kind == "damage" or self.kind == "attack" then
-    valueText = "+1"
+    valueText = "1"
     iconToUse = ICON_ATTACK
   elseif self.kind == "crit" then
     valueText = "x2"
@@ -291,7 +291,7 @@ function Block:draw()
     -- Get armor value based on HP
     local armorMap = config.armor and config.armor.rewardByHp or { [1] = 3, [2] = 2, [3] = 1 }
     local armorValue = armorMap[math.max(1, math.min(3, self.hp))] or 0
-    valueText = "+" .. tostring(armorValue)
+    valueText = tostring(armorValue)
     iconToUse = ICON_ARMOR
   end
   
@@ -312,16 +312,16 @@ function Block:draw()
     local textHeight = baseTextHeight * textScale
     
     -- Icon dimensions and spacing
-    local iconSpacing = 2 -- pixels between text and icon (reduced from 4)
-    local iconSize = textHeight * 0.7 -- icon size matches text height, reduced by 30%
+    local iconSpacing = 1 -- pixels between text and icon (reduced from 4, then by 2px)
+    local iconSize = textHeight * 0.595 -- icon size matches text height, reduced by 30%, then reduced by 15%
     local iconWidth = iconToUse and iconSize or 0
     local iconHeight = iconToUse and iconSize or 0
     
     -- Calculate total width for centering
     local totalWidth = textWidth + iconSpacing + iconWidth
     
-    -- Calculate starting X position (centered, pixel-aligned for crisp rendering)
-    local startX = math.floor(self.cx - totalWidth * 0.5 + 0.5)
+    -- Calculate starting X position (centered, pixel-aligned for crisp rendering, shifted right by 2px)
+    local startX = math.floor(self.cx - totalWidth * 0.5 + 0.5) + 2
     
     -- Text position (shifted up by 7px total: 5px previous + 2px additional, pixel-aligned)
     local textX = startX
@@ -340,7 +340,7 @@ function Block:draw()
     if iconToUse then
       local iconX = math.floor(startX + textWidth + iconSpacing + 0.5)
       -- Icon Y position: armor blocks shifted up by 2px more (relative to attack blocks)
-      local iconYOffset = (self.kind == "armor") and -7 or -5
+      local iconYOffset = (self.kind == "armor") and -7 or -6
       local iconY = math.floor(self.cy + yOffset - iconHeight * 0.5 + iconYOffset + 0.5)
       
       local iconW, iconH = iconToUse:getDimensions()
