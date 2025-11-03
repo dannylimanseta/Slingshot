@@ -1682,21 +1682,10 @@ function MapManager:completeMovement()
     
     -- Check if we're on a treasure tile
     if tile and tile.type == MapManager.TileType.TREASURE then
-      -- Check if treasure is protected
-      local isProtected, enemyX, enemyY = self:isTreasureProtected(self.playerGridX, self.playerGridY)
-      if isProtected and enemyX and enemyY then
-        -- Move to enemy tile to trigger battle
-        self.playerGridX = enemyX
-        self.playerGridY = enemyY
-        -- Use pending treasure position if available, otherwise use current position
-        local treasureX = self._pendingTreasureX or self.playerGridX
-        local treasureY = self._pendingTreasureY or self.playerGridY
-        return true, "protected_treasure", treasureX, treasureY
-      else
-        -- Unprotected treasure - collect immediately
-        tile.type = MapManager.TileType.GROUND
-        return false, "treasure_collected"
-      end
+      -- Collect treasure immediately if player reached it
+      -- If enemy was blocking the path, battle would have been triggered earlier
+      tile.type = MapManager.TileType.GROUND
+      return false, "treasure_collected"
     end
     
     -- Check if we're on an event tile
