@@ -35,7 +35,7 @@ block_types.types = {
   },
   {
     key = "soul",
-    displayName = "Soul",
+    displayName = "4x Crit",
     spritePath = "block_crit_2",
     hotkey = 4,
     description = "Soul block (4x damage multiplier)"

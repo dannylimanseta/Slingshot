@@ -20,6 +20,38 @@ do
   end
 end
 
+-- Icons used for overlay labels (match Block.lua)
+local ICON_ATTACK = nil
+local ICON_ARMOR = nil
+local ICON_POTION = nil
+do
+  local imgs = (config.assets and config.assets.images) or {}
+  -- Load attack icon
+  if imgs.icon_attack then
+    local ok, img = pcall(love.graphics.newImage, imgs.icon_attack)
+    if ok then
+      pcall(function() img:setFilter('linear', 'linear') end)
+      ICON_ATTACK = img
+    end
+  end
+  -- Load armor icon
+  if imgs.icon_armor then
+    local ok, img = pcall(love.graphics.newImage, imgs.icon_armor)
+    if ok then
+      pcall(function() img:setFilter('linear', 'linear') end)
+      ICON_ARMOR = img
+    end
+  end
+  -- Load potion icon
+  if imgs.icon_potion then
+    local ok, img = pcall(love.graphics.newImage, imgs.icon_potion)
+    if ok then
+      pcall(function() img:setFilter('linear', 'linear') end)
+      ICON_POTION = img
+    end
+  end
+end
+
 local FormationEditorScene = {}
 FormationEditorScene.__index = FormationEditorScene
 
@@ -179,8 +211,8 @@ function FormationEditorScene:draw()
       love.graphics.rectangle("fill", bx - blockSize * 0.5 - 4, by - blockSize * 0.5 - 4, blockSize + 8, blockSize + 8)
     end
     
-    -- Draw block sprite
-    self:drawBlock(bx, by, block.kind, blockSize)
+    -- Draw block sprite with overlays
+    self:drawBlock(bx, by, block.kind, blockSize, block.hp)
   end
   
   -- Draw cursor preview (if within playfield)
@@ -217,7 +249,7 @@ function FormationEditorScene:draw()
     else
       love.graphics.setColor(1, 0.3, 0.3, 0.5) -- Red tint if cannot place
     end
-    self:drawBlock(previewX, previewY, self.currentBlockType, blockSize)
+    self:drawBlock(previewX, previewY, self.currentBlockType, blockSize, 1)
   end
   
   -- Draw UI
@@ -228,7 +260,7 @@ function FormationEditorScene:draw()
   -- Top bar is hidden in editor
 end
 
-function FormationEditorScene:drawBlock(x, y, kind, size)
+function FormationEditorScene:drawBlock(x, y, kind, size, hp)
   -- Get sprite from registry, fallback to damage block sprite
   local sprite = SPRITES[kind] or SPRITES["damage"]
   
@@ -256,6 +288,63 @@ function FormationEditorScene:drawBlock(x, y, kind, size)
     love.graphics.setColor(theme.colors.blockOutline[1] or 0, theme.colors.blockOutline[2] or 0, theme.colors.blockOutline[3] or 0, 0.2)
     love.graphics.setLineWidth(2)
     love.graphics.rectangle("line", x - halfSize, y - halfSize, size, size, 4, 4)
+  end
+
+  -- Draw value text and icon overlay (match Block.lua visuals)
+  local valueText = nil
+  local iconToUse = nil
+  if kind == "damage" or kind == "attack" then
+    valueText = "+1"
+    iconToUse = ICON_ATTACK
+  elseif kind == "crit" then
+    valueText = "x2"
+    iconToUse = ICON_ATTACK
+  elseif kind == "soul" then
+    valueText = "x4"
+    iconToUse = ICON_ATTACK
+  elseif kind == "armor" then
+    local armorMap = (config.armor and config.armor.rewardByHp) or { [1] = 3, [2] = 2, [3] = 1 }
+    local armorValue = armorMap[math.max(1, math.min(3, hp or 1))] or 0
+    valueText = "+" .. tostring(armorValue)
+    iconToUse = ICON_ARMOR
+  elseif kind == "potion" then
+    valueText = "+8"
+    iconToUse = ICON_POTION
+  end
+
+  if valueText and iconToUse then
+    local baseFont = theme.fonts.base or love.graphics.getFont()
+    love.graphics.setFont(baseFont)
+    local baseTextWidth = baseFont:getWidth(valueText)
+    local baseTextHeight = baseFont:getHeight()
+    local textScale = 0.7
+    local textWidth = baseTextWidth * textScale
+    local textHeight = baseTextHeight * textScale
+    local iconSpacing = 1
+    local iconSize = textHeight * 0.595
+    local totalWidth = textWidth + iconSpacing + iconSize
+    local startX = math.floor(x - totalWidth * 0.5 + 0.5) + 2
+    local textX = startX
+    local textY = math.floor(y - textHeight * 0.5 - 7 + 0.5)
+
+    love.graphics.push("all")
+    love.graphics.setBlendMode("alpha")
+    love.graphics.translate(textX, textY)
+    love.graphics.scale(textScale, textScale)
+    love.graphics.setColor(0, 0, 0, 0.5)
+    love.graphics.print(valueText, 0, 0)
+    love.graphics.pop()
+
+    local iconW, iconH = iconToUse:getDimensions()
+    local iconScale = iconSize / math.max(iconW, iconH)
+    local iconX = math.floor(startX + textWidth + iconSpacing + 0.5)
+    local iconYOffset = (kind == "armor") and -7 or -6
+    local iconY = math.floor(y - iconSize * 0.5 + iconYOffset + 0.5)
+    love.graphics.push("all")
+    love.graphics.setBlendMode("alpha")
+    love.graphics.setColor(0, 0, 0, 0.5)
+    love.graphics.draw(iconToUse, iconX, iconY, 0, iconScale, iconScale, 0, 0)
+    love.graphics.pop()
   end
 end
 

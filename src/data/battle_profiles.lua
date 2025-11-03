@@ -132,6 +132,7 @@ battle_profiles.data = {
 
 
 
+
       -- Predefined formation (used when type = "predefined")
       -- Format: array of {x, y, kind, hp} where x,y are normalized (0-1) coordinates relative to playfield
       -- kind: "damage", "armor", "crit", or "soul" (soul blocks should be rare, typically 0-1 per formation)
@@ -140,7 +141,27 @@ battle_profiles.data = {
       {x = 0.532, y = 0.048, kind = "damage", hp = 1},
       {x = 0.468, y = 0.048, kind = "damage", hp = 1},
       {x = 0.405, y = 0.048, kind = "damage", hp = 1},
+      {x = 0.405, y = 0.119, kind = "damage", hp = 1},
+      {x = 0.405, y = 0.191, kind = "damage", hp = 1},
+      {x = 0.468, y = 0.262, kind = "damage", hp = 1},
+      {x = 0.532, y = 0.262, kind = "damage", hp = 1},
+      {x = 0.595, y = 0.191, kind = "damage", hp = 1},
+      {x = 0.595, y = 0.119, kind = "damage", hp = 1},
       {x = 0.595, y = 0.048, kind = "damage", hp = 1},
+      {x = 0.468, y = 0.119, kind = "crit", hp = 1},
+      {x = 0.532, y = 0.191, kind = "crit", hp = 1},
+      {x = 0.532, y = 0.119, kind = "soul", hp = 1},
+      {x = 0.468, y = 0.191, kind = "soul", hp = 1},
+      {x = 0.658, y = 0.048, kind = "aoe", hp = 1},
+      {x = 0.342, y = 0.048, kind = "aoe", hp = 1},
+      {x = 0.342, y = 0.191, kind = "aoe", hp = 1},
+      {x = 0.658, y = 0.191, kind = "aoe", hp = 1},
+      {x = 0.721, y = 0.119, kind = "armor", hp = 1},
+      {x = 0.279, y = 0.119, kind = "armor", hp = 1},
+      {x = 0.279, y = 0.262, kind = "armor", hp = 1},
+      {x = 0.342, y = 0.334, kind = "armor", hp = 1},
+      {x = 0.658, y = 0.334, kind = "armor", hp = 1},
+      {x = 0.721, y = 0.262, kind = "armor", hp = 1},
     },
     },
   },
