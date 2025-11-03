@@ -892,46 +892,24 @@ function GameplayScene:beginContact(fixA, fixB, contact)
     -- Award rewards: per-hit for all blocks. Crit sets a turn multiplier (2x total damage), Soul sets a turn multiplier (4x total damage)
     local perHit = (config.score and config.score.rewardPerHit) or 1
     local hitReward = perHit
-    local popupText = "+" .. tostring(perHit)
-    local popupKind = "attack"
     if block.kind == "crit" then
       self.critThisTurn = (self.critThisTurn or 0) + 1
-      popupText = "x2"
-      popupKind = "crit"
     elseif block.kind == "soul" then
       -- Soul block gives x4 multiplier (count as soul block)
       self.soulThisTurn = (self.soulThisTurn or 0) + 1
-      popupText = "x4"
-      popupKind = "soul"
     elseif block.kind == "aoe" then
       -- AOE block gives +3 bonus damage and marks attack as AOE
       local aoeReward = 3
       hitReward = hitReward + aoeReward
       self.aoeThisTurn = true
-      popupText = "+" .. tostring(hitReward)
-      popupKind = "aoe"
     end
     self.score = self.score + hitReward
-    -- Popup above the block
-    do
-      local bx, by, bw, bh = block:getAABB()
-      local cx = bx + bw * 0.5
-      local top = by
-      table.insert(self.popups, { x = cx, y = top, text = popupText, kind = popupKind, t = (config.score and config.score.blockPopupLifetime) or 0.8 })
-    end
     if block.kind == "armor" then
       local armorMap = config.armor and config.armor.rewardByHp or nil
       if armorMap then
         local hpBeforeHit = math.max(1, block.hp + 1) -- hp was decremented in hit()
         local reward = armorMap[math.max(1, math.min(3, hpBeforeHit))] or 0
         self.armorThisTurn = self.armorThisTurn + reward
-        -- Armor popup with defend icon
-        do
-          local bx, by, bw, bh = block:getAABB()
-          local cx = bx + bw * 0.5
-          local top = by
-          table.insert(self.popups, { x = cx, y = top - 18, text = "+" .. tostring(reward), kind = "armor", t = (config.score and config.score.blockPopupLifetime) or 0.8 })
-        end
       end
     end
   end
