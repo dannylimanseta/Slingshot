@@ -108,10 +108,7 @@ function SplitScene:load()
   self.right:load({ x = centerRect.w, y = 0, w = w - centerRect.w, h = h }, battleProfile)
   self._lastCenterW = centerRect.w
 
-  -- Increase current enemy size (runtime multiplier)
-  if self.right and self.right.setEnemySprite then
-    self.right:setEnemySprite(nil, 1.3)
-  end
+  -- Remove per-first-enemy runtime scale multiplier for consistent enemy sizes
 
   -- Background image (optional)
   self.bgImage = nil

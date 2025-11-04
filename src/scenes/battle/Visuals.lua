@@ -18,7 +18,14 @@ local function calculateEnemyPositions(scene, rightStart, rightWidth, baselineY,
   local totalWidth = 0
   -- Get gap from battle profile or use default
   local battleProfile = scene._battleProfile or {}
-  local gap = battleProfile.enemySpacing or -20 -- Gap between enemies (in pixels)
+  -- Gap between enemies (in pixels). Supports count-specific tables.
+  local gapCfg = battleProfile.enemySpacing
+  local gap
+  if type(gapCfg) == "table" then
+    gap = gapCfg[enemyCount] or gapCfg.default or 0
+  else
+    gap = gapCfg or -20
+  end
   
   for i, enemy in ipairs(enemies) do
     local scaleCfg = enemy.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
@@ -37,7 +44,7 @@ local function calculateEnemyPositions(scene, rightStart, rightWidth, baselineY,
   
   -- Calculate starting X position (center enemies in right side area)
   local centerX = rightStart + rightWidth * 0.5
-  local startX = centerX - totalWidth * 0.5
+  local startX = centerX - totalWidth * 0.5 - 70 -- Shift enemies left by 70px
   
   -- Calculate positions for each enemy
   local positions = {}

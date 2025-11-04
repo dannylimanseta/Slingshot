@@ -115,10 +115,25 @@ function BattleScene:load(bounds, battleProfile)
   local randomEnemyCount = love.math.random(1, 3)
   local enemyCount = math.min(randomEnemyCount, maxAvailableEnemies)
   
-  for i = 1, enemyCount do
-    if battleProfile.enemies and battleProfile.enemies[i] then
-      local enemy = createEnemyFromConfig(battleProfile.enemies[i], i)
-      table.insert(self.enemies, enemy)
+  -- Randomly select enemies from the pool instead of taking them sequentially
+  if battleProfile.enemies and maxAvailableEnemies > 0 then
+    -- Create a shuffled list of available enemy indices
+    local availableIndices = {}
+    for i = 1, maxAvailableEnemies do
+      table.insert(availableIndices, i)
+    end
+    -- Shuffle the indices
+    for i = #availableIndices, 2, -1 do
+      local j = love.math.random(i)
+      availableIndices[i], availableIndices[j] = availableIndices[j], availableIndices[i]
+    end
+    -- Select the first enemyCount enemies from the shuffled list
+    for i = 1, enemyCount do
+      local enemyIndex = availableIndices[i]
+      if battleProfile.enemies[enemyIndex] then
+        local enemy = createEnemyFromConfig(battleProfile.enemies[enemyIndex], i)
+        table.insert(self.enemies, enemy)
+      end
     end
   end
   
@@ -1014,7 +1029,14 @@ function BattleScene:getAllEnemyHitPoints(bounds)
   local enemyWidths = {}
   local totalWidth = 0
   local battleProfile = self._battleProfile or {}
-  local gap = battleProfile.enemySpacing or -20
+  local gapCfg = battleProfile.enemySpacing
+  local enemyCount = #self.enemies
+  local gap
+  if type(gapCfg) == "table" then
+    gap = gapCfg[enemyCount] or gapCfg.default or 0
+  else
+    gap = gapCfg or -20
+  end
   
   for i, e in ipairs(self.enemies) do
     local scaleCfg = e.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
@@ -1103,7 +1125,14 @@ function BattleScene:getEnemyHitPoint(bounds)
     local enemyWidths = {}
     local totalWidth = 0
     local battleProfile = self._battleProfile or {}
-    local gap = battleProfile.enemySpacing or -20
+    local gapCfg = battleProfile.enemySpacing
+    local enemyCount = #self.enemies
+    local gap
+    if type(gapCfg) == "table" then
+      gap = gapCfg[enemyCount] or gapCfg.default or 0
+    else
+      gap = gapCfg or -20
+    end
     
     for i, e in ipairs(self.enemies) do
       local scaleCfg = e.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
@@ -1249,7 +1278,14 @@ function BattleScene:mousepressed(x, y, button, bounds)
   -- Calculate enemy positions (matching Visuals.lua logic)
   local enemyPositions = {}
   local battleProfile = self._battleProfile or {}
-  local gap = battleProfile.enemySpacing or -20
+  local gapCfg = battleProfile.enemySpacing
+  local enemyCount = #self.enemies
+  local gap
+  if type(gapCfg) == "table" then
+    gap = gapCfg[enemyCount] or gapCfg.default or 0
+  else
+    gap = gapCfg or -20
+  end
   local enemyScales = {}
   local enemyWidths = {}
   local totalWidth = 0
@@ -1270,7 +1306,7 @@ function BattleScene:mousepressed(x, y, button, bounds)
   end
   
   local centerXPos = rightStart + rightWidth * 0.5
-  local startX = centerXPos - totalWidth * 0.5
+  local startX = centerXPos - totalWidth * 0.5 - 70 -- Shift enemies left by 70px (matching Visuals.lua)
   
   -- Check enemies in reverse order (right to left) so rightmost enemy gets priority when overlapping
   for i = #self.enemies, 1, -1 do

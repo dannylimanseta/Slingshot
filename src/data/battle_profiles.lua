@@ -15,8 +15,10 @@ battle_profiles.data = {
     centerWidthFactor = 0.43,
     -- Enemy configuration
     -- enemyCount: number of enemies (1-3)
-    -- enemySpacing: spacing between enemies in pixels (default: 40)
-    enemySpacing = -10, -- Gap between enemies in pixels
+    -- enemySpacing: spacing between enemies in pixels.
+    -- Can be a number (uniform) or a table keyed by enemy count.
+    -- Example here: tighter spacing for 3, wider for 2.
+    enemySpacing = { [1] = 0, [2] = 40, [3] = -15 },
     -- enemies: array of enemy configs, each with:
     --   sprite: path to sprite image (relative to assets/images/)
     --   maxHP: maximum HP for this enemy
@@ -30,7 +32,7 @@ battle_profiles.data = {
         maxHP = 80,
         damageMin = 3,
         damageMax = 8,
-        spriteScale = 3,
+        spriteScale = 5.2,
         scaleMul = 1,
       },
       {
@@ -42,11 +44,11 @@ battle_profiles.data = {
         scaleMul = 1,
       },
       {
-        sprite = "enemy_2.png",
-        maxHP = 50,
-        damageMin = 3,
-        damageMax = 5,
-        spriteScale = 3,
+        sprite = "enemy_3.png",
+        maxHP = 40,
+        damageMin = 4,
+        damageMax = 7,
+        spriteScale = 4,
         scaleMul = 1,
       },
     },
@@ -55,6 +57,7 @@ battle_profiles.data = {
     -- Type: "random" (uses clustering/random placement) or "predefined" (uses exact positions)
     blockFormation = {
       type = "predefined", -- "random" or "predefined"
+
 
 
 
@@ -162,6 +165,14 @@ battle_profiles.data = {
       {x = 0.342, y = 0.334, kind = "armor", hp = 1},
       {x = 0.658, y = 0.334, kind = "armor", hp = 1},
       {x = 0.721, y = 0.262, kind = "armor", hp = 1},
+      {x = 0.658, y = 0.119, kind = "potion", hp = 1},
+      {x = 0.342, y = 0.119, kind = "potion", hp = 1},
+      {x = 0.847, y = 0.048, kind = "damage", hp = 1},
+      {x = 0.153, y = 0.048, kind = "damage", hp = 1},
+      {x = 0.153, y = 0.191, kind = "damage", hp = 1},
+      {x = 0.847, y = 0.191, kind = "damage", hp = 1},
+      {x = 0.153, y = 0.334, kind = "damage", hp = 1},
+      {x = 0.847, y = 0.334, kind = "damage", hp = 1},
     },
     },
   },
