@@ -134,6 +134,12 @@ function SplitScene:load()
   local okGlow, imgGlow = pcall(love.graphics.newImage, edgeGlowPath)
   if okGlow then self.edgeGlowImage = imgGlow end
 
+  -- Decorative image for turn indicators
+  self.decorImage = nil
+  local decorPath = "assets/images/decor_1.png"
+  local okDecor, imgDecor = pcall(love.graphics.newImage, decorPath)
+  if okDecor then self.decorImage = imgDecor end
+
 
   -- Set up callback for when player takes damage
   self.right.onPlayerDamage = function()
@@ -549,9 +555,43 @@ function SplitScene:draw()
     local centerX = centerRect.x + centerRect.w * 0.5 -- Center of center area
     local centerY = h * 0.5 - 50 -- Shifted up by 50px
     
+    -- Spacing between decorative images and text
+    local decorSpacing = 40
+    
     love.graphics.push()
     love.graphics.translate(centerX, centerY)
     love.graphics.scale(scale, scale)
+    
+    -- Draw decorative images on both sides of text
+    if self.decorImage then
+      local decorW = self.decorImage:getWidth()
+      local decorH = self.decorImage:getHeight()
+      local decorScale = 0.7 -- 30% size reduction (70% of original)
+      local scaledW = decorW * decorScale
+      local scaledH = decorH * decorScale
+      
+      -- Calculate center positions for both images
+      local leftCenterX = -textW * 0.5 - decorSpacing - scaledW * 0.5
+      local rightCenterX = textW * 0.5 + decorSpacing + scaledW * 0.5
+      
+      love.graphics.setColor(1, 1, 1, alpha)
+      
+      -- Draw left decorative image (normal, scaled with center pivot)
+      love.graphics.push()
+      love.graphics.translate(leftCenterX, 0)
+      love.graphics.scale(decorScale, decorScale)
+      love.graphics.draw(self.decorImage, -decorW * 0.5, -decorH * 0.5)
+      love.graphics.pop()
+      
+      -- Draw right decorative image (flipped horizontally, scaled with center pivot)
+      love.graphics.push()
+      love.graphics.translate(rightCenterX, 0)
+      love.graphics.scale(-decorScale, decorScale) -- Flip horizontally and scale
+      love.graphics.draw(self.decorImage, -decorW * 0.5, -decorH * 0.5)
+      love.graphics.pop()
+    end
+    
+    -- Draw text
     theme.drawTextWithOutline(text, -textW * 0.5, -font:getHeight() * 0.5, 1, 1, 1, alpha, 4)
     love.graphics.pop()
     
