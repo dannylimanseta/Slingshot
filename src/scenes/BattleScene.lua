@@ -48,6 +48,7 @@ function BattleScene.new()
     playerArmor = 0,
     prevPlayerArmor = 0,
     playerFlash = 0,
+    prevPlayerFlash = 0, -- Track previous flash state to detect new hits
     popups = {},
     log = {},
     state = "idle", -- idle | win | lose (deprecated, use TurnManager state)
@@ -83,6 +84,9 @@ function BattleScene.new()
     impactAnimation = nil, -- Base animation instance
     impactInstances = {}, -- Array of active impact instances {anim, x, y, rotation, delay, offsetX, offsetY}
     impactEffectsPlayed = false,
+    splatterImage = nil, -- Splatter image for hit effects (backwards compatibility)
+    splatterImages = {}, -- Array of splatter images for randomization
+    splatterInstances = {}, -- Array of active splatter instances {x, y, rotation, scale, alpha, lifetime, maxLifetime, image}
     -- Staggered flash and knockback events
     enemyFlashEvents = {}, -- Array of {delay, duration} for staggered flashes
     enemyKnockbackEvents = {}, -- Array of {delay, startTime} for staggered knockbacks
@@ -219,6 +223,21 @@ function BattleScene:load(bounds, battleProfile)
   else
     self.selectedIndicatorImg = nil
   end
+  
+  -- Load splatter images for hit effects (pool for randomization)
+  self.splatterImages = {}
+  local splatterPath1 = "assets/images/fx/splatter_1.png"
+  local okSplatter1, splatterImg1 = pcall(love.graphics.newImage, splatterPath1)
+  if okSplatter1 then
+    table.insert(self.splatterImages, splatterImg1)
+  end
+  local splatterPath2 = "assets/images/fx/splatter_2.png"
+  local okSplatter2, splatterImg2 = pcall(love.graphics.newImage, splatterPath2)
+  if okSplatter2 then
+    table.insert(self.splatterImages, splatterImg2)
+  end
+  -- Keep single image reference for backwards compatibility (use first if available)
+  self.splatterImage = (#self.splatterImages > 0) and self.splatterImages[1] or nil
   
   -- Initialize selection to leftmost enemy (index 1)
   self.selectedEnemyIndex = 1
@@ -385,6 +404,14 @@ function BattleScene:update(dt, bounds)
   for _, enemy in ipairs(self.enemies or {}) do
     if enemy.flash > 0 then enemy.flash = math.max(0, enemy.flash - dt) end
   end
+  
+  -- Check if player was just hit (flash transitioned from 0 to positive)
+  if self.prevPlayerFlash == 0 and self.playerFlash > 0 then
+    -- Player was just hit, create splatter effect
+    ImpactSystem.createPlayerSplatter(self, self._lastBounds)
+  end
+  self.prevPlayerFlash = self.playerFlash
+  
   if self.playerFlash > 0 then self.playerFlash = math.max(0, self.playerFlash - dt) end
   
   -- Update impact system (slashes, flashes, knockback)
