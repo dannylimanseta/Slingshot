@@ -1054,7 +1054,7 @@ function BattleScene:getAllEnemyHitPoints(bounds)
   end
   
   local centerXPos = rightStart + rightWidth * 0.5
-  local startX = centerXPos - totalWidth * 0.5
+  local startX = centerXPos - totalWidth * 0.5 - 70 -- Shift enemies left by 70px (matching Visuals.lua)
   
   -- Account for current lunge
   local function lungeOffset(enemy, t)
@@ -1150,7 +1150,7 @@ function BattleScene:getEnemyHitPoint(bounds)
     end
     
     local centerX = rightStart + rightWidth * 0.5
-    local startX = centerX - totalWidth * 0.5
+    local startX = centerX - totalWidth * 0.5 - 70 -- Shift enemies left by 70px (matching Visuals.lua)
     
     -- Calculate X position for the selected enemy
     local enemyX = startX

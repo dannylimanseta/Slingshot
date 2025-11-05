@@ -28,8 +28,7 @@ function ImpactSystem.create(scene, blockCount, isCrit, isAOE)
   else
     -- Get hit point for selected enemy only
   local hitX, hitY = scene:getEnemyHitPoint({ x = 0, y = 0, w = w, h = h, center = { x = centerX, w = centerW, h = h } })
-  -- Shift impact sprites slightly to the left for better visual centering
-  hitX = hitX - 20
+  -- Use hit point directly (already centered on enemy)
     table.insert(hitPoints, { x = hitX, y = hitY, enemyIndex = scene.selectedEnemyIndex })
   end
   
@@ -52,11 +51,6 @@ function ImpactSystem.create(scene, blockCount, isCrit, isAOE)
     local hitX = hitPoint.x
     local hitY = hitPoint.y
     local enemyIndex = hitPoint.enemyIndex
-    
-    -- Shift impact sprites slightly to the left for better visual centering (only for first hit point in non-AOE)
-    if hitPointIdx == 1 and not isAOE then
-      hitX = hitX - 20
-    end
 
   for i = 1, spriteCount do
     local anim = {

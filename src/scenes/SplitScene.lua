@@ -591,8 +591,9 @@ function SplitScene:draw()
       love.graphics.pop()
     end
     
-    -- Draw text
-    theme.drawTextWithOutline(text, -textW * 0.5, -font:getHeight() * 0.5, 1, 1, 1, alpha, 4)
+    -- Draw text (no outline)
+    love.graphics.setColor(1, 1, 1, alpha)
+    love.graphics.print(text, -textW * 0.5, -font:getHeight() * 0.5)
     love.graphics.pop()
     
     love.graphics.setFont(theme.fonts.base)
