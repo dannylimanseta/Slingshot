@@ -12,6 +12,7 @@ local TurnManager = require("core.TurnManager")
 local TopBar = require("ui.TopBar")
 local PlayerState = require("core.PlayerState")
 local battle_profiles = require("data.battle_profiles")
+local ParticleManager = require("managers.ParticleManager")
 
 local BattleScene = {}
 BattleScene.__index = BattleScene
@@ -104,6 +105,8 @@ function BattleScene.new()
     -- Enemy selection
     selectedEnemyIndex = 1, -- Index of currently selected enemy (1 = leftmost)
     selectedIndicatorImg = nil, -- Image for selection indicator
+    -- Particle system
+    particles = ParticleManager.new(),
   }, BattleScene)
 end
 
@@ -417,6 +420,11 @@ function BattleScene:update(dt, bounds)
   -- Update impact system (slashes, flashes, knockback)
   ImpactSystem.update(self, dt)
   
+  -- Update particle system
+  if self.particles then
+    self.particles:update(dt)
+  end
+  
   -- Sync PlayerState with BattleScene's playerHP (for top bar display)
   local playerState = PlayerState.getInstance()
   playerState:setHealth(self.playerHP)
@@ -643,6 +651,13 @@ function BattleScene:update(dt, bounds)
           self.playerKnockbackTime = 1e-6
           table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
           pushLog(self, "Enemy " .. delayData.index .. " dealt " .. net)
+          -- Emit hit burst particles from player center
+          if self.particles then
+            local px, py = self:getPlayerCenterPivot(self._lastBounds)
+            if px and py then
+              self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
+            end
+          end
           if self.onPlayerDamage then
             self.onPlayerDamage()
           end
@@ -695,6 +710,13 @@ function BattleScene:update(dt, bounds)
               enemy.flash = config.battle.hitFlashDuration
               enemy.knockbackTime = 1e-6
               table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy", enemyIndex = i })
+              -- Emit hit burst particles from enemy center
+              if self.particles then
+                local ex, ey = self:getEnemyCenterPivot(i, self._lastBounds)
+                if ex and ey then
+                  self.particles:emitHitBurst(ex, ey, nil, impactIsCrit) -- Uses default colors, crit mode if applicable
+                end
+              end
               
               -- Check if enemy is defeated
               if enemy.hp <= 0 then
@@ -735,6 +757,13 @@ function BattleScene:update(dt, bounds)
             selectedEnemy.flash = config.battle.hitFlashDuration
             selectedEnemy.knockbackTime = 1e-6
             table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy", enemyIndex = i })
+            -- Emit hit burst particles from enemy center
+            if self.particles then
+              local ex, ey = self:getEnemyCenterPivot(i, self._lastBounds)
+              if ex and ey then
+                self.particles:emitHitBurst(ex, ey, nil, impactIsCrit) -- Uses default colors, crit mode if applicable
+              end
+            end
         
             -- Check if enemy is defeated
             if selectedEnemy.hp <= 0 then
@@ -835,6 +864,11 @@ end
 function BattleScene:draw(bounds)
   Visuals.draw(self, bounds)
   
+  -- Draw particles (above sprites but below UI)
+  if self.particles then
+    self.particles:draw()
+  end
+  
   -- Draw top bar on top (z-order)
   if self.topBar then
     self.topBar:draw()
@@ -885,6 +919,13 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
     self.playerFlash = config.battle.hitFlashDuration
     self.playerKnockbackTime = 1e-6
     table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
+    -- Emit hit burst particles from player center
+    if self.particles then
+      local px, py = self:getPlayerCenterPivot(self._lastBounds)
+      if px and py then
+        self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
+      end
+    end
           pushLog(self, "Enemy " .. i .. " dealt " .. net)
     if self.onPlayerDamage then
       self.onPlayerDamage()
@@ -1019,6 +1060,154 @@ function BattleScene:getSelectedEnemy()
     return self.enemies[self.selectedEnemyIndex]
   end
   return nil
+end
+
+-- Get player sprite center pivot position (for particle effects)
+function BattleScene:getPlayerCenterPivot(bounds)
+  local w = (bounds and bounds.w) or (self._lastBounds and self._lastBounds.w) or love.graphics.getWidth()
+  local h = (bounds and bounds.h) or (self._lastBounds and self._lastBounds.h) or love.graphics.getHeight()
+  local center = (bounds and bounds.center) or (self._lastBounds and self._lastBounds.center) or nil
+  local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
+  local leftWidth = math.max(0, centerX)
+  local r = 24
+  local yOffset = (config.battle and config.battle.positionOffsetY) or 0
+  local baselineY = h * 0.55 + r + yOffset
+  local playerX = (leftWidth > 0) and (leftWidth * 0.5) or (12 + r)
+  
+  -- Calculate player position with lunge/knockback offsets
+  local function lungeOffset(t, pauseActive)
+    if not t or t <= 0 then return 0 end
+    local d = config.battle.lungeDuration or 0
+    local rdur = config.battle.lungeReturnDuration or 0
+    local dist = config.battle.lungeDistance or 0
+    if t < d then
+      return dist * (t / math.max(0.0001, d))
+    elseif pauseActive and t < d + rdur then
+      return dist
+    elseif t < d + rdur then
+      local tt = (t - d) / math.max(0.0001, rdur)
+      return dist * (1 - tt)
+    else
+      return 0
+    end
+  end
+  
+  local function knockbackOffset(t)
+    if not t or t <= 0 then return 0 end
+    local d = config.battle.knockbackDuration or 0
+    local rdur = config.battle.knockbackReturnDuration or 0
+    local dist = config.battle.knockbackDistance or 0
+    if t < d then
+      return dist * (t / math.max(0.0001, d))
+    elseif t < d + rdur then
+      local tt = (t - d) / math.max(0.0001, rdur)
+      return dist * (1 - tt)
+    else
+      return 0
+    end
+  end
+  
+  local playerLunge = lungeOffset(self.playerLungeTime, (self.impactInstances and #self.impactInstances > 0))
+  local playerKB = knockbackOffset(self.playerKnockbackTime)
+  local curPlayerX = playerX + playerLunge - playerKB
+  
+  -- Calculate player sprite visual center
+  local playerScaleCfg = (config.battle and (config.battle.playerSpriteScale or config.battle.spriteScale)) or 1
+  local playerScale = 1
+  if self.playerImg then
+    local ih = self.playerImg:getHeight()
+    playerScale = ((2 * r) / math.max(1, ih)) * playerScaleCfg * (self.playerScaleMul or 1)
+  end
+  
+  local playerSpriteHeight = self.playerImg and (self.playerImg:getHeight() * playerScale) or (r * 2)
+  local playerSpriteCenterX = curPlayerX
+  local playerSpriteCenterY = baselineY - playerSpriteHeight * 0.5
+  
+  return playerSpriteCenterX, playerSpriteCenterY
+end
+
+-- Get enemy sprite center pivot position (for particle effects)
+function BattleScene:getEnemyCenterPivot(enemyIndex, bounds)
+  if not enemyIndex or not self.enemies or not self.enemies[enemyIndex] then
+    return nil, nil
+  end
+  
+  local enemy = self.enemies[enemyIndex]
+  local w = (bounds and bounds.w) or (self._lastBounds and self._lastBounds.w) or love.graphics.getWidth()
+  local h = (bounds and bounds.h) or (self._lastBounds and self._lastBounds.h) or love.graphics.getHeight()
+  local center = (bounds and bounds.center) or (self._lastBounds and self._lastBounds.center) or nil
+  local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
+  local centerW = center and center.w or math.floor(w * 0.5)
+  local rightStart = centerX + centerW
+  local rightWidth = math.max(0, w - rightStart)
+  local r = 24
+  local yOffset = (config.battle and config.battle.positionOffsetY) or 0
+  local baselineY = h * 0.55 + r + yOffset
+  
+  -- Calculate enemy position dynamically (matching Visuals.lua logic)
+  local enemyScales = {}
+  local enemyWidths = {}
+  local totalWidth = 0
+  local battleProfile = self._battleProfile or {}
+  local gapCfg = battleProfile.enemySpacing
+  local enemyCount = #self.enemies
+  local gap
+  if type(gapCfg) == "table" then
+    gap = gapCfg[enemyCount] or gapCfg.default or 0
+  else
+    gap = gapCfg or -20
+  end
+  
+  for i, e in ipairs(self.enemies) do
+    local scaleCfg = e.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
+    local scale = 1
+    if e.img then
+      local ih = e.img:getHeight()
+      scale = ((2 * r) / math.max(1, ih)) * scaleCfg * (e.scaleMul or 1)
+    end
+    enemyScales[i] = scale
+    enemyWidths[i] = e.img and (e.img:getWidth() * scale) or (r * 2)
+    totalWidth = totalWidth + enemyWidths[i]
+    if i < #self.enemies then
+      totalWidth = totalWidth + gap
+    end
+  end
+  
+  local centerXPos = rightStart + rightWidth * 0.5
+  local startX = centerXPos - totalWidth * 0.5 - 70 -- Shift enemies left by 70px
+  
+  -- Calculate X position for this enemy
+  local enemyX = startX
+  for j = 1, enemyIndex - 1 do
+    enemyX = enemyX + enemyWidths[j] + gap
+  end
+  enemyX = enemyX + enemyWidths[enemyIndex] * 0.5
+  
+  -- Account for enemy lunge
+  local function lungeOffset(enemy, t)
+    if not t or t <= 0 then return 0 end
+    local d = config.battle.lungeDuration or 0
+    local rdur = config.battle.lungeReturnDuration or 0
+    local dist = config.battle.lungeDistance or 0
+    if t < d then
+      return dist * (t / math.max(0.0001, d))
+    elseif t < d + rdur then
+      local tt = (t - d) / math.max(0.0001, rdur)
+      return dist * (1 - tt)
+    else
+      return 0
+    end
+  end
+  
+  local enemyLunge = lungeOffset(enemy, enemy.lungeTime)
+  local curEnemyX = enemyX - enemyLunge
+  
+  -- Calculate enemy sprite visual center
+  local enemySpriteHeight = enemy.img and (enemy.img:getHeight() * enemyScales[enemyIndex]) or (r * 2)
+  local spriteCenterX = curEnemyX
+  local spriteCenterY = baselineY - enemySpriteHeight * 0.5
+  
+  return spriteCenterX, spriteCenterY
 end
 
 -- Select next enemy to the right (or wrap to first if at end)

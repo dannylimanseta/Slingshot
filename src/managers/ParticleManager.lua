@@ -34,8 +34,32 @@ local function makeTriangleImage(diameter)
   return love.graphics.newImage(data)
 end
 
+local function makeCircleImage(diameter)
+  local data = love.image.newImageData(diameter, diameter)
+  local cx = (diameter - 1) * 0.5
+  local cy = (diameter - 1) * 0.5
+  local radius = diameter * 0.4 -- radius of circle
+  
+  data:mapPixel(function(x, y)
+    local dx = x - cx
+    local dy = y - cy
+    local distSq = dx * dx + dy * dy
+    local radiusSq = radius * radius
+    if distSq <= radiusSq then
+      return 1, 1, 1, 1
+    else
+      return 1, 1, 1, 0
+    end
+  end)
+  return love.graphics.newImage(data)
+end
+
 function ParticleManager.new()
-  return setmetatable({ systems = {}, img = makeTriangleImage(32) }, ParticleManager)
+  return setmetatable({ 
+    systems = {}, 
+    img = makeTriangleImage(32),
+    circleImg = makeCircleImage(32)
+  }, ParticleManager)
 end
 
 local function makeSpark(img, x, y, color)
@@ -114,6 +138,65 @@ end
 
 function ParticleManager:emitExplosion(x, y, color)
   table.insert(self.systems, makeExplosion(self.img, x, y, color))
+end
+
+local function makeHitBurst(img, x, y, color, isCrit)
+  -- Default colors: FFE7B3 (lighter) to D79752 (darker)
+  -- FFE7B3 = RGB(255, 231, 179) = (1.0, 0.906, 0.702)
+  -- D79752 = RGB(215, 151, 82) = (0.843, 0.592, 0.322)
+  local lightR, lightG, lightB = 1.0, 0.906, 0.702
+  local darkR, darkG, darkB = 0.843, 0.592, 0.322
+  
+  -- Use provided color or calculate midpoint between light and dark
+  local r, g, b
+  if color then
+    r, g, b = color[1] or 0.922, color[2] or 0.749, color[3] or 0.512
+  else
+    -- Midpoint between light and dark
+    r, g, b = (lightR + darkR) * 0.5, (lightG + darkG) * 0.5, (lightB + darkB) * 0.5
+  end
+  
+  -- Crit mode: increase particle count and speed/intensity
+  local particleCount = isCrit and 35 or 20
+  local minSpeed = isCrit and 300 or 200
+  local maxSpeed = isCrit and 600 or 400
+  local minAccelY = isCrit and 500 or 400
+  local maxAccelY = isCrit and 1000 or 800
+  
+  local ps = love.graphics.newParticleSystem(img, 32)
+  -- Lifetime: particles burst outward then fall
+  ps:setParticleLifetime(0.4, 0.8)
+  ps:setEmissionRate(0)
+  -- Size: start small, grow slightly, then shrink as they fade
+  -- Wider size range for more variation
+  ps:setSizes(0.2, 0.6, 0.08)
+  -- Initial burst: particles spurt outward in all directions
+  -- Increased speed for crit hits
+  ps:setSpeed(minSpeed, maxSpeed)
+  ps:setSpread(2 * math.pi) -- Full 360 degree spread
+  -- Linear acceleration: gravity pulls particles down after initial burst
+  -- Horizontal: slight random drift (-20 to 20)
+  -- Vertical: strong downward gravity (increased for crit)
+  ps:setLinearAcceleration(-20, minAccelY, 20, maxAccelY)
+  -- Random rotation
+  ps:setRotation(0, 2 * math.pi)
+  -- Size variation for visual diversity (increased for more variation)
+  ps:setSizeVariation(0.6)
+  -- Color transition: start bright (FFE7B3), fade to darker (D79752)
+  ps:setColors(
+    lightR, lightG, lightB, 1,  -- Start: lighter color (FFE7B3), full opacity
+    r, g, b, 1,  -- Early: midpoint color
+    r, g, b, 0.9,  -- Mid: midpoint color, slight fade
+    darkR, darkG, darkB, 0.5,  -- Late: darker color (D79752), more fade
+    darkR * 0.7, darkG * 0.7, darkB * 0.7, 0  -- End: very dark, fully transparent
+  )
+  ps:moveTo(x, y)
+  ps:emit(particleCount) -- More particles for crit hits
+  return ps
+end
+
+function ParticleManager:emitHitBurst(x, y, color, isCrit)
+  table.insert(self.systems, makeHitBurst(self.circleImg, x, y, color, isCrit))
 end
 
 function ParticleManager:update(dt)
