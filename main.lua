@@ -6,6 +6,7 @@ local SceneManager = require("core.SceneManager")
 local MapScene = require("scenes.MapScene")
 local SplitScene = require("scenes.SplitScene")
 local FormationEditorScene = require("scenes.FormationEditorScene")
+local RewardsScene = require("scenes.RewardsScene")
 
 local sceneManager
 local screenCanvas
@@ -14,6 +15,7 @@ local scaleFactor = 1
 local offsetX, offsetY = 0, 0
 local previousScene = nil -- Store previous scene when switching to formation editor
 local mapScene = nil -- Store map scene to return to after battle
+local pendingBattleVictory = false -- Set when transitioning to RewardsScene after victory
 
 local function updateScreenScale()
   local winW, winH = love.graphics.getDimensions()
@@ -52,29 +54,36 @@ function love.update(deltaTime)
       -- Switch to battle (SplitScene)
       sceneManager:set(SplitScene.new())
     elseif type(result) == "table" and result.type == "return_to_map" then
-      -- Return to map scene from battle (victory/defeat)
-      if mapScene then
-        -- Set victory status before switching
-        if result.victory then
-          mapScene._battleVictory = true
-        end
-        sceneManager:set(mapScene)
-        previousScene = nil
+      -- If victory, show RewardsScene first, then return to map with victory flag
+      if result.victory then
+        pendingBattleVictory = true
+        local rewardsScene = RewardsScene.new({ victory = true })
+        sceneManager:set(rewardsScene)
       else
-        -- Create new map scene if none exists
-        mapScene = MapScene.new()
-        if result.victory then
-          mapScene._battleVictory = true
+        -- Defeat or non-victory: go straight back to map
+        if mapScene then
+          sceneManager:set(mapScene)
+          previousScene = nil
+        else
+          mapScene = MapScene.new()
+          sceneManager:set(mapScene)
         end
-        sceneManager:set(mapScene)
       end
     elseif result == "return_to_map" then
-      -- Backward compatibility: handle string return
+      -- Returning to map from RewardsScene (or other scenes)
       if mapScene then
+        if pendingBattleVictory then
+          mapScene._battleVictory = true
+          pendingBattleVictory = false
+        end
         sceneManager:set(mapScene)
         previousScene = nil
       else
         mapScene = MapScene.new()
+        if pendingBattleVictory then
+          mapScene._battleVictory = true
+          pendingBattleVictory = false
+        end
         sceneManager:set(mapScene)
       end
     end
