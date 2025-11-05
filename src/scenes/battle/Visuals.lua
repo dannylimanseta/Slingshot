@@ -392,19 +392,30 @@ function Visuals.draw(scene, bounds)
       local variation = pulseConfig.brightnessVariation or 0.08
       brightnessMultiplier = 1 + math.sin(scene.playerPulseTime or 0) * variation
     end
-    love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, drawAlpha)
-    love.graphics.draw(scene.playerImg, curPlayerX, baselineY, tilt, sx, sy, iw * 0.5, ih)
-    if scene.playerFlash and scene.playerFlash > 0 then
-      local base = scene.playerFlash / math.max(0.0001, config.battle.hitFlashDuration)
-      local a = math.min(1, base * ((config.battle and config.battle.hitFlashAlphaScale) or 1))
-      local passes = (config.battle and config.battle.hitFlashPasses) or 1
-      love.graphics.setBlendMode("add")
-      love.graphics.setColor(1, 1, 1, a * (drawAlpha or 1))
-      for i = 1, math.max(1, passes) do
-        love.graphics.draw(scene.playerImg, curPlayerX, baselineY, scene.playerRotation or 0, sx, sy, iw * 0.5, ih)
-      end
+    if scene.playerFlash and scene.playerFlash > 0 and scene.whiteSilhouetteShader then
+      -- Solid white silhouette (override base sprite)
+      love.graphics.setShader(scene.whiteSilhouetteShader)
+      scene.whiteSilhouetteShader:send("u_alpha", 1.0)
       love.graphics.setBlendMode("alpha")
+      love.graphics.setColor(1, 1, 1, drawAlpha)
+      love.graphics.draw(scene.playerImg, curPlayerX, baselineY, scene.playerRotation or 0, sx, sy, iw * 0.5, ih)
+      love.graphics.setShader()
+      love.graphics.setColor(1, 1, 1, 1)
+    else
       love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, drawAlpha)
+      love.graphics.draw(scene.playerImg, curPlayerX, baselineY, tilt, sx, sy, iw * 0.5, ih)
+      if scene.playerFlash and scene.playerFlash > 0 then
+        local base = scene.playerFlash / math.max(0.0001, config.battle.hitFlashDuration)
+        local a = math.min(1, base * ((config.battle and config.battle.hitFlashAlphaScale) or 1)) * (drawAlpha or 1)
+        local passes = (config.battle and config.battle.hitFlashPasses) or 1
+        love.graphics.setBlendMode("add")
+        love.graphics.setColor(1, 1, 1, a)
+        for i = 1, math.max(1, passes) do
+          love.graphics.draw(scene.playerImg, curPlayerX, baselineY, scene.playerRotation or 0, sx, sy, iw * 0.5, ih)
+        end
+        love.graphics.setBlendMode("alpha")
+        love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, drawAlpha)
+      end
     end
   else
     local brightnessMultiplier = 1
@@ -496,24 +507,35 @@ function Visuals.draw(scene, bounds)
           love.graphics.translate(-pos.curX, -pos.y)
         end
         
-        love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, 1)
-        love.graphics.draw(enemy.img, pos.curX, pos.y, tilt, sx, sy, iw * 0.5, ih)
-        
-        if enemy.disintegrating and scene.disintegrationShader then
-          love.graphics.setShader()
-        end
-        
-        if enemy.flash and enemy.flash > 0 and not enemy.disintegrating then
-          local base = enemy.flash / math.max(0.0001, config.battle.hitFlashDuration)
-          local a = math.min(1, base * ((config.battle and config.battle.hitFlashAlphaScale) or 1) * 1.5) -- Increase brightness by 50%
-          local passes = (config.battle and config.battle.hitFlashPasses) or 1
-          love.graphics.setBlendMode("add")
-          love.graphics.setColor(1, 1, 1, a)
-          for j = 1, math.max(1, passes) do
-            love.graphics.draw(enemy.img, pos.curX, pos.y, enemy.rotation or 0, sx, sy, iw * 0.5, ih)
-          end
+        if enemy.flash and enemy.flash > 0 and not enemy.disintegrating and scene.whiteSilhouetteShader then
+          -- Solid white silhouette (override base sprite)
+          love.graphics.setShader(scene.whiteSilhouetteShader)
+          scene.whiteSilhouetteShader:send("u_alpha", 1.0)
           love.graphics.setBlendMode("alpha")
+          love.graphics.setColor(1, 1, 1, 1)
+          love.graphics.draw(enemy.img, pos.curX, pos.y, enemy.rotation or 0, sx, sy, iw * 0.5, ih)
+          love.graphics.setShader()
+          love.graphics.setColor(1, 1, 1, 1)
+        else
           love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, 1)
+          love.graphics.draw(enemy.img, pos.curX, pos.y, tilt, sx, sy, iw * 0.5, ih)
+
+          if enemy.disintegrating and scene.disintegrationShader then
+            love.graphics.setShader()
+          end
+
+          if enemy.flash and enemy.flash > 0 and not enemy.disintegrating then
+            local base = enemy.flash / math.max(0.0001, config.battle.hitFlashDuration)
+            local a = math.min(1, base * ((config.battle and config.battle.hitFlashAlphaScale) or 1))
+            local passes = (config.battle and config.battle.hitFlashPasses) or 1
+            love.graphics.setBlendMode("add")
+            love.graphics.setColor(1, 1, 1, a)
+            for j = 1, math.max(1, passes) do
+              love.graphics.draw(enemy.img, pos.curX, pos.y, enemy.rotation or 0, sx, sy, iw * 0.5, ih)
+            end
+            love.graphics.setBlendMode("alpha")
+            love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, 1)
+          end
         end
         
         love.graphics.pop()

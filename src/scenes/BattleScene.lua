@@ -3,6 +3,7 @@ local theme = require("theme")
 local Bar = require("ui.Bar")
 local SpriteAnimation = require("utils.SpriteAnimation")
 local DisintegrationShader = require("utils.DisintegrationShader")
+local WhiteSilhouetteShader = require("utils.WhiteSilhouetteShader")
 local FogShader = require("utils.FogShader")
 local ImpactSystem = require("scenes.battle.ImpactSystem")
 local Animations = require("scenes.battle.Animations")
@@ -86,6 +87,7 @@ function BattleScene.new()
     enemyFlashEvents = {}, -- Array of {delay, duration} for staggered flashes
     enemyKnockbackEvents = {}, -- Array of {delay, startTime} for staggered knockbacks
     disintegrationShader = nil,
+    whiteSilhouetteShader = nil,
     -- Lunge speed streaks
     lungeStreaks = {},
     lungeStreakAcc = 0,
@@ -188,6 +190,16 @@ function BattleScene:load(bounds, battleProfile)
   else
     -- Shader failed to load, disable disintegration effect
     self.disintegrationShader = nil
+  end
+
+  -- Load white silhouette shader
+  do
+    local okWhite, wshader = pcall(function() return WhiteSilhouetteShader.getShader() end)
+    if okWhite and wshader then
+      self.whiteSilhouetteShader = wshader
+    else
+      self.whiteSilhouetteShader = nil
+    end
   end
   
   -- Load fog shader
