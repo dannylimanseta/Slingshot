@@ -247,7 +247,7 @@ function Visuals.draw(scene, bounds)
         local currentHP = enemy.displayHP or enemy.hp
         Bar:draw(enemyBarX, barY, enemyBarW, barH, currentHP, maxHP, barColor, barAlpha)
 
-        local enemyLabel = i == 1 and "Enemy" or ("Enemy " .. i)
+        local enemyLabel = (enemy and enemy.name) or (i == 1 and "Enemy" or ("Enemy " .. i))
         love.graphics.setColor(theme.colors.uiText[1], theme.colors.uiText[2], theme.colors.uiText[3], theme.colors.uiText[4] * barAlpha)
         drawCenteredText(enemyLabel, enemyBarX, barY + barH + 6, enemyBarW)
         love.graphics.pop()

@@ -3,6 +3,7 @@ local theme = require("theme")
 local battle_profiles = require("data.battle_profiles")
 local block_types = require("data.block_types")
 local TopBar = require("ui.TopBar")
+local EncounterManager = require("core.EncounterManager")
 
 -- Shared sprites for blocks (dynamically loaded from block_types registry)
 local SPRITES = {}
@@ -17,6 +18,191 @@ do
         SPRITES[blockType.key] = img
       end
     end
+  end
+end
+
+-- Ensure table exists before any method definitions inserted above
+local FormationEditorScene = {}
+
+-- Save current blocks into a specific encounter's blockFormation as predefined
+function FormationEditorScene:saveFormationEncounter(encounterId)
+  if not encounterId then
+    self:showStatus("Error: No encounter context available")
+    return
+  end
+
+  local function round3(value)
+    return tonumber(string.format("%.3f", value or 0))
+  end
+
+  local newBlocks = {}
+  for _, block in ipairs(self.blocks) do
+    table.insert(newBlocks, {
+      x = round3(block.x),
+      y = round3(block.y),
+      kind = block.kind or "damage",
+      hp = block.hp or 1,
+    })
+  end
+
+  -- Load current encounters data
+  local encountersModule = require("data.encounters")
+  local encounterList = encountersModule.list()
+  local targetEncounter
+  for _, enc in ipairs(encounterList) do
+    if enc.id == encounterId then
+      targetEncounter = enc
+      break
+    end
+  end
+
+  if not targetEncounter then
+    self:showStatus("Error: Encounter " .. tostring(encounterId) .. " not found")
+    return
+  end
+
+  -- Update encounter block formation in memory
+  targetEncounter.blockFormation = targetEncounter.blockFormation or {}
+  targetEncounter.blockFormation.type = "predefined"
+  targetEncounter.blockFormation.predefined = newBlocks
+
+  local KEY_ORDER = {
+    "id",
+    "label",
+    "difficulty",
+    "tags",
+    "centerWidthFactor",
+    "enemySpacing",
+    "enemies",
+    "formationId",
+    "blockFormation",
+  }
+  local KEY_PRIORITY = {}
+  for index, key in ipairs(KEY_ORDER) do
+    KEY_PRIORITY[key] = index
+  end
+
+  local function isArray(tbl)
+    local count = 0
+    local maxIndex = 0
+    for k in pairs(tbl) do
+      if type(k) ~= "number" then return false end
+      if k > maxIndex then maxIndex = k end
+      count = count + 1
+    end
+    return maxIndex == count
+  end
+
+  local function serializeValue(value, indentLevel)
+    indentLevel = indentLevel or 0
+    local indent = string.rep("  ", indentLevel)
+    if type(value) == "table" then
+      if next(value) == nil then
+        return "{}"
+      end
+      local nextIndent = string.rep("  ", indentLevel + 1)
+      if isArray(value) then
+        local parts = {"{"}
+        local length = #value
+        for index, item in ipairs(value) do
+          local serialized = serializeValue(item, indentLevel + 1)
+          serialized = serialized:gsub("\n", "\n" .. nextIndent)
+          local line = nextIndent .. serialized
+          if index < length then
+            line = line .. ","
+          end
+          table.insert(parts, line)
+        end
+        table.insert(parts, indent .. "}")
+        return table.concat(parts, "\n")
+      else
+        local keys = {}
+        for k in pairs(value) do table.insert(keys, k) end
+        table.sort(keys, function(a, b)
+          local pa = KEY_PRIORITY[a] or (#KEY_ORDER + 1)
+          local pb = KEY_PRIORITY[b] or (#KEY_ORDER + 1)
+          if pa ~= pb then return pa < pb end
+          return tostring(a) < tostring(b)
+        end)
+        local parts = {"{"}
+        for idx, key in ipairs(keys) do
+          local keyRep
+          if type(key) == "string" and key:match("^%a[%w_]*$") then
+            keyRep = key .. " = "
+          else
+            keyRep = "[" .. serializeValue(key, 0) .. "] = "
+          end
+          local serialized = serializeValue(value[key], indentLevel + 1)
+          serialized = serialized:gsub("\n", "\n" .. nextIndent)
+          local line = nextIndent .. keyRep .. serialized
+          if idx < #keys then
+            line = line .. ","
+          end
+          table.insert(parts, line)
+        end
+        table.insert(parts, indent .. "}")
+        return table.concat(parts, "\n")
+      end
+    elseif type(value) == "string" then
+      return string.format("%q", value)
+    elseif type(value) == "number" or type(value) == "boolean" then
+      return tostring(value)
+    elseif value == nil then
+      return "nil"
+    else
+      error("Unsupported value type: " .. type(value))
+    end
+  end
+
+  local serializedEncounters = serializeValue(encounterList, 0)
+
+  local lines = {
+    'local enemies = require("data.enemies")',
+    'local formations = require("data.formations")',
+    '',
+    'local M = {}',
+    '',
+    '-- Declarative encounter definitions',
+    '-- Each encounter resolves to a battle profile via EncounterManager',
+    'local ENCOUNTERS = ' .. serializedEncounters,
+    '',
+    '-- Index by id for quick lookup',
+    'local INDEX = {}',
+    'for _, enc in ipairs(ENCOUNTERS) do',
+    '\tINDEX[enc.id] = enc',
+    'end',
+    '',
+    'function M.get(id)',
+    '\treturn INDEX[id]',
+    'end',
+    '',
+    'function M.list()',
+    '\treturn ENCOUNTERS',
+    'end',
+    '',
+    'return M',
+    '',
+  }
+
+  local content = table.concat(lines, "\n")
+  local filePath = "src/data/encounters.lua"
+  local out = io.open(filePath, "w")
+  if not out then
+    self:showStatus("Error: Could not write encounters.lua")
+    return
+  end
+  out:write(content)
+  out:close()
+
+  self:showStatus("Formation saved to encounter: " .. tostring(encounterId))
+  if EncounterManager and EncounterManager.reloadDatasets then
+    EncounterManager.reloadDatasets()
+    if EncounterManager.setEncounterById then
+      EncounterManager.setEncounterById(encounterId)
+    end
+  end
+  if self.previousScene and self.previousScene.reloadBlocks then
+    self.previousScene:reloadBlocks()
   end
 end
 
@@ -52,7 +238,7 @@ do
   end
 end
 
-local FormationEditorScene = {}
+FormationEditorScene = FormationEditorScene or {}
 FormationEditorScene.__index = FormationEditorScene
 
 function FormationEditorScene.new()
@@ -80,6 +266,8 @@ function FormationEditorScene.new()
     -- Previous scene reference (to return to)
     previousScene = nil,
     topBar = TopBar.new(),
+    -- Current encounter context (if opened from battle)
+    currentEncounterId = nil,
   }, FormationEditorScene)
 end
 
@@ -117,6 +305,11 @@ function FormationEditorScene:load()
   local editorHeightMultiplier = 1.3
   self.playfieldH = (h * maxHeightFactor - margin) * editorHeightMultiplier
   
+  -- Capture current encounter context if available
+  if EncounterManager and EncounterManager.getCurrentEncounterId then
+    self.currentEncounterId = EncounterManager.getCurrentEncounterId()
+  end
+
   -- Load existing formation for current battle type
   self:loadFormation()
   
@@ -501,8 +694,12 @@ end
 
 function FormationEditorScene:keypressed(key, scancode, isRepeat)
   if key == "escape" then
+    -- Auto-save to active encounter (if any), then exit
+    if self.currentEncounterId then
+      self:saveFormationEncounter(self.currentEncounterId)
+    end
     -- Exit editor and restart the game
-    -- Signal to main.lua to restart with a new game
+    -- Signal to main.lua to restart with previous scene
     return "restart"
   end
   
@@ -675,6 +872,29 @@ function FormationEditorScene:drawGrid()
 end
 
 function FormationEditorScene:loadFormation()
+  -- Prefer loading from active encounter if available
+  if self.currentEncounterId then
+    local encounters = require("data.encounters")
+    local enc = encounters.get(self.currentEncounterId)
+    self.selectedBlockIndex = nil
+    if enc and enc.blockFormation and enc.blockFormation.type == "predefined" and enc.blockFormation.predefined then
+      self.blocks = {}
+      for _, block in ipairs(enc.blockFormation.predefined) do
+        table.insert(self.blocks, {
+          x = block.x or 0.5,
+          y = block.y or 0.5,
+          kind = block.kind or "damage",
+          hp = block.hp or 1,
+        })
+      end
+      self:showStatus("Formation loaded from encounter " .. tostring(self.currentEncounterId))
+      return
+    else
+      self.blocks = {}
+      self:showStatus("No predefined formation on encounter; starting empty")
+      return
+    end
+  end
   local profile = battle_profiles.getProfile(self.currentBattleType)
   -- Clear selection when loading
   self.selectedBlockIndex = nil
@@ -704,6 +924,10 @@ function FormationEditorScene:loadFormation()
 end
 
 function FormationEditorScene:saveFormation()
+  -- If editing within an encounter, save into encounters.lua instead
+  if self.currentEncounterId then
+    return self:saveFormationEncounter(self.currentEncounterId)
+  end
   -- Read the battle_profiles.lua file
   -- Try to read from source using io first (for development)
   local filePath = "src/data/battle_profiles.lua"

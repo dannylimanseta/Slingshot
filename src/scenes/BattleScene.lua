@@ -37,6 +37,7 @@ local function createEnemyFromConfig(enemyConfig, index)
     damageMin = enemyConfig.damageMin or 3,
     damageMax = enemyConfig.damageMax or 8,
     spritePath = enemyConfig.sprite, -- Store path for loading
+    name = enemyConfig.name, -- Display name (optional)
     index = index, -- Position in array (for reference)
   }
 end

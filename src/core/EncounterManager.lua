@@ -1,6 +1,18 @@
-local enemies = require("data.enemies")
-local formations = require("data.formations")
-local encounters = require("data.encounters")
+local enemiesModulePath = "data.enemies"
+local formationsModulePath = "data.formations"
+local encountersModulePath = "data.encounters"
+
+local enemies
+local formations
+local encounters
+
+local function loadDatasets()
+	enemies = require(enemiesModulePath)
+	formations = require(formationsModulePath)
+	encounters = require(encountersModulePath)
+end
+
+loadDatasets()
 
 local EncounterManager = {}
 EncounterManager.__index = EncounterManager
@@ -46,8 +58,8 @@ local function resolveFormation(enc)
 			return { type = "predefined", predefined = def.predefined }
 		end
 	end
-	-- If random formation provided directly
-	if enc.blockFormation and enc.blockFormation.type == "random" then
+	-- If blockFormation provided directly (predefined or random)
+	if enc.blockFormation and enc.blockFormation.type then
 		return deepcopy(enc.blockFormation)
 	end
 	-- Fallback to default random
@@ -107,6 +119,17 @@ function EncounterManager.pickRandomEncounterId(filterFn)
 	if #pool == 0 then return nil end
 	local idx = love.math.random(1, #pool)
 	return pool[idx]
+end
+
+function EncounterManager.reloadDatasets()
+	package.loaded[enemiesModulePath] = nil
+	package.loaded[formationsModulePath] = nil
+	package.loaded[encountersModulePath] = nil
+	loadDatasets()
+	if _currentEncounterId then
+		local enc = encounters.get(_currentEncounterId)
+		_currentBattleProfile = enc and buildBattleProfileFromEncounter(enc) or nil
+	end
 end
 
 return EncounterManager

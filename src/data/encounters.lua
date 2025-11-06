@@ -6,36 +6,127 @@ local M = {}
 -- Declarative encounter definitions
 -- Each encounter resolves to a battle profile via EncounterManager
 local ENCOUNTERS = {
-	{
-		id = "ENCOUNTER_STARTER_1",
-		label = "Patrol",
-		difficulty = 1,
-		tags = { "starter" },
-		centerWidthFactor = 0.43,
-		enemies = { "grunt", "pikeman", "rogue" },
-		formationId = "starter_diamond",
-	},
-	{
-		id = "ENCOUNTER_EASY_WALL",
-		label = "Thin Wall",
-		difficulty = 1,
-		tags = { "easy" },
-		centerWidthFactor = 0.43,
-		enemies = {
-			{ id = "grunt", maxHP = 70 },
-			{ id = "pikeman", maxHP = 45 },
-		},
-		formationId = "thin_wall",
-	},
-	{
-		id = "ENCOUNTER_RANDOM_SWARM",
-		label = "Swarm",
-		difficulty = 2,
-		tags = { "random" },
-		centerWidthFactor = 0.43,
-		enemies = { "grunt", "grunt", "pikeman" },
-		blockFormation = { type = "random", random = { count = 28, clustering = { enabled = true, clusterSizes = { 9, 12 } }, critSpawnRatio = 0.08, armorSpawnRatio = 0.12 } },
-	},
+  {
+      id = "ENCOUNTER_SOLO_FAWN",
+      difficulty = 1,
+      centerWidthFactor = 0.43,
+      enemies = {
+            "fawn"
+          },
+      blockFormation = {
+            predefined = {
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.595,
+                              y = 0.334
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.405,
+                              y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.532,
+                              y = 0.477
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.468,
+                              y = 0.262
+                            },
+                    {
+                              hp = 1,
+                              kind = "crit",
+                              x = 0.468,
+                              y = 0.334
+                            },
+                    {
+                              hp = 1,
+                              kind = "potion",
+                              x = 0.532,
+                              y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.532,
+                              y = 0.334
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.468,
+                              y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.532,
+                              y = 0.262
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.405,
+                              y = 0.334
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.468,
+                              y = 0.477
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.595,
+                              y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.405,
+                              y = 0.048
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.595,
+                              y = 0.048
+                            },
+                    {
+                              hp = 1,
+                              kind = "potion",
+                              x = 0.468,
+                              y = 0.048
+                            },
+                    {
+                              hp = 1,
+                              kind = "crit",
+                              x = 0.532,
+                              y = 0.048
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.468,
+                              y = 0.119
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.532,
+                              y = 0.119
+                            }
+                  },
+            type = "predefined"
+          }
+    }
 }
 
 -- Index by id for quick lookup
@@ -53,5 +144,3 @@ function M.list()
 end
 
 return M
-
-

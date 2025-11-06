@@ -948,13 +948,22 @@ end
 function SplitScene:reloadBlocks()
   if not self.left then return end
   
-  -- Reload battle_profiles module to get updated data
+  -- Reload datasets so encounters use the latest formations
+  if EncounterManager and EncounterManager.reloadDatasets then
+    EncounterManager.reloadDatasets()
+    if EncounterManager.getCurrentEncounterId and EncounterManager.setEncounterById then
+      local currentEncounterId = EncounterManager.getCurrentEncounterId()
+      if currentEncounterId then
+        EncounterManager.setEncounterById(currentEncounterId)
+      end
+    end
+  end
   package.loaded["data.battle_profiles"] = nil
   battle_profiles = require("data.battle_profiles")
   
   -- Get current battle profile
   local currentBattleType = self.layoutManager:getBattleType()
-  local battleProfile = battle_profiles.getProfile(currentBattleType)
+  local battleProfile = (EncounterManager and EncounterManager.getCurrentBattleProfile and EncounterManager.getCurrentBattleProfile()) or battle_profiles.getProfile(currentBattleType)
   
   -- Get bounds for GameplayScene
   local w, h = love.graphics.getDimensions()
