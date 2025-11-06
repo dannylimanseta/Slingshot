@@ -7,18 +7,19 @@ function Bar.new()
   return setmetatable({}, Bar)
 end
 
-function Bar:draw(x, y, w, h, current, max, color)
+function Bar:draw(x, y, w, h, current, max, color, alpha)
+  alpha = alpha or 1
   local ratio = 0
   if max > 0 then ratio = math.max(0, math.min(1, current / max)) end
-  love.graphics.setColor(0, 0, 0, 0.35)
+  love.graphics.setColor(0, 0, 0, 0.35 * alpha)
   love.graphics.rectangle("fill", x, y, w, h, 6, 6)
   -- Only draw colored bar if HP > 0
   if ratio > 0 then
-    love.graphics.setColor(color[1], color[2], color[3], 1)
+    love.graphics.setColor(color[1], color[2], color[3], 1 * alpha)
     love.graphics.rectangle("fill", x, y, w * ratio, h, 6, 6)
   end
   -- Draw black border around HP bar
-  love.graphics.setColor(0, 0, 0, 1)
+  love.graphics.setColor(0, 0, 0, 1 * alpha)
   love.graphics.setLineWidth(2)
   love.graphics.rectangle("line", x, y, w, h, 6, 6)
   -- Centered HP text (current/max) - scaled down by 30%
@@ -35,7 +36,7 @@ function Bar:draw(x, y, w, h, current, max, color)
     local th = font:getHeight() * fontScale
     local tx = (x + (w - tw) * 0.5) / fontScale
     local ty = (y + (h - th) * 0.5) / fontScale
-    theme.drawTextWithOutline(text, tx, ty, 1, 1, 1, 0.95, 2)
+    theme.drawTextWithOutline(text, tx, ty, 1, 1, 1, 0.95 * alpha, 2)
     love.graphics.pop()
   end
   love.graphics.setColor(1, 1, 1, 1)

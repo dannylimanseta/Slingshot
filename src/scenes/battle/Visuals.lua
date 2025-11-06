@@ -242,36 +242,11 @@ function Visuals.draw(scene, bounds)
         love.graphics.push()
         love.graphics.setColor(1, 1, 1, barAlpha)
 
-        love.graphics.setColor(0, 0, 0, 0.35 * barAlpha)
-        love.graphics.rectangle("fill", enemyBarX, barY, enemyBarW, barH, 6, 6)
         local barColor = { 153/255, 224/255, 122/255 }
-        local ratio = 0
         local maxHP = enemy.maxHP
         local currentHP = enemy.displayHP or enemy.hp
-        if maxHP > 0 then ratio = math.max(0, math.min(1, currentHP / maxHP)) end
-        if ratio > 0 then
-          love.graphics.setColor(barColor[1], barColor[2], barColor[3], barAlpha)
-          love.graphics.rectangle("fill", enemyBarX, barY, enemyBarW * ratio, barH, 6, 6)
-        end
-        love.graphics.setColor(0, 0, 0, barAlpha)
-        love.graphics.setLineWidth(2)
-        love.graphics.rectangle("line", enemyBarX, barY, enemyBarW, barH, 6, 6)
-        do
-          local font = theme.fonts.base
-          local fontScale = 0.7 -- 30% reduction
-          love.graphics.push()
-          love.graphics.scale(fontScale, fontScale)
-          love.graphics.setFont(font)
-          local cur = math.max(0, math.floor(currentHP or 0))
-          local mx = math.max(0, math.floor(maxHP or 0))
-          local text = tostring(cur) .. "/" .. tostring(mx)
-          local tw = font:getWidth(text) * fontScale
-          local th = font:getHeight() * fontScale
-          local tx = (enemyBarX + (enemyBarW - tw) * 0.5) / fontScale
-          local ty = (barY + (barH - th) * 0.5) / fontScale
-          theme.drawTextWithOutline(text, tx, ty, 1, 1, 1, 0.95 * barAlpha, 2)
-          love.graphics.pop()
-        end
+        Bar:draw(enemyBarX, barY, enemyBarW, barH, currentHP, maxHP, barColor, barAlpha)
+
         local enemyLabel = i == 1 and "Enemy" or ("Enemy " .. i)
         love.graphics.setColor(theme.colors.uiText[1], theme.colors.uiText[2], theme.colors.uiText[3], theme.colors.uiText[4] * barAlpha)
         drawCenteredText(enemyLabel, enemyBarX, barY + barH + 6, enemyBarW)
