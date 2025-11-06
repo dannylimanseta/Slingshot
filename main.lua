@@ -15,7 +15,6 @@ local scaleFactor = 1
 local offsetX, offsetY = 0, 0
 local previousScene = nil -- Store previous scene when switching to formation editor
 local mapScene = nil -- Store map scene to return to after battle
-local pendingBattleVictory = false -- Set when transitioning to RewardsScene after victory
 
 local function updateScreenScale()
   local winW, winH = love.graphics.getDimensions()
@@ -54,13 +53,17 @@ function love.update(deltaTime)
       -- Switch to battle (SplitScene)
       sceneManager:set(SplitScene.new())
     elseif type(result) == "table" and result.type == "return_to_map" then
-      -- If victory, show RewardsScene first, then return to map with victory flag
+      -- Post-battle flow
       if result.victory then
-        pendingBattleVictory = true
-        local rewardsScene = RewardsScene.new({ victory = true })
-        sceneManager:set(rewardsScene)
+        -- Mark victory on map for any follow-up logic
+        if not mapScene then
+          mapScene = MapScene.new()
+        end
+        mapScene._battleVictory = true
+        -- Show rewards scene before returning to map
+        sceneManager:set(RewardsScene.new())
       else
-        -- Defeat or non-victory: go straight back to map
+        -- Defeat: go straight back to map
         if mapScene then
           sceneManager:set(mapScene)
           previousScene = nil
@@ -70,20 +73,12 @@ function love.update(deltaTime)
         end
       end
     elseif result == "return_to_map" then
-      -- Returning to map from RewardsScene (or other scenes)
+      -- Backward compatibility: handle string return
       if mapScene then
-        if pendingBattleVictory then
-          mapScene._battleVictory = true
-          pendingBattleVictory = false
-        end
         sceneManager:set(mapScene)
         previousScene = nil
       else
         mapScene = MapScene.new()
-        if pendingBattleVictory then
-          mapScene._battleVictory = true
-          pendingBattleVictory = false
-        end
         sceneManager:set(mapScene)
       end
     end
