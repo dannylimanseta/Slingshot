@@ -1,3 +1,4 @@
+local EncounterManager = require("core.EncounterManager")
 local MapManager = {}
 MapManager.__index = MapManager
 
@@ -1673,6 +1674,13 @@ function MapManager:completeMovement()
     
     -- Check if we're on an enemy tile
     if tile and tile.type == MapManager.TileType.ENEMY then
+      -- Choose an encounter before signaling battle
+      local encounterId = EncounterManager.pickRandomEncounterId()
+      if encounterId then
+        EncounterManager.setEncounterById(encounterId)
+      else
+        EncounterManager.clearEncounter()
+      end
       -- Check if this enemy was protecting a treasure
       if self._pendingTreasureX and self._pendingTreasureY then
         return true, "protected_treasure", self._pendingTreasureX, self._pendingTreasureY

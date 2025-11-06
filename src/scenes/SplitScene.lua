@@ -52,6 +52,7 @@ local function calculateGridBounds(width, height)
   return gridStartX, gridEndX
 end
 
+local EncounterManager = require("core.EncounterManager")
 local SplitScene = {}
 SplitScene.__index = SplitScene
 
@@ -100,9 +101,9 @@ function SplitScene:load()
   self.left = GameplayScene.new()
   self.right = BattleScene.new()
   
-  -- Get current battle profile and pass to GameplayScene for block formation
+  -- Get encounter battle profile if set, else fall back to battle type profile
   local currentBattleType = self.layoutManager:getBattleType()
-  local battleProfile = battle_profiles.getProfile(currentBattleType)
+  local battleProfile = EncounterManager.getCurrentBattleProfile() or battle_profiles.getProfile(currentBattleType)
   
   self.left:load({ x = 0, y = 0, w = centerRect.w, h = h }, self.currentProjectileId, battleProfile)
   self.right:load({ x = centerRect.w, y = 0, w = w - centerRect.w, h = h }, battleProfile)
