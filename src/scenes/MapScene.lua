@@ -54,6 +54,13 @@ function MapScene.new()
     _endDayPressed = false, -- track if button was pressed
     _mouseX = 0,
     _mouseY = 0,
+    -- Hold-to-move state
+    _heldMoveKey = nil,
+    _heldDirX = 0,
+    _heldDirY = 0,
+    _holdElapsed = 0,
+    _repeatElapsed = 0,
+    _hasFiredInitialRepeat = false,
   }, MapScene)
 end
 
@@ -282,6 +289,37 @@ function MapScene:update(deltaTime)
       -- No delay (0), transition immediately
       self._battleTransitionDelay = nil
       return "enter_battle"
+    end
+  end
+
+  -- Handle hold-to-move repeat for WASD
+  if self._heldMoveKey then
+    -- Accumulate timers regardless of moving, so repeats can chain smoothly
+    self._holdElapsed = (self._holdElapsed or 0) + deltaTime
+    self._repeatElapsed = (self._repeatElapsed or 0) + deltaTime
+    local repeatCfg = (config.map and config.map.movementRepeat) or { initialDelay = 0.35, interval = 0.12 }
+    local canConsiderMove = (self._battleTransitionDelay == nil)
+    if canConsiderMove and not self.isMoving and self.daySystem:canMove() then
+      if not self._hasFiredInitialRepeat then
+        if self._holdElapsed >= repeatCfg.initialDelay then
+          local moved = self:_attemptMoveBy(self._heldDirX, self._heldDirY)
+          self._hasFiredInitialRepeat = true
+          self._repeatElapsed = 0
+          if not moved then
+            -- If blocked, wait for next interval before trying again
+            self._repeatElapsed = 0
+          end
+        end
+      else
+        if self._repeatElapsed >= repeatCfg.interval then
+          local moved = self:_attemptMoveBy(self._heldDirX, self._heldDirY)
+          self._repeatElapsed = 0
+          if not moved then
+            -- If blocked, still throttle attempts by interval
+            self._repeatElapsed = 0
+          end
+        end
+      end
     end
   end
 
@@ -1030,6 +1068,69 @@ function MapScene:mousemoved(x, y, dx, dy)
   end
 end
 
+-- Map WASD key to a direction vector (dx, dy). Returns nil if not a WASD key.
+function MapScene:_dirFromKey(key)
+  if key == "w" then return 0, -1 end
+  if key == "s" then return 0, 1 end
+  if key == "a" then return -1, 0 end
+  if key == "d" then return 1, 0 end
+  return nil
+end
+
+-- Start tracking a held move key (WASD)
+function MapScene:_setHeldMove(key)
+  local dx, dy = self:_dirFromKey(key)
+  if dx then
+    self._heldMoveKey = key
+    self._heldDirX, self._heldDirY = dx, dy
+    self._holdElapsed = 0
+    self._repeatElapsed = 0
+    self._hasFiredInitialRepeat = false
+  end
+end
+
+-- Clear held move state if releasing the active key
+function MapScene:keyreleased(key)
+  if self._heldMoveKey and key == self._heldMoveKey then
+    self._heldMoveKey = nil
+    self._heldDirX, self._heldDirY = 0, 0
+    self._holdElapsed = 0
+    self._repeatElapsed = 0
+    self._hasFiredInitialRepeat = false
+  end
+end
+
+-- Attempt to move by a grid offset if possible and allowed
+function MapScene:_attemptMoveBy(dx, dy)
+  if self.isMoving then return false end
+  if not self.daySystem:canMove() then return false end
+  local currentGridX = self.mapManager.playerGridX
+  local currentGridY = self.mapManager.playerGridY
+  if currentGridX == 0 or currentGridY == 0 then return false end
+  local targetGridX = currentGridX + dx
+  local targetGridY = currentGridY + dy
+  if not self.mapManager:canMoveTo(targetGridX, targetGridY) then return false end
+  if not self.daySystem:useMove() then return false end
+  local targetWorldX, targetWorldY = self.mapManager:gridToWorld(
+    targetGridX,
+    targetGridY,
+    self.gridSize,
+    self.offsetX,
+    self.offsetY
+  )
+  self.playerTargetX = targetWorldX
+  self.playerTargetY = targetWorldY
+  self.isMoving = true
+  self._movementTime = 0
+  if targetWorldX > self.playerWorldX then
+    self.playerFacingRight = true
+  elseif targetWorldX < self.playerWorldX then
+    self.playerFacingRight = false
+  end
+  self.mapManager:movePlayerTo(targetGridX, targetGridY)
+  return true
+end
+
 function MapScene:keypressed(key, scancode, isRepeat)
   -- Advance to next day when out of moves
   if key == "space" and not self.daySystem:canMove() and not self.isMoving then
@@ -1043,6 +1144,11 @@ function MapScene:keypressed(key, scancode, isRepeat)
     return
   end
   
+  -- Track hold state for WASD keys, even if currently moving
+  if not isRepeat then
+    self:_setHeldMove(key)
+  end
+
   -- WASD movement (only if not already moving and have moves remaining)
   if self.isMoving or not self.daySystem:canMove() then
     return

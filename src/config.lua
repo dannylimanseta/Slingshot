@@ -363,6 +363,11 @@ config.map = {
   },
   -- Player vertical positioning offset
   playerVerticalOffset = 35, -- pixels to offset player downward from tile center
+  -- Hold-to-move repeat behavior for WASD keys
+  movementRepeat = {
+    initialDelay = 0.35, -- seconds to wait before first auto-repeat
+    interval = 0.12, -- seconds between subsequent auto-moves while holding
+  },
   -- Map generation parameters
   generation = {
     width = 40, -- grid width in tiles
