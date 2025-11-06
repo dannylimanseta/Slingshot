@@ -63,7 +63,7 @@ function SplitScene.new()
     turnManager = nil,
     -- Projectile card UI
     projectileCard = nil,
-    currentProjectileId = "qi_orb", -- Default projectile
+    currentProjectileId = "strike", -- Default projectile
     _prevProjectileId = nil, -- Track previous projectile for fade detection
     tooltipFadeTimer = 0, -- Timer for tooltip fade animation
     tooltipFadeDuration = 0.3, -- Duration of fade animation in seconds
@@ -605,14 +605,14 @@ function SplitScene:draw()
   if self.projectileCard then
     -- Get current projectile ID from shooter's rotation system
     local ProjectileManager = require("managers.ProjectileManager")
-    local projectileIdToShow = "qi_orb"
+    local projectileIdToShow = "strike"
     
     -- Get projectile ID from shooter if available (uses dynamic rotation)
     if self.left and self.left.shooter and self.left.shooter.getCurrentProjectileId then
       projectileIdToShow = self.left.shooter:getCurrentProjectileId()
       else
       -- Fallback to stored projectile ID
-        projectileIdToShow = self.currentProjectileId or "qi_orb"
+        projectileIdToShow = self.currentProjectileId or "strike"
     end
     
     if projectileIdToShow then
@@ -801,12 +801,12 @@ function SplitScene:update(dt)
   
   -- Detect projectile changes and trigger fade animation
   -- Get current projectile ID from shooter's rotation system
-  local projectileIdToShow = "qi_orb"
+  local projectileIdToShow = "strike"
   if self.left and self.left.shooter and self.left.shooter.getCurrentProjectileId then
     projectileIdToShow = self.left.shooter:getCurrentProjectileId()
   else
     -- Fallback to stored projectile ID
-      projectileIdToShow = self.currentProjectileId or "qi_orb"
+      projectileIdToShow = self.currentProjectileId or "strike"
   end
   
   -- Check if projectile changed
@@ -903,7 +903,7 @@ end
 
 -- Set the current projectile (updates both tooltip and shooter)
 function SplitScene:setProjectile(projectileId)
-  self.currentProjectileId = projectileId or "qi_orb"
+  self.currentProjectileId = projectileId or "strike"
   if self.left and self.left.setProjectile then
     self.left:setProjectile(projectileId)
   end

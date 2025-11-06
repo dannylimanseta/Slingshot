@@ -300,8 +300,8 @@ config.player = {
   -- Array of projectile IDs that appear in the shooter carousel
   -- Order matters: this is the sequence they rotate through
   equippedProjectiles = {
-    "qi_orb",        -- Strike
-    "spread_shot",   -- Multi Strike
+    "strike",        -- Strike
+    "multi_strike",  -- Multi Strike
     "twin_strike",   -- Twin Strike
   },
 }

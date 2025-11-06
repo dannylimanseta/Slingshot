@@ -11,7 +11,7 @@ function ProjectileManager.new()
 end
 
 -- Get a projectile by its ID
--- @param id string - The projectile ID (e.g., "qi_orb")
+-- @param id string - The projectile ID (e.g., "strike")
 -- @return table|nil - The projectile data table or nil if not found
 function ProjectileManager:getProjectile(id)
   return projectiles.getById(id)

@@ -49,7 +49,7 @@ function GameplayScene.new()
     shakeMagnitude = 0,
     shakeDuration = 0,
     shakeTime = 0,
-    projectileId = "qi_orb", -- default projectile ID
+    projectileId = "strike", -- default projectile ID
     topBar = TopBar.new(),
   }, GameplayScene)
 end
@@ -113,7 +113,7 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
   -- Load formation from battle profile (or use default random)
   local formationConfig = (battleProfile and battleProfile.blockFormation) or nil
   self.blocks:loadFormation(self.world, width, height, formationConfig)
-  self.projectileId = projectileId or "qi_orb" -- Store projectile ID
+  self.projectileId = projectileId or "strike" -- Store projectile ID
   -- Center shooter within grid bounds
   local shooterX = (gridStartX + gridEndX) * 0.5
   self.shooter = Shooter.new(shooterX, height - config.shooter.spawnYFromBottom, self.projectileId)
@@ -680,11 +680,11 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       self.lastHitTime = 0
       
       -- Get current projectile ID from shooter based on turn rotation
-      local projectileId = "qi_orb"
+      local projectileId = "strike"
       if self.shooter and self.shooter.getCurrentProjectileId then
         projectileId = self.shooter:getCurrentProjectileId()
       else
-        projectileId = self.projectileId or "qi_orb"
+        projectileId = self.projectileId or "strike"
       end
       
       -- Get projectile data to determine behavior and sprite
@@ -731,7 +731,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
           self.score = self.score + ball2.score
           table.insert(self.balls, ball2)
         end
-      elseif projectileId == "spread_shot" then
+      elseif projectileId == "multi_strike" then
         -- Spread shot: spawn multiple projectiles
         local spreadConfig = config.ball.spreadShot
         if spreadConfig and spreadConfig.enabled then
@@ -816,7 +816,7 @@ end
 
 -- Set the projectile ID for the shooter
 function GameplayScene:setProjectile(projectileId)
-  self.projectileId = projectileId or "qi_orb"
+  self.projectileId = projectileId or "strike"
   if self.shooter and self.shooter.setProjectile then
     self.shooter:setProjectile(self.projectileId)
   end

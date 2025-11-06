@@ -15,7 +15,7 @@ function Shooter.new(x, y, projectileId)
   local self = setmetatable({ 
     x = x, 
     y = y,
-    projectileId = projectileId or "qi_orb", -- Default projectile (for backward compatibility)
+    projectileId = projectileId or "strike", -- Default projectile (for backward compatibility)
     turnManager = nil, -- Reference to TurnManager for turn-based display
     ballSlotsImage = nil, -- Cached ball_slots.png image
     arrowImage = nil, -- Cached arrow_1.png image
@@ -48,7 +48,7 @@ function Shooter:loadProjectiles()
   self.numProjectiles = 0
   
   -- Get equipped projectiles from player loadout (config)
-  local equippedIds = (config.player and config.player.equippedProjectiles) or { "qi_orb" }
+  local equippedIds = (config.player and config.player.equippedProjectiles) or { "strike" }
   
   for _, projectileId in ipairs(equippedIds) do
     -- Get projectile data from master database
@@ -78,7 +78,7 @@ function Shooter:loadProjectiles()
   if self.numProjectiles == 0 then
     -- Fallback: add default projectile
     local defaultSlot = {
-      id = "qi_orb",
+      id = "strike",
       icon = "assets/images/ball_1.png",
       image = nil,
     }
@@ -214,7 +214,7 @@ end
 
 -- Set the projectile ID (for backward compatibility, but doesn't affect rotation)
 function Shooter:setProjectile(projectileId)
-  self.projectileId = projectileId or "qi_orb"
+  self.projectileId = projectileId or "strike"
   -- Note: Rotation is now based on turn number, not projectileId
 end
 
@@ -343,7 +343,7 @@ function Shooter:getCurrentProjectileId()
   local centerSlotIndex = math.floor(self.carousel.offset + 0.5)
   local projectileIndex = ((centerSlotIndex % self.numProjectiles) + self.numProjectiles) % self.numProjectiles + 1
   local slot = self.projectileSlots[projectileIndex]
-  return slot and slot.id or "qi_orb"
+  return slot and slot.id or "strike"
 end
 
 function Shooter:draw()

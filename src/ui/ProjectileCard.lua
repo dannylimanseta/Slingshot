@@ -108,7 +108,7 @@ end
 -- Draw the projectile card at the specified position
 -- @param x number - Left edge position
 -- @param y number - Top edge position
--- @param projectileId string - ID of projectile to display (e.g., "qi_orb")
+-- @param projectileId string - ID of projectile to display (e.g., "strike")
 -- @param alpha number - Optional alpha value for fade effect (0.0 to 1.0, defaults to 1.0)
 function ProjectileCard:draw(x, y, projectileId, alpha)
   if not projectileId then return end

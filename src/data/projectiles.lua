@@ -23,7 +23,7 @@ projectiles.Rarity = {
 
 projectiles.data = {
   {
-    id = "qi_orb",
+    id = "strike",
     name = "Strike",
     rarity = projectiles.Rarity.COMMON,
     level = 1,
@@ -36,7 +36,7 @@ projectiles.data = {
     description = "A basic projectile that grows stronger with each block it hits."
   },
   {
-    id = "spread_shot",
+    id = "multi_strike",
     name = "Multi Strike",
     rarity = projectiles.Rarity.UNCOMMON,
     level = 1,
