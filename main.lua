@@ -7,6 +7,7 @@ local MapScene = require("scenes.MapScene")
 local SplitScene = require("scenes.SplitScene")
 local FormationEditorScene = require("scenes.FormationEditorScene")
 local RewardsScene = require("scenes.RewardsScene")
+local OrbRewardScene = require("scenes.OrbRewardScene")
 
 local sceneManager
 local screenCanvas
@@ -81,6 +82,8 @@ function love.update(deltaTime)
         mapScene = MapScene.new()
         sceneManager:set(mapScene)
       end
+    elseif result == "open_orb_reward" then
+      sceneManager:set(OrbRewardScene.new())
     end
   end
 end

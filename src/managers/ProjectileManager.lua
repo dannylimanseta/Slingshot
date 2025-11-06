@@ -59,5 +59,31 @@ function ProjectileManager.getAllProjectiles()
   return projectiles.getAll()
 end
 
+-- Upgrade a projectile's level by 1 (capped at 5)
+function ProjectileManager.upgradeLevel(id)
+  local p = projectiles.getById(id)
+  if not p then return false end
+  local lvl = (p.level or 1)
+  if lvl >= 5 then return false end
+  p.level = math.min(5, lvl + 1)
+  return true
+end
+
+-- Add a projectile to the player's equipped list if not already present
+function ProjectileManager.addToEquipped(id)
+  local config = require("config")
+  local eq = (config.player and config.player.equippedProjectiles)
+  if not eq then
+    config.player = config.player or {}
+    config.player.equippedProjectiles = { id }
+    return true
+  end
+  for _, x in ipairs(eq) do
+    if x == id then return false end
+  end
+  table.insert(eq, id)
+  return true
+end
+
 return ProjectileManager
 

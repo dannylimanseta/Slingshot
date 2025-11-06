@@ -301,8 +301,6 @@ config.player = {
   -- Order matters: this is the sequence they rotate through
   equippedProjectiles = {
     "strike",        -- Strike
-    "multi_strike",  -- Multi Strike
-    "twin_strike",   -- Twin Strike
   },
 }
 

@@ -53,8 +53,6 @@ function RewardsScene:load()
     iconScale = 0.5,
     iconTint = { 1, 1, 1, 0.85 },
     onClick = function()
-      -- Placeholder: handle reward selection logic here
-      -- For now, do nothing (keeps scene open) or set a flag for future flow
       self._selectedOrb = true
     end,
   })
@@ -70,6 +68,10 @@ function RewardsScene:update(dt)
   end
   if self._exitRequested then
     return "return_to_map"
+  end
+  if self._selectedOrb then
+    self._selectedOrb = false
+    return "open_orb_reward"
   end
   
   -- Update button layouts and hover states

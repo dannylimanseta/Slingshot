@@ -156,8 +156,8 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   local iconPadding = 12
   local cornerRadius = 8
   
-  -- Card background (black) - lower alpha for more see-through
-  love.graphics.setColor(0, 0, 0, 0.3 * alpha)
+  -- Card background (black) - increased alpha for better readability
+  love.graphics.setColor(0, 0, 0, 0.5 * alpha)
   love.graphics.rectangle("fill", x, y, cardW, cardH, cornerRadius, cornerRadius)
   
   -- Border/highlight - use rarity color for border at 30% alpha

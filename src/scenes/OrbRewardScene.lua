@@ -1,0 +1,300 @@
+local config = require("config")
+local theme = require("theme")
+local ProjectileManager = require("managers.ProjectileManager")
+local Button = require("ui.Button")
+local RewardsBackdropShader = require("utils.RewardsBackdropShader")
+local ProjectileCard = require("ui.ProjectileCard")
+
+local OrbRewardScene = {}
+OrbRewardScene.__index = OrbRewardScene
+
+-- Build candidate lists
+local function getEquipped()
+  local equipped = (config.player and config.player.equippedProjectiles) or {}
+  local set = {}
+  for _, id in ipairs(equipped) do set[id] = true end
+  return equipped, set
+end
+
+local function shuffle(t)
+  for i = #t, 2, -1 do
+    local j = love.math.random(i)
+    t[i], t[j] = t[j], t[i]
+  end
+end
+
+function OrbRewardScene.new()
+  return setmetatable({
+    time = 0,
+    shader = nil,
+    decorImage = nil,
+    titleFont = nil,
+    card = ProjectileCard.new(),
+    options = {}, -- { { kind="upgrade"|"new", id, targetLevel }, ... }
+    choice = nil,
+    mouseX = 0,
+    mouseY = 0,
+    bounds = {}, -- clickable bounds per option
+    scales = {}, -- per-option hover scale
+    skipButton = nil,
+  }, OrbRewardScene)
+end
+
+function OrbRewardScene:load()
+  self.time = 0
+  -- Shader and decor image (match RewardsScene)
+  self.shader = RewardsBackdropShader.getShader()
+  local decorPath = "assets/images/decor_1.png"
+  local okDecor, imgDecor = pcall(love.graphics.newImage, decorPath)
+  if okDecor then self.decorImage = imgDecor end
+
+  -- Fonts (same size as Rewards title ~50px)
+  local fontPath = (config.assets and config.assets.fonts and config.assets.fonts.ui) or nil
+  if fontPath then
+    local ok, f = pcall(love.graphics.newFont, fontPath, 50)
+    if ok then self.titleFont = f end
+  end
+
+  -- Build options
+  local equipped, equippedSet = getEquipped()
+  local upgrades = {}
+  for _, id in ipairs(equipped) do
+    local p = ProjectileManager.getProjectile(id)
+    if p and (p.level or 1) < 5 then
+      table.insert(upgrades, { kind = "upgrade", id = id, targetLevel = math.min(5, (p.level or 1) + 1) })
+    end
+  end
+  local news = {}
+  for _, p in ipairs(ProjectileManager.getAllProjectiles()) do
+    if not equippedSet[p.id] then
+      table.insert(news, { kind = "new", id = p.id, targetLevel = 1 })
+    end
+  end
+
+  shuffle(upgrades)
+  shuffle(news)
+
+  -- Build 3 mixed options (prefer mix, fallback to whatever available)
+  local picks = {}
+  for i = 1, 3 do
+    local chooseUpgrade = (love.math.random() < 0.5)
+    local opt
+    if chooseUpgrade and #upgrades > 0 then
+      opt = table.remove(upgrades)
+    elseif #news > 0 then
+      opt = table.remove(news)
+    elseif #upgrades > 0 then
+      opt = table.remove(upgrades)
+    end
+    if opt then table.insert(picks, opt) end
+  end
+  self.options = picks
+  -- Init per-option scales
+  self.scales = {}
+  for i = 1, #self.options do self.scales[i] = 1.0 end
+
+  -- Create Skip button (same sizing as Rewards skip)
+  self.skipButton = Button.new({
+    label = "Skip",
+    font = theme.fonts.base,
+    align = "center",
+    onClick = function()
+      self.choice = { kind = "skip" }
+    end,
+  })
+end
+
+-- Apply selected option
+function OrbRewardScene:applyChoice(opt)
+  if not opt then return end
+  if opt.kind == "upgrade" then
+    ProjectileManager.upgradeLevel(opt.id)
+  elseif opt.kind == "new" then
+    ProjectileManager.addToEquipped(opt.id)
+  end
+end
+
+-- Draw a card with a temporary level for preview
+local function drawCardWithLevel(card, projectileId, level, x, y, alpha)
+  local p = ProjectileManager.getProjectile(projectileId)
+  if not p then return end
+  local old = p.level
+  p.level = level
+  card:draw(x, y, projectileId, alpha)
+  p.level = old
+end
+
+function OrbRewardScene:update(dt)
+  if self.choice then
+    self:applyChoice(self.choice)
+    return "return_to_map"
+  end
+  -- Animate shader backdrop
+  self.time = self.time + dt
+  if self.shader then
+    local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
+    local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
+    self.shader:send("u_time", self.time)
+    self.shader:send("u_resolution", { vw, vh })
+  end
+  -- Layout skip button and update hover tween targets
+  local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
+  local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
+  if self.skipButton then
+    local f = self.skipButton.font or theme.fonts.base
+    local th = f:getHeight()
+    local bw = math.floor(vw * 0.175)
+    local bh = math.max(th + Button.defaults.paddingY * 2, 44)
+    local bx = math.floor((vw - bw) * 0.5)
+    local by = math.floor(vh * 0.78)
+    self.skipButton:setLayout(bx, by, bw, bh)
+    self.skipButton:update(dt, self.mouseX, self.mouseY)
+  end
+
+  -- Tween per-option scales based on hover state using existing bounds
+  if self.bounds then
+    for i, r in ipairs(self.bounds) do
+      local hovered = (self.mouseX >= r.x and self.mouseX <= r.x + r.w and self.mouseY >= r.y and self.mouseY <= r.y + r.h)
+      local target = hovered and 1.05 or 1.0
+      local s = self.scales[i] or 1.0
+      local k = math.min(1, (12 * dt))
+      self.scales[i] = s + (target - s) * k
+    end
+  end
+end
+
+function OrbRewardScene:draw()
+  local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
+  local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
+
+  -- Backdrop shader (match RewardsScene)
+  if self.shader then
+    love.graphics.push('all')
+    love.graphics.setShader(self.shader)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle('fill', 0, 0, vw, vh)
+    love.graphics.setShader()
+    love.graphics.pop()
+  end
+
+  -- Title with side decor (match RewardsScene positioning/style)
+  love.graphics.push()
+  local title = "PICK ONE"
+  local font = self.titleFont or theme.fonts.large
+  love.graphics.setFont(font)
+  local textW = font:getWidth(title)
+  local centerX = vw * 0.5
+  local centerY = vh * 0.2
+  local decorSpacing = 20
+  local alpha = 1.0
+
+  love.graphics.push()
+  love.graphics.translate(centerX, centerY)
+
+  if self.decorImage then
+    local decorW = self.decorImage:getWidth()
+    local decorH = self.decorImage:getHeight()
+    local decorScale = 0.35
+    local scaledW = decorW * decorScale
+    -- Center positions of each decor sprite
+    local leftCenterX = -textW * 0.5 - decorSpacing - scaledW * 0.5
+    local rightCenterX = textW * 0.5 + decorSpacing + scaledW * 0.5
+    love.graphics.setColor(1, 1, 1, alpha)
+
+    -- Left decor (normal)
+    love.graphics.push()
+    love.graphics.translate(leftCenterX, 0)
+    love.graphics.scale(decorScale, decorScale)
+    love.graphics.draw(self.decorImage, -decorW * 0.5, -decorH * 0.5)
+    love.graphics.pop()
+
+    -- Right decor (flipped horizontally)
+    love.graphics.push()
+    love.graphics.translate(rightCenterX, 0)
+    love.graphics.scale(-decorScale, decorScale)
+    love.graphics.draw(self.decorImage, -decorW * 0.5, -decorH * 0.5)
+    love.graphics.pop()
+  end
+
+  -- Title text (no outline to match Rewards indicator style)
+  love.graphics.setColor(1, 1, 1, alpha)
+  love.graphics.print(title, -textW * 0.5, -font:getHeight() * 0.5)
+  love.graphics.pop()
+  love.graphics.setFont(theme.fonts.base)
+  love.graphics.pop()
+
+  -- Layout three options
+  local spacing = 24
+  local cardW = 288
+  local cardH = 120 -- will expand as needed by card itself
+  local totalW = cardW * #self.options + spacing * math.max(0, #self.options - 1)
+  local startX = math.floor((vw - totalW) * 0.5)
+  local y = math.floor(vh * 0.38)
+  self.bounds = {}
+
+  for i, opt in ipairs(self.options) do
+    local x = startX + (i - 1) * (cardW + spacing)
+    -- Header label
+    local header = (opt.kind == "upgrade") and "UPGRADE" or "NEW ORB!"
+    local headerCol = (opt.kind == "upgrade") and {1,1,1,0.8} or {0.6,1.0,0.6,0.9}
+    love.graphics.setColor(headerCol)
+    love.graphics.print(header, x, y - 44)
+
+    -- Level label right
+    local p = ProjectileManager.getProjectile(opt.id)
+    if opt.kind == "upgrade" then
+      local lvText = "LV " .. tostring((p and p.level) or 1) .. "  ->  LV " .. tostring(opt.targetLevel)
+      local fw = theme.fonts.base:getWidth(lvText)
+      love.graphics.print(lvText, x + cardW - fw, y - 44)
+    end
+
+    -- Card with hover scale (+5%)
+    local oldLevel = p and p.level
+    if p then p.level = opt.targetLevel end
+    local cardH = self.card:calculateHeight(p or {})
+    if p then p.level = oldLevel end
+    local scale = self.scales[i] or 1.0
+    love.graphics.push()
+    local cx = x + cardW * 0.5
+    local cy = y + cardH * 0.5
+    love.graphics.translate(cx, cy)
+    love.graphics.scale(scale, scale)
+    love.graphics.translate(-cx, -cy)
+    drawCardWithLevel(self.card, opt.id, opt.targetLevel, x, y, 1.0)
+    love.graphics.pop()
+    -- Update clickable bounds to match scaled size
+    local bw = cardW * scale
+    local bh = cardH * scale
+    self.bounds[i] = { x = cx - bw * 0.5, y = cy - bh * 0.5, w = bw, h = bh }
+  end
+
+  -- Draw Skip button
+  if self.skipButton then
+    self.skipButton:draw()
+  end
+end
+
+function OrbRewardScene:mousemoved(x, y)
+  self.mouseX, self.mouseY = x, y
+end
+
+function OrbRewardScene:mousepressed(x, y, button)
+  if button ~= 1 then return end
+  for i, r in ipairs(self.bounds or {}) do
+    if x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h then
+      self.choice = self.options[i]
+      return
+    end
+  end
+  if self.skipButton and self.skipButton:mousepressed(x, y, button) then return end
+end
+
+function OrbRewardScene:keypressed(key)
+  if key == "escape" then
+    return "return_to_map"
+  end
+end
+
+return OrbRewardScene
+
+
