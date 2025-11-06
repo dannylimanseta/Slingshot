@@ -26,11 +26,24 @@ end
 -- Get formatted stats array for display
 -- @param projectileData table - The projectile data table
 -- @return table - Array of stat display strings
-function ProjectileManager:getStatsForDisplay(projectileData)
-  if not projectileData then
-    return {}
+-- (Removed) getStatsForDisplay: UI now builds dynamic stats from effective values
+
+-- Compute effective stats for a projectile at its current level.
+-- Accepts either a projectile table or an ID.
+-- Returns a table with: baseDamage (number), maxBounces (number|nil), count (number|nil)
+function ProjectileManager.getEffective(projectileOrId)
+  local p = projectileOrId
+  if type(projectileOrId) == "string" then
+    p = projectiles.getById(projectileOrId)
   end
-  return projectiles.getStatsForDisplay(projectileData)
+  if not p then return { baseDamage = 0 } end
+  local level = p.level or 1
+  local levelData = (p.levels and p.levels[level]) or nil
+  return {
+    baseDamage = (levelData and levelData.baseDamage) or p.baseDamage or 0,
+    maxBounces = levelData and levelData.maxBounces or nil,
+    count = levelData and levelData.count or nil,
+  }
 end
 
 -- Get projectile by ID (static function wrapper)

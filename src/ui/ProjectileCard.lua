@@ -14,6 +14,31 @@ local RARITY_COLORS = {
   LEGENDARY = { 1, 0.65, 0.2, 1 },     -- Gold/Orange
 }
 
+-- Build dynamic stat lines based on current level/effective values
+local function buildDynamicStats(projectile, effective)
+  local lines = {}
+  local id = projectile.id or ""
+  if id == "multi_strike" then
+    table.insert(lines, string.format("Fires %d projectiles", (effective and effective.count) or 3))
+    if effective and effective.maxBounces then
+      table.insert(lines, string.format("Bounces %d times", effective.maxBounces))
+    end
+    table.insert(lines, "Narrow cone")
+  elseif id == "twin_strike" then
+    table.insert(lines, string.format("Fires %d mirrored projectiles", (effective and effective.count) or 2))
+    if effective and effective.maxBounces then
+      table.insert(lines, string.format("Bounces %d times", effective.maxBounces))
+    end
+  else
+    -- Default (strike)
+    table.insert(lines, "Fires 1 projectile")
+    if effective and effective.maxBounces then
+      table.insert(lines, string.format("Bounces %d times", effective.maxBounces))
+    end
+  end
+  return lines
+end
+
 function ProjectileCard.new()
   -- Create fonts with specified sizes
   local fontPath = (config.assets and config.assets.fonts and config.assets.fonts.ui) or nil
@@ -89,9 +114,10 @@ function ProjectileCard:calculateHeight(projectile)
   height = height + spacing
   
   -- Stats area (include baseDamage line if present)
-  local stats = projectile.stats or {}
+  local effective = ProjectileManager.getEffective(projectile)
+  local stats = buildDynamicStats(projectile, effective)
   local statLineHeight = self.statFont:getHeight() + 2
-  local bonus = (projectile.baseDamage and 1 or 0)
+  local bonus = (effective and effective.baseDamage and 1 or 0)
   local statCount = math.min(#stats + bonus, 10) -- Limit to 10 lines max for safety
   if statCount > 0 then
     height = height + (statCount * statLineHeight)
@@ -120,6 +146,7 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   
   local projectile = ProjectileManager.getProjectile(projectileId)
   if not projectile then return end
+  local effective = ProjectileManager.getEffective(projectile)
   
   -- Card dimensions
   local cardW = 288 -- Increased by 20% from 240
@@ -193,7 +220,7 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   theme.drawTextWithOutline(levelText, levelX, nameY, 1, 1, 1, alpha, 1)
   
   -- Stats (below name, dynamic based on content) - apply alpha
-  local stats = projectile.stats or {}
+  local stats = buildDynamicStats(projectile, effective)
   local statsStartY = nameY + nameFontH + 4
   love.graphics.setColor(1, 1, 1, 0.9 * alpha)
   love.graphics.setFont(self.statFont)
@@ -201,9 +228,9 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   
   local lineIndex = 0
   -- Base damage line first (if available)
-  if projectile.baseDamage then
+  if effective and effective.baseDamage then
     lineIndex = lineIndex + 1
-    local dmgText = tostring(projectile.baseDamage) .. " Damage"
+    local dmgText = tostring(effective.baseDamage) .. " Damage"
     theme.drawTextWithOutline(dmgText, textStartX, statsStartY + (lineIndex - 1) * statLineHeight, 1, 1, 1, 0.9 * alpha, 1)
   end
   -- Draw remaining stats

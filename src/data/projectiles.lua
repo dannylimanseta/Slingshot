@@ -17,7 +17,8 @@ projectiles.Rarity = {
 --   rarity = projectiles.Rarity.COMMON | RARE | EPIC | LEGENDARY,
 --   level = 1, -- default level
 --   icon = "path/to/icon.png", -- or nil if using default ball sprite
---   stats = { "+1 damage per block", "Lasts 5 bounces" }, -- array of display strings
+--   baseDamage = 3, -- fallback base damage
+--   levels = { [1] = { baseDamage, maxBounces, count? }, ... },
 --   description = "Optional flavor text" -- optional
 -- }
 
@@ -28,11 +29,14 @@ projectiles.data = {
     rarity = projectiles.Rarity.COMMON,
     level = 1,
     baseDamage = 3,
-    icon = "assets/images/ball_1.png", -- using existing ball sprite
-    stats = {
-      "Fires 1 projectile",
-      "Lasts 5 bounces"
+    levels = {
+      [1] = { baseDamage = 4, maxBounces = 5 },
+      [2] = { baseDamage = 6, maxBounces = 6 },
+      [3] = { baseDamage = 8, maxBounces = 7 },
+      [4] = { baseDamage = 10, maxBounces = 8 },
+      [5] = { baseDamage = 16, maxBounces = 10 },
     },
+    icon = "assets/images/ball_1.png", -- using existing ball sprite
     description = "A basic projectile that grows stronger with each block it hits."
   },
   {
@@ -41,11 +45,14 @@ projectiles.data = {
     rarity = projectiles.Rarity.UNCOMMON,
     level = 1,
     baseDamage = 2,
-    icon = "assets/images/ball_2.png", -- spread shot sprite
-    stats = {
-      "Fires 3 projectiles in a spread pattern",
-      "Each bounces 3 times",
+    levels = {
+      [1] = { baseDamage = 2, count = 3, maxBounces = 3 },
+      [2] = { baseDamage = 3, count = 3, maxBounces = 3 },
+      [3] = { baseDamage = 4, count = 3, maxBounces = 4 },
+      [4] = { baseDamage = 5, count = 4, maxBounces = 4 },
+      [5] = { baseDamage = 6, count = 5, maxBounces = 4 },
     },
+    icon = "assets/images/ball_2.png", -- spread shot sprite
     description = "Multiple projectiles fired in a spread pattern."
   },
   {
@@ -54,11 +61,14 @@ projectiles.data = {
     rarity = projectiles.Rarity.RARE,
     level = 1,
     baseDamage = 4,
-    icon = "assets/images/ball_3.png",
-    stats = {
-      "Fires 2 mirrored projectiles",
-      "Bounces 5 times"
+    levels = {
+      [1] = { baseDamage = 4, count = 2, maxBounces = 5 },
+      [2] = { baseDamage = 6, count = 2, maxBounces = 6 },
+      [3] = { baseDamage = 8, count = 2, maxBounces = 7 },
+      [4] = { baseDamage = 10, count = 2, maxBounces = 8 },
+      [5] = { baseDamage = 16, count = 2, maxBounces = 10 },
     },
+    icon = "assets/images/ball_3.png",
     description = "Two projectiles that mirror each other's trajectory."
   },
 }
@@ -76,14 +86,6 @@ end
 -- Helper function to get all projectiles
 function projectiles.getAll()
   return projectiles.data
-end
-
--- Helper function to get stats for display (returns the stats array as-is)
-function projectiles.getStatsForDisplay(projectileData)
-  if not projectileData or not projectileData.stats then
-    return {}
-  end
-  return projectileData.stats
 end
 
 return projectiles

@@ -687,8 +687,9 @@ function GameplayScene:mousereleased(x, y, button, bounds)
         projectileId = self.projectileId or "strike"
       end
       
-      -- Get projectile data to determine behavior and sprite
+      -- Get projectile data and effective stats to determine behavior and sprite
       local projectileData = ProjectileManager.getProjectile(projectileId)
+      local effective = ProjectileManager.getEffective(projectileData)
       local spritePath = nil
       if projectileData and projectileData.icon then
         spritePath = projectileData.icon
@@ -701,7 +702,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
         if not spritePath then
           spritePath = (config.assets.images.ball_3) or "assets/images/ball_3.png"
         end
-        local maxBounces = 5
+        local maxBounces = (effective and effective.maxBounces) or 5
         
         -- First ball: original direction
         local ball1 = Ball.new(self.world, self.aimStartX, self.aimStartY, ndx, ndy, {
@@ -722,12 +723,12 @@ function GameplayScene:mousereleased(x, y, button, bounds)
         })
         
         if ball1 then
-          ball1.score = (config.score and config.score.baseSeed) or 0
+          ball1.score = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
           self.score = self.score + ball1.score
           table.insert(self.balls, ball1)
         end
         if ball2 then
-          ball2.score = (config.score and config.score.baseSeed) or 0
+          ball2.score = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
           self.score = self.score + ball2.score
           table.insert(self.balls, ball2)
         end
@@ -737,13 +738,13 @@ function GameplayScene:mousereleased(x, y, button, bounds)
         if spreadConfig and spreadConfig.enabled then
         self.ball = nil -- Clear single ball
         self.balls = {}
-        local count = spreadConfig.count or 3
+        local count = (effective and effective.count) or (spreadConfig.count or 3)
         local spreadAngle = spreadConfig.spreadAngle or 0.15
         local radiusScale = spreadConfig.radiusScale or 0.7
           if not spritePath then
             spritePath = spreadConfig.sprite or (config.assets.images.ball_2)
           end
-        local maxBounces = spreadConfig.maxBounces or 3
+        local maxBounces = (effective and effective.maxBounces) or (spreadConfig.maxBounces or 3)
         
         -- Calculate base angle from aim direction
         local baseAngle = math.atan2(ndy, ndx)
@@ -771,7 +772,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
           })
           
           if ball then
-            ball.score = (config.score and config.score.baseSeed) or 0
+            ball.score = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
             self.score = self.score + ball.score
             table.insert(self.balls, ball)
             end
@@ -786,7 +787,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
             end
           })
           if self.ball then
-            self.ball.score = (config.score and config.score.baseSeed) or 0
+            self.ball.score = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
             self.score = self.score + self.ball.score
           end
         end
@@ -794,6 +795,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
         -- Single projectile (regular shot)
         self.balls = {} -- Clear multiple balls
         self.ball = Ball.new(self.world, self.aimStartX, self.aimStartY, ndx, ndy, {
+          maxBounces = (effective and effective.maxBounces) or config.ball.maxBounces,
           spritePath = spritePath,
           onLastBounce = function(ball)
             -- Ball reached max bounces, destroy it - turn will end automatically
@@ -801,7 +803,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
           end
         })
         if self.ball then
-          self.ball.score = (config.score and config.score.baseSeed) or 0
+          self.ball.score = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
           self.score = self.score + self.ball.score
         end
       end
