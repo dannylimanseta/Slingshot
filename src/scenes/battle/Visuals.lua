@@ -51,7 +51,7 @@ local function calculateEnemyPositions(scene, rightStart, rightWidth, baselineY,
   local currentX = startX
   
   for i, enemy in ipairs(enemies) do
-    local x = currentX + enemyWidths[i] * 0.5
+    local x = currentX + enemyWidths[i] * 0.5 + 40 -- shift enemies right by 40px
     currentX = currentX + enemyWidths[i] + (i < enemyCount and gap or 0)
     table.insert(positions, {
       x = x,
@@ -253,7 +253,7 @@ function Visuals.draw(scene, bounds)
           love.graphics.setColor(barColor[1], barColor[2], barColor[3], barAlpha)
           love.graphics.rectangle("fill", enemyBarX, barY, enemyBarW * ratio, barH, 6, 6)
         end
-        love.graphics.setColor(0.25, 0.25, 0.25, barAlpha)
+        love.graphics.setColor(0, 0, 0, barAlpha)
         love.graphics.setLineWidth(2)
         love.graphics.rectangle("line", enemyBarX, barY, enemyBarW, barH, 6, 6)
         do

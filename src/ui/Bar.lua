@@ -17,8 +17,8 @@ function Bar:draw(x, y, w, h, current, max, color)
     love.graphics.setColor(color[1], color[2], color[3], 1)
     love.graphics.rectangle("fill", x, y, w * ratio, h, 6, 6)
   end
-  -- Draw dark grey border around HP bar
-  love.graphics.setColor(0.25, 0.25, 0.25, 1) -- dark grey
+  -- Draw black border around HP bar
+  love.graphics.setColor(0, 0, 0, 1)
   love.graphics.setLineWidth(2)
   love.graphics.rectangle("line", x, y, w, h, 6, 6)
   -- Centered HP text (current/max) - scaled down by 30%
