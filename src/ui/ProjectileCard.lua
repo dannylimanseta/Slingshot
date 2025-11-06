@@ -122,7 +122,7 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   if not projectile then return end
   
   -- Card dimensions
-  local cardW = 240 -- Reduced by 25% (was 280)
+  local cardW = 288 -- Increased by 20% from 240
   local cardH = self:calculateHeight(projectile) -- Dynamic height
   local padding = 12
   local iconSize = 24 * 1.3 -- Increased by 30% (was 24)
@@ -133,16 +133,10 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   love.graphics.setColor(0, 0, 0, 0.3 * alpha)
   love.graphics.rectangle("fill", x, y, cardW, cardH, cornerRadius, cornerRadius)
   
-  -- Border/highlight - use rarity color for UNCOMMON, otherwise white with 10% alpha
+  -- Border/highlight - use rarity color for border at 30% alpha
   local rarity = projectile.rarity or "COMMON"
   local rarityColor = RARITY_COLORS[rarity] or RARITY_COLORS.COMMON
-  if rarity == "UNCOMMON" then
-    -- Use rarity color for uncommon border
-    love.graphics.setColor(rarityColor[1], rarityColor[2], rarityColor[3], 0.3 * alpha)
-  else
-    -- Default white border with 10% alpha
-    love.graphics.setColor(1, 1, 1, 0.1 * alpha)
-  end
+  love.graphics.setColor(rarityColor[1], rarityColor[2], rarityColor[3], 0.3 * alpha)
   love.graphics.setLineWidth(2)
   love.graphics.rectangle("line", x, y, cardW, cardH, cornerRadius, cornerRadius)
   

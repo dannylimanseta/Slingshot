@@ -30,7 +30,7 @@ projectiles.data = {
     baseDamage = 3,
     icon = "assets/images/ball_1.png", -- using existing ball sprite
     stats = {
-      "+1 damage per block",
+      "Fires 1 projectile",
       "Lasts 5 bounces"
     },
     description = "A basic projectile that grows stronger with each block it hits."
@@ -43,9 +43,8 @@ projectiles.data = {
     baseDamage = 2,
     icon = "assets/images/ball_2.png", -- spread shot sprite
     stats = {
-      "Fires 3 projectiles",
+      "Fires 3 projectiles in a spread pattern",
       "Each bounces 3 times",
-      "Narrow cone spread"
     },
     description = "Multiple projectiles fired in a spread pattern."
   },
@@ -58,7 +57,6 @@ projectiles.data = {
     icon = "assets/images/ball_3.png",
     stats = {
       "Fires 2 mirrored projectiles",
-      "Deals 4 damage",
       "Bounces 5 times"
     },
     description = "Two projectiles that mirror each other's trajectory."
