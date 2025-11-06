@@ -28,6 +28,7 @@ function OrbRewardScene.new()
     time = 0,
     shader = nil,
     decorImage = nil,
+    arrowIcon = nil,
     titleFont = nil,
     card = ProjectileCard.new(),
     options = {}, -- { { kind="upgrade"|"new", id, targetLevel }, ... }
@@ -47,6 +48,9 @@ function OrbRewardScene:load()
   local decorPath = "assets/images/decor_1.png"
   local okDecor, imgDecor = pcall(love.graphics.newImage, decorPath)
   if okDecor then self.decorImage = imgDecor end
+  -- Load arrow icon
+  local okArrow, imgArrow = pcall(love.graphics.newImage, "assets/images/icon_arrow.png")
+  if okArrow then self.arrowIcon = imgArrow end
 
   -- Fonts (same size as Rewards title ~50px)
   local fontPath = (config.assets and config.assets.fonts and config.assets.fonts.ui) or nil
@@ -243,9 +247,30 @@ function OrbRewardScene:draw()
     -- Level label right
     local p = ProjectileManager.getProjectile(opt.id)
     if opt.kind == "upgrade" then
-      local lvText = "LV " .. tostring((p and p.level) or 1) .. "  ->  LV " .. tostring(opt.targetLevel)
-      local fw = theme.fonts.base:getWidth(lvText)
-      love.graphics.print(lvText, x + cardW - fw, y - 44)
+      local font = theme.fonts.base
+      local leftText = "LV " .. tostring((p and p.level) or 1)
+      local rightText = "LV " .. tostring(opt.targetLevel)
+      local lw = font:getWidth(leftText)
+      local rw = font:getWidth(rightText)
+      local spacing = 6
+      local iw, ih, scale = 0, 0, 1
+      if self.arrowIcon then
+        iw, ih = self.arrowIcon:getWidth(), self.arrowIcon:getHeight()
+        -- Base scale to match font height, then reduce by 40%
+        scale = ((font:getHeight() * 0.8) / math.max(1, ih)) * 0.6
+      end
+      local totalW = lw + spacing + (iw * scale) + spacing + rw
+      local startX = x + cardW - totalW
+      local baselineY = y - 44
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.print(leftText, startX, baselineY)
+      if self.arrowIcon then
+        local ax = startX + lw + spacing
+        local ay = baselineY + (font:getAscent() - ih * scale) * 0.5 + 2
+        love.graphics.draw(self.arrowIcon, ax, ay, 0, scale, scale)
+      end
+      local rx = startX + lw + spacing + (iw * scale) + spacing
+      love.graphics.print(rightText, rx, baselineY)
     end
 
     -- Card with hover scale (+5%)

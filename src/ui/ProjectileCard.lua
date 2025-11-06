@@ -157,7 +157,7 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   local cornerRadius = 8
   
   -- Card background (black) - increased alpha for better readability
-  love.graphics.setColor(0, 0, 0, 0.5 * alpha)
+  love.graphics.setColor(0, 0, 0, 0.7 * alpha)
   love.graphics.rectangle("fill", x, y, cardW, cardH, cornerRadius, cornerRadius)
   
   -- Border/highlight - use rarity color for border at 30% alpha
@@ -167,9 +167,9 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   love.graphics.setLineWidth(2)
   love.graphics.rectangle("line", x, y, cardW, cardH, cornerRadius, cornerRadius)
   
-  -- Icon on the left
+  -- Icon on the left (anchored to top-left, shifted up)
   local iconX = x + iconPadding
-  local iconY = y + (cardH - iconSize) * 0.5
+  local iconY = y + padding
   
   if projectile.icon then
     local iconImg = self:loadIcon(projectile.icon)
@@ -177,7 +177,8 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
       love.graphics.setColor(1, 1, 1, alpha)
       local iw, ih = iconImg:getWidth(), iconImg:getHeight()
       local scale = iconSize / math.max(iw, ih)
-      love.graphics.draw(iconImg, iconX + iconSize * 0.5, iconY + iconSize * 0.5, 0, scale, scale, iw * 0.5, ih * 0.5)
+      -- Draw anchored at top-left inside the card
+      love.graphics.draw(iconImg, iconX, iconY, 0, scale, scale)
     else
       -- Fallback: draw circle - apply alpha
       love.graphics.setColor(0.9, 0.85, 0.7, alpha) -- Light beige/yellowish
