@@ -62,8 +62,8 @@ function love.update(deltaTime)
           mapScene = MapScene.new()
         end
         mapScene._battleVictory = true
-        -- Show rewards scene before returning to map
-        sceneManager:set(RewardsScene.new())
+        -- Show rewards scene before returning to map (pass gold reward if available)
+        sceneManager:set(RewardsScene.new({ goldReward = result.goldReward or 0 }))
       else
         -- Defeat: go straight back to map
         if mapScene then

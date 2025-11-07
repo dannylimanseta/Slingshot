@@ -4,6 +4,7 @@ local ProjectileManager = require("managers.ProjectileManager")
 local Button = require("ui.Button")
 local RewardsBackdropShader = require("utils.RewardsBackdropShader")
 local ProjectileCard = require("ui.ProjectileCard")
+local TopBar = require("ui.TopBar")
 
 local OrbRewardScene = {}
 OrbRewardScene.__index = OrbRewardScene
@@ -38,6 +39,7 @@ function OrbRewardScene.new()
     bounds = {}, -- clickable bounds per option
     scales = {}, -- per-option hover scale
     skipButton = nil,
+    topBar = TopBar.new(),
   }, OrbRewardScene)
 end
 
@@ -296,6 +298,11 @@ function OrbRewardScene:draw()
   -- Draw Skip button
   if self.skipButton then
     self.skipButton:draw()
+  end
+  
+  -- Draw top bar on top (z-order)
+  if self.topBar then
+    self.topBar:draw()
   end
 end
 

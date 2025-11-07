@@ -108,6 +108,11 @@ function EncounterManager.getCurrentBattleProfile()
 	return _currentBattleProfile
 end
 
+function EncounterManager.getCurrentEncounter()
+	if not _currentEncounterId then return nil end
+	return encounters.get(_currentEncounterId)
+end
+
 function EncounterManager.pickRandomEncounterId(filterFn)
 	local list = encounters.list()
 	local pool = {}

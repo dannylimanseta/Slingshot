@@ -37,7 +37,7 @@ function TopBar:draw()
   local playerState = PlayerState.getInstance()
   local health = playerState:getHealth()
   local maxHealth = playerState:getMaxHealth()
-  local gold = playerState:getGold()
+  local gold = (self.overrideGold ~= nil) and self.overrideGold or playerState:getGold()
   
   -- Draw top bar background
   love.graphics.setColor(theme.colors.topbar or { 14/255, 16/255, 20/255, 1 })

@@ -2,6 +2,7 @@ local config = require("config")
 local theme = require("theme")
 local RewardsBackdropShader = require("utils.RewardsBackdropShader")
 local Button = require("ui.Button")
+local TopBar = require("ui.TopBar")
 
 local RewardsScene = {}
 RewardsScene.__index = RewardsScene
@@ -17,7 +18,63 @@ function RewardsScene.new(params)
     skipButton = nil,
     orbButton = nil,
     orbsIcon = nil,
+    goldButton = nil,
+    goldIcon = nil,
+    topBar = TopBar.new(),
+    -- Coin animation state
+    _coinAnimations = {},
+    _goldButtonFadeAlpha = 1.0,
+    _goldButtonClicked = false,
+    _goldAnimationComplete = false,
   }, RewardsScene)
+end
+
+-- Helper function to create reward buttons with consistent styling
+-- Ensures all icons are displayed at the same visual size
+local TARGET_ICON_SIZE = 32 -- Target size in pixels for all icons
+local function createRewardButton(label, icon, onClick)
+  -- Calculate scale to make icon match target size
+  local iconScale = 0.5 -- Default fallback
+  if icon then
+    local iconW, iconH = icon:getWidth(), icon:getHeight()
+    -- Use the larger dimension to ensure icon fits within target size
+    local iconMaxDim = math.max(iconW, iconH)
+    if iconMaxDim > 0 then
+      iconScale = TARGET_ICON_SIZE / iconMaxDim
+    end
+  end
+  
+  return Button.new({
+    label = label,
+    font = theme.fonts.base,
+    icon = icon,
+    iconScale = iconScale,
+    iconTint = { 1, 1, 1, 0.85 },
+    align = "left",
+    onClick = onClick or function() end,
+  })
+end
+
+-- Helper function to layout reward buttons with consistent positioning
+-- Returns layout function that can be called for each button
+local function createRewardButtonLayout(vw, vh, rowIndex, dt, mouseX, mouseY)
+  -- rowIndex: 0 = first row (orb), 1 = second row (gold), etc.
+  local baseY = vh * 0.26 -- First row Y position
+  local rowGap = 10 -- Fixed 10px gap between buttons
+  local leftMargin = vw * 0.325 -- Left margin (centers 35% width button, then shifts left)
+  -- Calculate button height (all buttons use same font and padding)
+  local f = theme.fonts.base
+  local th = f:getHeight()
+  local buttonHeight = math.max(th + Button.defaults.paddingY * 2, 52)
+  return function(button)
+    if not button then return end
+    local bw = math.floor(vw * 0.35) -- 35% width
+    local bx = math.floor(leftMargin) -- Left-aligned position
+    -- Position each button accounting for previous buttons' height + gap
+    local by = math.floor(baseY + rowIndex * (buttonHeight + rowGap))
+    button:setLayout(bx, by, bw, buttonHeight)
+    button:update(dt, mouseX, mouseY)
+  end
 end
 
 function RewardsScene:load()
@@ -37,6 +94,13 @@ function RewardsScene:load()
   local okIcon, imgIcon = pcall(love.graphics.newImage, iconPath)
   if okIcon then self.orbsIcon = imgIcon end
   
+  -- Load gold icon
+  local goldIconPath = (config.assets and config.assets.images and config.assets.images.icon_gold) or nil
+  if goldIconPath then
+    local okGoldIcon, goldImg = pcall(love.graphics.newImage, goldIconPath)
+    if okGoldIcon then self.goldIcon = goldImg end
+  end
+  
   -- Create buttons (layout computed in update/draw each frame)
   self.skipButton = Button.new({
     label = "Skip rewards",
@@ -46,16 +110,32 @@ function RewardsScene:load()
       self._exitRequested = true
     end,
   })
-  self.orbButton = Button.new({
-    label = "Select an Orb Reward",
-    font = theme.fonts.base,
-    icon = self.orbsIcon,
-    iconScale = 0.5,
-    iconTint = { 1, 1, 1, 0.85 },
-    onClick = function()
+  self.orbButton = createRewardButton(
+    "Select an Orb Reward",
+    self.orbsIcon,
+    function()
       self._selectedOrb = true
-    end,
-  })
+    end
+  )
+  
+  -- Initialize top bar gold override to pre-reward amount
+  do
+    local PlayerState = require("core.PlayerState")
+    local playerState = PlayerState.getInstance()
+    local currentGold = playerState:getGold()
+    local reward = (self.params and self.params.goldReward) or 0
+    self._goldDisplayStart = math.max(0, currentGold - reward)
+    self._goldDisplayTarget = currentGold
+    self._goldCounting = false
+    self._goldCountTime = 0
+    self._goldCountDuration = 0.6 -- seconds to count up
+    if self.topBar then
+      self.topBar.overrideGold = self._goldDisplayStart
+    end
+  end
+  
+  -- Gold button (will be created/updated when gold reward is available)
+  self.goldButton = nil
 end
 
 function RewardsScene:update(dt)
@@ -78,17 +158,10 @@ function RewardsScene:update(dt)
   local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
   local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
   
+  -- Layout orb button (row 0) using helper function
+  local layoutRewardButton = createRewardButtonLayout(vw, vh, 0, dt, self._mouseX, self._mouseY)
   if self.orbButton then
-    -- 35% width, height based on font
-    local bw = math.floor(vw * 0.35)
-    local f = self.orbButton.font or theme.fonts.base
-    local th = f:getHeight()
-    local bh = math.max(th + Button.defaults.paddingY * 2, 52)
-    local bx = math.floor((vw - bw) * 0.5)
-    -- Shift upward so it occupies the first row position (room for 5-6 rows below)
-    local by = math.floor(vh * 0.26)
-    self.orbButton:setLayout(bx, by, bw, bh)
-    self.orbButton:update(dt, self._mouseX, self._mouseY)
+    layoutRewardButton(self.orbButton)
   end
   
   if self.skipButton then
@@ -101,6 +174,63 @@ function RewardsScene:update(dt)
     local by = math.floor(vh * 0.78)
     self.skipButton:setLayout(bx, by, bw, bh)
     self.skipButton:update(dt, self._mouseX, self._mouseY)
+  end
+  
+  -- Update gold button layout if gold reward is available
+  local goldReward = (self.params and self.params.goldReward) or 0
+  if goldReward > 0 then
+    if not self.goldButton then
+      local goldText = tostring(goldReward) .. " Gold"
+      self.goldButton = createRewardButton(goldText, self.goldIcon, function()
+        -- Handle gold button click
+        if not self._goldButtonClicked then
+          self._goldButtonClicked = true
+          self:_startCoinAnimation(goldReward, vw, vh)
+        end
+      end)
+    end
+    
+    -- Layout gold button (row 1)
+    local layoutGoldButton = createRewardButtonLayout(vw, vh, 1, dt, self._mouseX, self._mouseY)
+    layoutGoldButton(self.goldButton)
+  end
+  
+  -- Update coin animations
+  self:_updateCoinAnimations(dt)
+  
+  -- Update gold button fade
+  if self._goldButtonClicked and not self._goldAnimationComplete then
+    -- Check if all coins have finished
+    if #self._coinAnimations == 0 then
+      self._goldAnimationComplete = true
+      -- Start gold counting animation now
+      if not self._goldCounting then
+        self._goldCounting = true
+        self._goldCountTime = 0
+        -- Ensure override starts at start value
+        if self.topBar then self.topBar.overrideGold = self._goldDisplayStart end
+      end
+    end
+  end
+  
+  if self._goldAnimationComplete then
+    -- Fade out button
+    self._goldButtonFadeAlpha = math.max(0, self._goldButtonFadeAlpha - dt * 6)
+  end
+
+  -- Animate gold number increase in top bar after coins finish
+  if self._goldCounting and self.topBar then
+    self._goldCountTime = self._goldCountTime + dt
+    local t = math.min(1, self._goldCountTime / self._goldCountDuration)
+    -- Ease-out
+    local eased = 1 - (1 - t) * (1 - t)
+    local value = math.floor(self._goldDisplayStart + (self._goldDisplayTarget - self._goldDisplayStart) * eased + 0.5)
+    self.topBar.overrideGold = value
+    if t >= 1 then
+      -- Counting done; clear override to use real PlayerState gold
+      self.topBar.overrideGold = nil
+      self._goldCounting = false
+    end
   end
 end
 
@@ -169,10 +299,70 @@ function RewardsScene:draw()
     self.orbButton:draw()
   end
   
+  -- Gold reward button (matches orb button style)
+  if self.goldButton and self._goldButtonFadeAlpha > 0 then
+    -- Calculate hitRect first (same logic as Button:draw)
+    if not self.goldButton._hitRect then
+      self.goldButton._hitRect = {}
+    end
+    local cx = self.goldButton.x + self.goldButton.w * 0.5
+    local cy = self.goldButton.y + self.goldButton.h * 0.5
+    local s = self.goldButton._scale or 1.0
+    local drawW = self.goldButton.w * s
+    local drawH = self.goldButton.h * s
+    self.goldButton._hitRect.x = math.floor(cx - drawW * 0.5)
+    self.goldButton._hitRect.y = math.floor(cy - drawH * 0.5)
+    self.goldButton._hitRect.w = math.floor(drawW)
+    self.goldButton._hitRect.h = math.floor(drawH)
+    
+    -- Draw button with alpha applied
+    love.graphics.push()
+    love.graphics.setColor(Button.defaults.bgColor[1], Button.defaults.bgColor[2], Button.defaults.bgColor[3], Button.defaults.bgColor[4] * self._goldButtonFadeAlpha)
+    love.graphics.push()
+    love.graphics.translate(cx, cy)
+    love.graphics.scale(s, s)
+    love.graphics.rectangle("fill", -self.goldButton.w * 0.5, -self.goldButton.h * 0.5, self.goldButton.w, self.goldButton.h, Button.defaults.cornerRadius, Button.defaults.cornerRadius)
+    
+    -- Draw icon and text with alpha
+    love.graphics.setFont(self.goldButton.font or theme.fonts.base)
+    local tw = (self.goldButton.font or theme.fonts.base):getWidth(self.goldButton.label)
+    local th = (self.goldButton.font or theme.fonts.base):getHeight()
+    local iconW, iconH = 0, 0
+    if self.goldButton.icon then
+      local iw, ih = self.goldButton.icon:getWidth(), self.goldButton.icon:getHeight()
+      iconW = iw * (self.goldButton.iconScale or 1.0)
+      iconH = ih * (self.goldButton.iconScale or 1.0)
+    end
+    local spacing = (self.goldButton.icon and 16) or 0
+    local startX = -self.goldButton.w * 0.5 + Button.defaults.paddingX
+    local centerY = -th * 0.5
+    
+    if self.goldButton.icon then
+      local tint = self.goldButton.iconTint or {1, 1, 1, 0.8}
+      love.graphics.setColor(tint[1], tint[2], tint[3], tint[4] * self._goldButtonFadeAlpha)
+      love.graphics.draw(self.goldButton.icon, startX, -iconH * 0.5, 0, (self.goldButton.iconScale or 1.0), (self.goldButton.iconScale or 1.0))
+      startX = startX + iconW + spacing
+    end
+    
+    local textColor = Button.defaults.textColor
+    love.graphics.setColor(textColor[1], textColor[2], textColor[3], textColor[4] * self._goldButtonFadeAlpha)
+    love.graphics.print(self.goldButton.label, startX, centerY)
+    love.graphics.pop()
+    love.graphics.pop()
+  end
+  
   -- Skip button
   if self.skipButton then
     self.skipButton:draw()
   end
+  
+  -- Draw top bar
+  if self.topBar then
+    self.topBar:draw()
+  end
+  
+  -- Draw coin animations above topbar (z-order)
+  self:_drawCoinAnimations()
 end
 
 function RewardsScene:keypressed(key, scancode, isRepeat)
@@ -183,6 +373,33 @@ end
 
 function RewardsScene:mousepressed(x, y, button)
   if button == 1 then
+    -- Handle gold button click first (before other buttons)
+    if self.goldButton and not self._goldButtonClicked then
+      -- Ensure button has hitRect by calculating it manually if needed
+      if not self.goldButton._hitRect or not self.goldButton._hitRect.w then
+        local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
+        local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
+        local layoutGoldButton = createRewardButtonLayout(vw, vh, 1, 0, self._mouseX, self._mouseY)
+        layoutGoldButton(self.goldButton)
+        -- Manually calculate hitRect (same logic as Button:draw)
+        local cx = self.goldButton.x + self.goldButton.w * 0.5
+        local cy = self.goldButton.y + self.goldButton.h * 0.5
+        local s = self.goldButton._scale or 1.0
+        local drawW = self.goldButton.w * s
+        local drawH = self.goldButton.h * s
+        if not self.goldButton._hitRect then
+          self.goldButton._hitRect = {}
+        end
+        self.goldButton._hitRect.x = math.floor(cx - drawW * 0.5)
+        self.goldButton._hitRect.y = math.floor(cy - drawH * 0.5)
+        self.goldButton._hitRect.w = math.floor(drawW)
+        self.goldButton._hitRect.h = math.floor(drawH)
+      end
+      
+      if self.goldButton:mousepressed(x, y, button) then
+        return nil
+      end
+    end
     if self.orbButton and self.orbButton:mousepressed(x, y, button) then return nil end
     if self.skipButton and self.skipButton:mousepressed(x, y, button) then return nil end
   end
@@ -190,6 +407,132 @@ end
 
 function RewardsScene:mousemoved(x, y, dx, dy, isTouch)
   self._mouseX, self._mouseY = x, y
+end
+
+-- Start coin animation from button to topbar
+function RewardsScene:_startCoinAnimation(goldAmount, vw, vh)
+  if not self.goldButton or not self.goldIcon then return end
+  
+  -- Calculate source position (button's icon position)
+  local buttonRect = self.goldButton._hitRect
+  if not buttonRect then return end
+  
+  -- Get button icon position (left side of button with padding)
+  local iconSize = TARGET_ICON_SIZE
+  local iconSpacing = 16
+  local leftPadding = Button.defaults.paddingX
+  local sourceX = buttonRect.x + leftPadding + iconSize * 0.5
+  local sourceY = buttonRect.y + buttonRect.h * 0.5
+  
+  -- Calculate target position (topbar's gold icon position)
+  local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
+  local topBarIconSize = 32
+  local topBarTopPadding = (topBarHeight - topBarIconSize) * 0.5
+  local topBarLeftPadding = 24
+  local topBarIconSpacing = 12
+  
+  -- Calculate gold icon position in topbar (match TopBar.lua calculation)
+  local PlayerState = require("core.PlayerState")
+  local playerState = PlayerState.getInstance()
+  local health = playerState:getHealth()
+  local maxHealth = playerState:getMaxHealth()
+  local healthText = string.format("%d / %d", math.floor(health), math.floor(maxHealth))
+  local healthTextWidth = theme.fonts.base:getWidth(healthText)
+  local afterHealthX = topBarLeftPadding + topBarIconSize + topBarIconSpacing + healthTextWidth + 40
+  local targetX = afterHealthX + topBarIconSize * 0.5
+  local targetY = topBarTopPadding + topBarIconSize * 0.5
+  
+  -- Determine number of coins based on gold amount
+  -- More coins for larger amounts, but cap at reasonable number
+  local coinCount = math.min(math.max(5, math.floor(goldAmount / 5)), 30)
+  
+  -- Create coin animations
+  for i = 1, coinCount do
+    local delay = (i - 1) * 0.02 -- Stagger coins slightly
+    local angle = love.math.random() * math.pi * 2 -- Random initial angle
+    local speed = 200 + love.math.random() * 100 -- Random speed variation
+    local rotationSpeed = (love.math.random() * 2 - 1) * 5 -- Random rotation speed
+    
+    table.insert(self._coinAnimations, {
+      x = sourceX,
+      y = sourceY,
+      startX = sourceX,
+      startY = sourceY,
+      targetX = targetX,
+      targetY = targetY,
+      progress = 0,
+      delay = delay,
+      duration = 0.5, -- Animation duration (shorter for faster feel)
+      angle = angle,
+      speed = speed,
+      rotation = love.math.random() * math.pi * 2,
+      rotationSpeed = rotationSpeed,
+      scale = (0.4 + love.math.random() * 0.2) * 2, -- Random scale variation, doubled (2x size)
+      alpha = 1.0,
+    })
+  end
+end
+
+-- Update coin animations
+function RewardsScene:_updateCoinAnimations(dt)
+  local alive = {}
+  
+  for i, coin in ipairs(self._coinAnimations) do
+    -- Handle delay
+    if coin.delay > 0 then
+      coin.delay = coin.delay - dt
+      table.insert(alive, coin)
+    else
+      -- Update progress
+      coin.progress = coin.progress + dt / coin.duration
+      
+      if coin.progress < 1 then
+        -- Ease-out cubic for smooth deceleration
+        local t = coin.progress
+        local eased = 1 - math.pow(1 - t, 3)
+        
+        -- Update position with slight arc
+        local arcHeight = 30 * math.sin(t * math.pi) -- Arc motion
+        coin.x = coin.startX + (coin.targetX - coin.startX) * eased
+        coin.y = coin.startY + (coin.targetY - coin.startY) * eased - arcHeight
+        
+        -- Update rotation
+        coin.rotation = coin.rotation + coin.rotationSpeed * dt
+        
+        -- Fade out for 0.3 seconds at the end
+        -- Animation duration is 0.8s, so fade starts at 0.8 - 0.3 = 0.5s, which is progress 0.5/0.8 = 0.625
+        local fadeStartProgress = 1.0 - (0.3 / coin.duration) -- 0.625 for 0.8s duration
+        if coin.progress > fadeStartProgress then
+          coin.alpha = 1 - ((coin.progress - fadeStartProgress) / (1.0 - fadeStartProgress))
+        end
+        
+        table.insert(alive, coin)
+      end
+      -- Coin reached target - don't add to alive list
+    end
+  end
+  
+  self._coinAnimations = alive
+end
+
+-- Draw coin animations
+function RewardsScene:_drawCoinAnimations()
+  if not self.goldIcon then return end
+  
+  for _, coin in ipairs(self._coinAnimations) do
+    if coin.delay <= 0 and coin.alpha > 0 then
+      love.graphics.push()
+      love.graphics.translate(coin.x, coin.y)
+      love.graphics.rotate(coin.rotation)
+      love.graphics.setColor(1, 1, 1, coin.alpha)
+      local iconW, iconH = self.goldIcon:getWidth(), self.goldIcon:getHeight()
+      local scale = coin.scale * (TARGET_ICON_SIZE / math.max(iconW, iconH))
+      love.graphics.draw(self.goldIcon, -iconW * 0.5 * scale, -iconH * 0.5 * scale, 0, scale, scale)
+      love.graphics.pop()
+    end
+  end
+  
+  love.graphics.setColor(1, 1, 1, 1)
 end
 
 return RewardsScene

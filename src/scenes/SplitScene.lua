@@ -863,6 +863,21 @@ function SplitScene:update(dt)
           self.turnManager:transitionTo(TurnManager.States.VICTORY)
         end
       end
+      
+      -- Award gold based on encounter difficulty
+      local EncounterManager = require("core.EncounterManager")
+      local PlayerState = require("core.PlayerState")
+      local encounter = EncounterManager.getCurrentEncounter()
+      if encounter then
+        local difficulty = encounter.difficulty or 1
+        local goldReward = self:calculateGoldReward(difficulty)
+        if goldReward > 0 then
+          local playerState = PlayerState.getInstance()
+          playerState:addGold(goldReward)
+          -- Store gold reward for display in RewardsScene
+          self._battleGoldReward = goldReward
+        end
+      end
     end
   end
   
@@ -895,14 +910,16 @@ function SplitScene:update(dt)
   if self._returnToMapTimer and self._returnToMapTimer > 0 then
     self._returnToMapTimer = self._returnToMapTimer - dt
     if self._returnToMapTimer <= 0 then
-      -- Store victory status before resetting flags
+      -- Store victory status and gold reward before resetting flags
       local wasVictory = self._victoryDetected
+      local goldReward = self._battleGoldReward or 0
       -- Reset flags
       self._victoryDetected = false
       self._defeatDetected = false
       self._returnToMapTimer = 0
-      -- Return victory status along with return signal
-      return { type = "return_to_map", victory = wasVictory }
+      self._battleGoldReward = nil
+      -- Return victory status and gold reward along with return signal
+      return { type = "return_to_map", victory = wasVictory, goldReward = goldReward }
     end
   end
   
@@ -949,6 +966,24 @@ function SplitScene:triggerShake(magnitude, duration)
   self.shakeMagnitude = magnitude or 10
   self.shakeDuration = duration or 0.25
   self.shakeTime = self.shakeDuration
+end
+
+-- Calculate gold reward based on difficulty
+-- Suggested ranges:
+--   Difficulty 1: 15-25 gold (easier encounters)
+--   Difficulty 2: 30-45 gold (harder encounters)
+function SplitScene:calculateGoldReward(difficulty)
+  difficulty = difficulty or 1
+  if difficulty == 1 then
+    return love.math.random(15, 25)
+  elseif difficulty == 2 then
+    return love.math.random(30, 45)
+  else
+    -- For higher difficulties, scale up: difficulty 3 = 50-70, etc.
+    local baseMin = 15 + (difficulty - 1) * 15
+    local baseMax = 25 + (difficulty - 1) * 20
+    return love.math.random(baseMin, baseMax)
+  end
 end
 
 -- Reload blocks from battle profile (called when returning from formation editor)
