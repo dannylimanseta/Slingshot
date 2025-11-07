@@ -27,6 +27,7 @@ local function createEnemyFromConfig(enemyConfig, index)
     flash = 0,
     knockbackTime = 0,
     lungeTime = 0,
+    jumpTime = 0, -- Jump animation timer (for shockwave attack)
     rotation = 0, -- Current rotation angle in radians (tweens back to 0)
     pulseTime = love.math.random() * (2 * math.pi), -- Different phase offsets for visual variety
     disintegrating = false,
@@ -60,6 +61,7 @@ function BattleScene.new()
     _playerAttackDelayTimer = nil, -- Delay timer for player attack animation (after ball despawn)
     _pendingPlayerAttackDamage = nil, -- { damage, armor, wasJackpot, impactBlockCount, impactIsCrit } - stored when turn ends, applied after delay
     _pendingImpactParams = nil, -- { blockCount, isCrit } - stored by playImpact, merged into pending damage
+    _shockwaveSequence = nil, -- Timer for sequencing shockwave animation phases
     playerImg = nil,
     playerScaleMul = 1,
     playerLungeTime = 0,
@@ -626,6 +628,9 @@ function BattleScene:update(dt, bounds)
     end
   end
 
+  -- Update shockwave sequence
+  self:_updateShockwaveSequence(dt)
+
   -- Handle staggered enemy attack delays
   local aliveAttackDelays = {}
   for _, delayData in ipairs(self._enemyAttackDelays or {}) do
@@ -901,37 +906,46 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
     if enemy.hp > 0 and enemy.displayHP > 0.1 then
       -- First enemy attacks immediately (handled below), others are delayed by 0.3s intervals
       if i == 1 then
-        -- Perform first enemy attack immediately
-        local dmg = love.math.random(enemy.damageMin, enemy.damageMax)
-  local blocked = math.min(self.playerArmor or 0, dmg)
-  local net = dmg - blocked
-  self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
-  self.playerHP = math.max(0, self.playerHP - net)
-  
-  -- If damage is fully blocked, show armor icon popup and flash icon
-  if net <= 0 then
-    self.armorIconFlashTimer = 0.5 -- Flash duration
-    table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
-  else
-    self.playerFlash = config.battle.hitFlashDuration
-    self.playerKnockbackTime = 1e-6
-    table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
-    -- Emit hit burst particles from player center
-    if self.particles then
-      local px, py = self:getPlayerCenterPivot(self._lastBounds)
-      if px and py then
-        self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
-      end
-    end
-          pushLog(self, "Enemy " .. i .. " dealt " .. net)
-    if self.onPlayerDamage then
-      self.onPlayerDamage()
-    end
-  end
-  -- Trigger enemy lunge animation
-        enemy.lungeTime = 1e-6
-  -- Trigger screenshake
-  self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+        -- Check if enemy_1 (crawler) should do shockwave (30% chance)
+        local isEnemy1 = enemy.spritePath == "enemy_1.png"
+        local shouldShockwave = isEnemy1 and (love.math.random() < 0.3)
+        
+        if shouldShockwave then
+          -- Perform shockwave attack
+          self:performEnemyShockwave(enemy)
+        else
+          -- Perform normal attack
+          local dmg = love.math.random(enemy.damageMin, enemy.damageMax)
+          local blocked = math.min(self.playerArmor or 0, dmg)
+          local net = dmg - blocked
+          self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
+          self.playerHP = math.max(0, self.playerHP - net)
+          
+          -- If damage is fully blocked, show armor icon popup and flash icon
+          if net <= 0 then
+            self.armorIconFlashTimer = 0.5 -- Flash duration
+            table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+          else
+            self.playerFlash = config.battle.hitFlashDuration
+            self.playerKnockbackTime = 1e-6
+            table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
+            -- Emit hit burst particles from player center
+            if self.particles then
+              local px, py = self:getPlayerCenterPivot(self._lastBounds)
+              if px and py then
+                self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
+              end
+            end
+            pushLog(self, "Enemy " .. i .. " dealt " .. net)
+            if self.onPlayerDamage then
+              self.onPlayerDamage()
+            end
+          end
+          -- Trigger enemy lunge animation
+          enemy.lungeTime = 1e-6
+          -- Trigger screenshake
+          self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+        end
       else
         -- Schedule delayed attack for subsequent enemies (0.3s delay between each enemy)
         table.insert(self._enemyAttackDelays, {
@@ -955,6 +969,99 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
   -- Clear pending armor state for next turn
   self.pendingArmor = 0
   self.armorPopupShown = false
+end
+
+-- Perform enemy shockwave attack (enemy_1 special ability)
+function BattleScene:performEnemyShockwave(enemy)
+  -- Start jump animation
+  enemy.jumpTime = 1e-6
+  
+  -- Initialize shockwave sequence timer
+  -- Sequence: jump (0.5s) -> screenshake (0.1s delay) -> damage (0.1s delay) -> blocks (0.1s delay)
+  self._shockwaveSequence = {
+    timer = 0,
+    phase = "jump", -- jump -> screenshake -> damage -> blocks
+    enemy = enemy,
+  }
+end
+
+-- Update shockwave sequence (called from update loop)
+function BattleScene:_updateShockwaveSequence(dt)
+  if not self._shockwaveSequence then return end
+  
+  local seq = self._shockwaveSequence
+  seq.timer = seq.timer + dt
+  
+  local jumpDuration = 0.5 -- 0.3s up + 0.2s down
+  local screenshakeDelay = 0.1 -- Delay after jump lands
+  local damageDelay = 0.1 -- Delay after screenshake
+  local blocksDelay = 0.1 -- Delay after damage
+  
+  if seq.phase == "jump" then
+    -- Wait for jump to complete
+    if seq.timer >= jumpDuration then
+      seq.phase = "screenshake"
+      seq.timer = 0
+    end
+  elseif seq.phase == "screenshake" then
+    -- Trigger massive screenshake
+    if seq.timer >= screenshakeDelay then
+      self:triggerShake(30, 0.5) -- Much stronger shake than normal attack
+      seq.phase = "damage"
+      seq.timer = 0
+    end
+  elseif seq.phase == "damage" then
+    -- Deal 6 damage to player
+    if seq.timer >= damageDelay then
+      local dmg = 6
+      local blocked = math.min(self.playerArmor or 0, dmg)
+      local net = dmg - blocked
+      self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
+      self.playerHP = math.max(0, self.playerHP - net)
+      
+      -- Show damage popup
+      if net <= 0 then
+        self.armorIconFlashTimer = 0.5
+        table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+      else
+        self.playerFlash = config.battle.hitFlashDuration
+        self.playerKnockbackTime = 1e-6
+        table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
+        -- Emit hit burst particles from player center
+        if self.particles then
+          local px, py = self:getPlayerCenterPivot(self._lastBounds)
+          if px and py then
+            self.particles:emitHitBurst(px, py)
+          end
+        end
+        pushLog(self, "Enemy shockwave dealt " .. net)
+        if self.onPlayerDamage then
+          self.onPlayerDamage()
+        end
+      end
+      
+      -- Check for defeat
+      if self.playerHP <= 0 then
+        self.state = "lose"
+        pushLog(self, "You were defeated!")
+        if self.turnManager then
+          self.turnManager:transitionTo(TurnManager.States.DEFEAT)
+        end
+      end
+      
+      seq.phase = "blocks"
+      seq.timer = 0
+    end
+  elseif seq.phase == "blocks" then
+    -- Trigger block shake and drop effect
+    if seq.timer >= blocksDelay then
+      if self.turnManager then
+        self.turnManager:emit("enemy_shockwave_blocks")
+      end
+      -- Sequence complete
+      self._shockwaveSequence = nil
+    end
+  end
 end
 
 -- Set TurnManager reference (called by SplitScene)

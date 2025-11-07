@@ -151,6 +151,26 @@ function Visuals.draw(scene, bounds)
     end
   end
 
+  local function jumpOffset(t)
+    if not t or t <= 0 then return 0 end
+    local jumpUpDuration = 0.3
+    local jumpDownDuration = 0.2
+    local jumpHeight = -60 -- Negative Y means upward (screen coordinates)
+    if t < jumpUpDuration then
+      -- Jumping up: ease-out curve
+      local progress = t / jumpUpDuration
+      local eased = 1 - (1 - progress) * (1 - progress) -- Quadratic ease-out
+      return jumpHeight * eased
+    elseif t < jumpUpDuration + jumpDownDuration then
+      -- Landing down: ease-in curve
+      local progress = (t - jumpUpDuration) / jumpDownDuration
+      local eased = progress * progress -- Quadratic ease-in
+      return jumpHeight * (1 - eased)
+    else
+      return 0
+    end
+  end
+
   local playerLunge = lungeOffset(scene.playerLungeTime, (scene.impactInstances and #scene.impactInstances > 0))
 
   local function knockbackOffset(t)
@@ -181,10 +201,11 @@ function Visuals.draw(scene, bounds)
   -- Calculate dynamic enemy positions
   local enemyPositions = calculateEnemyPositions(scene, rightStart, rightWidth, baselineY, r)
   
-  -- Apply lunge and knockback offsets to enemy positions
+  -- Apply lunge, jump, and knockback offsets to enemy positions
   for i, pos in ipairs(enemyPositions) do
     local enemy = pos.enemy
     local enemyLunge = lungeOffset(enemy.lungeTime, false)
+    local enemyJump = jumpOffset(enemy.jumpTime)
     local enemyKB = 0
     for _, event in ipairs(scene.enemyKnockbackEvents or {}) do
       if event.startTime then
@@ -193,6 +214,7 @@ function Visuals.draw(scene, bounds)
     end
     enemyKB = enemyKB + knockbackOffset(enemy.knockbackTime)
     pos.curX = pos.x - enemyLunge + enemyKB
+    pos.curY = pos.y + enemyJump -- Apply jump offset to Y position
   end
 
   local playerHalfH = scene.playerImg and ((scene.playerImg:getHeight() * playerScale) * 0.5) or r
@@ -477,23 +499,25 @@ function Visuals.draw(scene, bounds)
         love.graphics.push()
         -- Apply skew around the sprite's bottom-center pivot point
         if skewX ~= 0 then
-          love.graphics.translate(pos.curX, pos.y)
+          local enemyY = pos.curY or pos.y
+          love.graphics.translate(pos.curX, enemyY)
           love.graphics.shear(skewX, 0)
-          love.graphics.translate(-pos.curX, -pos.y)
+          love.graphics.translate(-pos.curX, -enemyY)
         end
         
+        local enemyY = pos.curY or pos.y -- Use curY if available (for jump animation)
         if enemy.flash and enemy.flash > 0 and not enemy.disintegrating and scene.whiteSilhouetteShader then
           -- Solid white silhouette (override base sprite)
           love.graphics.setShader(scene.whiteSilhouetteShader)
           scene.whiteSilhouetteShader:send("u_alpha", 1.0)
           love.graphics.setBlendMode("alpha")
           love.graphics.setColor(1, 1, 1, 1)
-          love.graphics.draw(enemy.img, pos.curX, pos.y, enemy.rotation or 0, sx, sy, iw * 0.5, ih)
+          love.graphics.draw(enemy.img, pos.curX, enemyY, enemy.rotation or 0, sx, sy, iw * 0.5, ih)
           love.graphics.setShader()
           love.graphics.setColor(1, 1, 1, 1)
         else
           love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, 1)
-          love.graphics.draw(enemy.img, pos.curX, pos.y, tilt, sx, sy, iw * 0.5, ih)
+          love.graphics.draw(enemy.img, pos.curX, enemyY, tilt, sx, sy, iw * 0.5, ih)
 
           if enemy.disintegrating and scene.disintegrationShader then
             love.graphics.setShader()
@@ -506,7 +530,7 @@ function Visuals.draw(scene, bounds)
             love.graphics.setBlendMode("add")
             love.graphics.setColor(1, 1, 1, a)
             for j = 1, math.max(1, passes) do
-              love.graphics.draw(enemy.img, pos.curX, pos.y, enemy.rotation or 0, sx, sy, iw * 0.5, ih)
+              love.graphics.draw(enemy.img, pos.curX, enemyY, enemy.rotation or 0, sx, sy, iw * 0.5, ih)
             end
             love.graphics.setBlendMode("alpha")
             love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, 1)
@@ -527,7 +551,8 @@ function Visuals.draw(scene, bounds)
         else
           love.graphics.setColor(0.9 * brightnessMultiplier, 0.2 * brightnessMultiplier, 0.2 * brightnessMultiplier, 1)
         end
-        love.graphics.circle("fill", pos.curX, pos.y - r, r)
+        local enemyY = pos.curY or pos.y
+        love.graphics.circle("fill", pos.curX, enemyY - r, r)
         love.graphics.setColor(1, 1, 1, 1)
       end
     end

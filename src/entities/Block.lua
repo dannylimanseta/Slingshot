@@ -173,6 +173,49 @@ function Block:update(dt)
     self:rebuildFixture()
     self.pendingResize = false
   end
+  
+  -- Update shake and drop animation (for shockwave effect)
+  if self.shakeTime and self.shakeTime > 0 then
+    self.shakeTime = math.max(0, self.shakeTime - dt)
+    -- Shake offset: random jitter that decreases over time
+    local shakeDuration = 0.6 -- Longer duration for visible shake and drop
+    local progress = self.shakeTime / shakeDuration
+    local shakeMagnitude = 6 * progress -- Stronger shake that decreases over time
+    self.shakeOffsetX = (love.math.random() * 2 - 1) * shakeMagnitude
+    self.shakeOffsetY = (love.math.random() * 2 - 1) * shakeMagnitude * 0.5 -- Less vertical shake, more horizontal
+    
+    -- Update rotation (blocks rotate as they drop)
+    if self.dropRotationSpeed then
+      self.dropRotation = (self.dropRotation or 0) + self.dropRotationSpeed * dt
+    end
+    
+    -- Update drop velocity (blocks fall down)
+    if self.dropVelocity ~= nil then
+      -- Gravity acceleration - blocks fall downwards
+      self.dropVelocity = (self.dropVelocity or 0) + 800 * dt -- Stronger gravity
+      self.dropOffsetY = (self.dropOffsetY or 0) + self.dropVelocity * dt
+    end
+    
+    -- Update fade alpha (fade out over time as blocks drop)
+    if self.fadeAlpha then
+      -- Fade out more gradually, starting after initial shake
+      local fadeStart = 0.3 -- Start fading after 30% of duration
+      if progress < fadeStart then
+        self.fadeAlpha = 1 -- Fully visible during initial shake
+      else
+        -- Fade from 1 to 0 over remaining time
+        local fadeProgress = (progress - fadeStart) / (1 - fadeStart)
+        self.fadeAlpha = math.max(0, 1 - fadeProgress)
+      end
+    end
+    
+    -- Destroy block when it's fully faded or dropped off screen
+    if self.shakeTime <= 0 or (self.fadeAlpha and self.fadeAlpha <= 0) then
+      self:destroy()
+      return
+    end
+  end
+  
   local k = config.blocks.tweenK
   local ds = (self.targetSize - self.size) * math.min(1, k * dt)
   self.size = self.size + ds
@@ -191,6 +234,7 @@ function Block:draw()
   if not self.alive then return end
   local x, y, w, h = self:getAABB()
   local yOffset = 0
+  local xOffset = 0
   local alpha = 1
   if self.spawnAnimating and self.spawnAnimDuration > 0 and self.spawnAnimDelay <= 0 then
     local t = math.min(1, (self.spawnAnimT or 0) / self.spawnAnimDuration)
@@ -204,6 +248,22 @@ function Block:draw()
   elseif self.spawnAnimating and self.spawnAnimDelay > 0 then
     -- Still waiting for delay, fully transparent
     alpha = 0
+  end
+  
+  -- Apply shake and drop offsets (for shockwave effect)
+  if self.shakeOffsetX then
+    xOffset = self.shakeOffsetX
+  end
+  if self.dropOffsetY then
+    yOffset = yOffset + self.dropOffsetY
+  end
+  if self.shakeOffsetY then
+    yOffset = yOffset + self.shakeOffsetY
+  end
+  
+  -- Apply fade alpha (for shockwave effect)
+  if self.fadeAlpha then
+    alpha = alpha * self.fadeAlpha
   end
 
   -- Calculate pulse brightness multiplier
@@ -234,10 +294,22 @@ function Block:draw()
     local s = self.size / math.max(1, math.max(iw, ih))
     local mul = (config.blocks and config.blocks.spriteScale) or 1
     s = s * mul
-    local dx = self.cx - iw * s * 0.5
-    local dy = (self.cy + yOffset) - ih * s * 0.5
+    local rotation = self.dropRotation or 0
+    local centerX = self.cx + xOffset
+    local centerY = self.cy + yOffset
+    local dx = centerX - iw * s * 0.5
+    local dy = centerY - ih * s * 0.5
     love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
-    love.graphics.draw(sprite, dx, dy, 0, s, s)
+    if rotation ~= 0 then
+      love.graphics.push()
+      love.graphics.translate(centerX, centerY)
+      love.graphics.rotate(rotation)
+      love.graphics.translate(-centerX, -centerY)
+      love.graphics.draw(sprite, dx, dy, 0, s, s)
+      love.graphics.pop()
+    else
+      love.graphics.draw(sprite, dx, dy, 0, s, s)
+    end
     -- Hit flash: additive white overlay passes similar to battle sprites
     if self.flashTime > 0 then
       local base = self.flashTime / math.max(0.0001, (config.blocks and config.blocks.flashDuration) or 0.08)
@@ -246,7 +318,16 @@ function Block:draw()
       love.graphics.setBlendMode("add")
       love.graphics.setColor(1, 1, 1, a * alpha) -- Flash remains white for proper visual feedback
       for i = 1, passes do
-        love.graphics.draw(sprite, dx, dy, 0, s, s)
+        if rotation ~= 0 then
+          love.graphics.push()
+          love.graphics.translate(centerX, centerY)
+          love.graphics.rotate(rotation)
+          love.graphics.translate(-centerX, -centerY)
+          love.graphics.draw(sprite, dx, dy, 0, s, s)
+          love.graphics.pop()
+        else
+          love.graphics.draw(sprite, dx, dy, 0, s, s)
+        end
       end
       love.graphics.setBlendMode("alpha")
       love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
@@ -267,15 +348,35 @@ function Block:draw()
         (theme.colors.block[4] or 1) * alpha
       )
     end
-    love.graphics.rectangle("fill", x, y + yOffset, w, h, 4, 4)
-    love.graphics.setColor(
-      (theme.colors.blockOutline[1] or 1) * brightnessMultiplier,
-      (theme.colors.blockOutline[2] or 1) * brightnessMultiplier,
-      (theme.colors.blockOutline[3] or 1) * brightnessMultiplier,
-      (theme.colors.blockOutline[4] or 1) * alpha
-    )
-    love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", x, y + yOffset, w, h, 4, 4)
+    local rotation = self.dropRotation or 0
+    local centerX = self.cx + xOffset
+    local centerY = self.cy + yOffset
+    if rotation ~= 0 then
+      love.graphics.push()
+      love.graphics.translate(centerX, centerY)
+      love.graphics.rotate(rotation)
+      love.graphics.translate(-centerX, -centerY)
+      love.graphics.rectangle("fill", x + xOffset, y + yOffset, w, h, 4, 4)
+      love.graphics.setColor(
+        (theme.colors.blockOutline[1] or 1) * brightnessMultiplier,
+        (theme.colors.blockOutline[2] or 1) * brightnessMultiplier,
+        (theme.colors.blockOutline[3] or 1) * brightnessMultiplier,
+        (theme.colors.blockOutline[4] or 1) * alpha
+      )
+      love.graphics.setLineWidth(2)
+      love.graphics.rectangle("line", x + xOffset, y + yOffset, w, h, 4, 4)
+      love.graphics.pop()
+    else
+      love.graphics.rectangle("fill", x + xOffset, y + yOffset, w, h, 4, 4)
+      love.graphics.setColor(
+        (theme.colors.blockOutline[1] or 1) * brightnessMultiplier,
+        (theme.colors.blockOutline[2] or 1) * brightnessMultiplier,
+        (theme.colors.blockOutline[3] or 1) * brightnessMultiplier,
+        (theme.colors.blockOutline[4] or 1) * alpha
+      )
+      love.graphics.setLineWidth(2)
+      love.graphics.rectangle("line", x + xOffset, y + yOffset, w, h, 4, 4)
+    end
     love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
     if self.flashTime > 0 then
       local base = self.flashTime / math.max(0.0001, (config.blocks and config.blocks.flashDuration) or 0.08)
@@ -284,7 +385,16 @@ function Block:draw()
       love.graphics.setBlendMode("add")
       love.graphics.setColor(1, 1, 1, a * alpha) -- Flash remains white for proper visual feedback
       for i = 1, passes do
-        love.graphics.rectangle("fill", x, y + yOffset, w, h, 4, 4)
+        if rotation ~= 0 then
+          love.graphics.push()
+          love.graphics.translate(centerX, centerY)
+          love.graphics.rotate(rotation)
+          love.graphics.translate(-centerX, -centerY)
+          love.graphics.rectangle("fill", x + xOffset, y + yOffset, w, h, 4, 4)
+          love.graphics.pop()
+        else
+          love.graphics.rectangle("fill", x + xOffset, y + yOffset, w, h, 4, 4)
+        end
       end
       love.graphics.setBlendMode("alpha")
       love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)

@@ -275,6 +275,13 @@ function SplitScene:setupTurnManagerEvents()
       self.left:respawnDestroyedBlocks({ x = 0, y = 0, w = centerRect.w, h = vh })
     end
   end)
+  
+  -- Enemy shockwave blocks event
+  self.turnManager:on("enemy_shockwave_blocks", function()
+    if self.left and self.left.triggerBlockShakeAndDrop then
+      self.left:triggerBlockShakeAndDrop()
+    end
+  end)
 end
 
 -- Helper function to end player turn using TurnManager

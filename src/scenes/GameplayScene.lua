@@ -997,6 +997,58 @@ function GameplayScene:reloadBlocks(battleProfile, bounds)
   self.blocks:loadFormation(self.world, width, height, formationConfig)
 end
 
+-- Trigger block shake and drop effect (for enemy shockwave)
+function GameplayScene:triggerBlockShakeAndDrop()
+  if not self.blocks or not self.blocks.blocks then return end
+  
+  -- Get all alive blocks
+  local aliveBlocks = {}
+  for _, block in ipairs(self.blocks.blocks) do
+    if block and block.alive then
+      table.insert(aliveBlocks, block)
+    end
+  end
+  
+  if #aliveBlocks == 0 then return end
+  
+  -- Select 4-6 random blocks
+  local count = love.math.random(4, 6)
+  count = math.min(count, #aliveBlocks)
+  
+  -- Shuffle and select random blocks
+  local selectedBlocks = {}
+  local indices = {}
+  for i = 1, #aliveBlocks do
+    table.insert(indices, i)
+  end
+  
+  -- Fisher-Yates shuffle
+  for i = #indices, 1, -1 do
+    local j = love.math.random(i)
+    indices[i], indices[j] = indices[j], indices[i]
+  end
+  
+  -- Select first 'count' blocks
+  for i = 1, count do
+    table.insert(selectedBlocks, aliveBlocks[indices[i]])
+  end
+  
+  -- Trigger shake and drop on selected blocks
+  for _, block in ipairs(selectedBlocks) do
+    block.shakeTime = 0.6 -- Longer duration for visible shake and drop
+    block.dropVelocity = 0 -- Start with zero velocity, gravity will accelerate downwards
+    block.dropOffsetY = 0
+    block.fadeAlpha = 1 -- Start fully visible
+    block.shakeOffsetX = 0
+    block.shakeOffsetY = 0
+    -- Random rotation angle and speed for each block
+    block.dropRotation = love.math.random() * math.pi * 2 -- Random initial rotation (0 to 2π)
+    block.dropRotationSpeed = (love.math.random() * 2 - 1) * 3 -- Random rotation speed (-3 to 3 rad/s)
+    -- Clear onDestroyed callback to prevent particle explosions - blocks should just drop and fade
+    block.onDestroyed = nil
+  end
+end
+
 return GameplayScene
 
 

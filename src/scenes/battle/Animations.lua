@@ -32,6 +32,17 @@ function Animations.update(scene, dt)
     end
   end
 
+  -- Advance enemy jump timers (for shockwave attack)
+  local jumpUpDuration = 0.3 -- Time to jump up
+  local jumpDownDuration = 0.2 -- Time to land
+  local totalJump = jumpUpDuration + jumpDownDuration
+  for _, enemy in ipairs(scene.enemies or {}) do
+    if enemy.jumpTime and enemy.jumpTime > 0 then
+      enemy.jumpTime = enemy.jumpTime + dt
+      if enemy.jumpTime > totalJump then enemy.jumpTime = 0 end
+    end
+  end
+
   -- Advance knockback timers
   local kbTotalPlayer = ((config.battle and config.battle.knockbackDuration) or 0) + ((config.battle and config.battle.knockbackReturnDuration) or 0)
   if scene.playerKnockbackTime and scene.playerKnockbackTime > 0 then
