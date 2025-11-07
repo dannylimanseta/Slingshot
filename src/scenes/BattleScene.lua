@@ -120,28 +120,24 @@ function BattleScene:load(bounds, battleProfile)
   
   -- Initialize enemies from battle profile
   self.enemies = {}
-  -- Randomize enemy count between 1-3 for each battle
   local maxAvailableEnemies = battleProfile.enemies and #battleProfile.enemies or 0
-  local randomEnemyCount = love.math.random(1, 3)
-  local enemyCount = math.min(randomEnemyCount, maxAvailableEnemies)
   
-  -- Randomly select enemies from the pool instead of taking them sequentially
+  -- Use enemyCount from battle profile if specified, otherwise randomize (for backward compatibility)
+  local enemyCount
+  if battleProfile.enemyCount and battleProfile.enemyCount > 0 then
+    -- Use the specified enemy count from the battle profile
+    enemyCount = math.min(battleProfile.enemyCount, maxAvailableEnemies)
+  else
+    -- Fallback: Randomize enemy count between 1-3 for old battle profiles
+    local randomEnemyCount = love.math.random(1, 3)
+    enemyCount = math.min(randomEnemyCount, maxAvailableEnemies)
+  end
+  
+  -- Select enemies sequentially from the battle profile (respects encounter order)
   if battleProfile.enemies and maxAvailableEnemies > 0 then
-    -- Create a shuffled list of available enemy indices
-    local availableIndices = {}
-    for i = 1, maxAvailableEnemies do
-      table.insert(availableIndices, i)
-    end
-    -- Shuffle the indices
-    for i = #availableIndices, 2, -1 do
-      local j = love.math.random(i)
-      availableIndices[i], availableIndices[j] = availableIndices[j], availableIndices[i]
-    end
-    -- Select the first enemyCount enemies from the shuffled list
     for i = 1, enemyCount do
-      local enemyIndex = availableIndices[i]
-      if battleProfile.enemies[enemyIndex] then
-        local enemy = createEnemyFromConfig(battleProfile.enemies[enemyIndex], i)
+      if battleProfile.enemies[i] then
+        local enemy = createEnemyFromConfig(battleProfile.enemies[i], i)
         table.insert(self.enemies, enemy)
       end
     end
@@ -1451,9 +1447,52 @@ end
 
 -- Handle keyboard input for enemy selection
 function BattleScene:keypressed(key, scancode, isRepeat)
+  if key == "k" and not isRepeat then
+    self:_cheatDefeatAllEnemies()
+    return
+  end
   if key == "tab" then
     -- Cycle to next enemy
     self:_cycleEnemySelection()
+  end
+end
+
+function BattleScene:_cheatDefeatAllEnemies()
+  if self.state == "win" or self.state == "lose" then
+    return
+  end
+
+  local anyDefeated = false
+  local disintegrationCfg = (config.battle and config.battle.disintegration) or {}
+  local impactsActive = self.impactInstances and #self.impactInstances > 0
+
+  for index, enemy in ipairs(self.enemies or {}) do
+    if enemy and (enemy.hp or 0) > 0 then
+      enemy.hp = 0
+      enemy.displayHP = 0
+      enemy.flash = 0
+      enemy.knockbackTime = 0
+      enemy.pendingDisintegration = false
+
+      local duration = disintegrationCfg.duration or 1.5
+      if enemy.disintegrating then
+        enemy.disintegrationTime = enemy.disintegrationTime or 0
+      elseif (enemy.disintegrationTime or 0) >= duration then
+        enemy.disintegrating = false
+      elseif impactsActive then
+        enemy.pendingDisintegration = true
+      else
+        enemy.disintegrating = true
+        enemy.disintegrationTime = 0
+      end
+
+      pushLog(self, string.format("Cheat: Enemy %d defeated instantly", index))
+      anyDefeated = true
+    end
+  end
+
+  if anyDefeated then
+    self:_selectNextEnemy()
   end
 end
 

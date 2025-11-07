@@ -114,6 +114,12 @@ function MapScene:load()
   local genConfig = config.map.generation
   if not self._initialized then
     self.mapManager:generateMap(genConfig.width, genConfig.height, math.random(1000000))
+    if self.mapManager.calculateRecommendedDailyMoves and self.daySystem then
+      local recommendedMoves = self.mapManager:calculateRecommendedDailyMoves(self.daySystem:getTotalDays())
+      if recommendedMoves then
+        self.daySystem:setMaxMovesPerDay(recommendedMoves)
+      end
+    end
     self._initialized = true
   end
   
@@ -155,21 +161,6 @@ function MapScene:load()
       spriteVariant = nil,
       decoration = nil,
     })
-    
-    -- If we were fighting for a protected treasure, collect it now
-    if self._treasureTileX and self._treasureTileY then
-      local treasureTile = self.mapManager:getTile(self._treasureTileX, self._treasureTileY)
-      if treasureTile and treasureTile.type == MapManager.TileType.TREASURE then
-        -- Collect the treasure
-        self.mapManager:setTile(self._treasureTileX, self._treasureTileY, {
-          type = MapManager.TileType.GROUND,
-          spriteVariant = nil,
-          decoration = nil,
-        })
-      end
-      self._treasureTileX, self._treasureTileY = nil, nil
-    end
-    
     -- Clear enemy tile tracking
     self._enemyTileX, self._enemyTileY = nil, nil
     self._battleVictory = false
@@ -420,7 +411,10 @@ function MapScene:_attemptMoveBy(dx, dy)
 end
 
 function MapScene:keypressed(key, scancode, isRepeat)
-  if self.controller then self.controller:keypressed(key, scancode, isRepeat) end
+  if self.controller then 
+    local result = self.controller:keypressed(key, scancode, isRepeat)
+    if result then return result end
+  end
 end
 
 function MapScene:resize(width, height)

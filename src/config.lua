@@ -307,7 +307,7 @@ config.player = {
 -- Map exploration meta game config
 config.map = {
   gridSize = 64, -- pixels per grid cell
-  movesPerDay = 12, -- maximum moves per day
+  movesPerDay = 10, -- tighter daily budget to encourage steady forward progress
   totalDays = 30, -- campaign length in days
   playerMoveSpeed = 200, -- pixels per second for movement animation
   -- Visual settings
@@ -370,46 +370,43 @@ config.map = {
   },
   -- Map generation parameters
   generation = {
-    width = 40, -- grid width in tiles
-    height = 30, -- grid height in tiles
-    initialGroundChance = 0.55, -- initial probability of ground tile (cellular automata) - increased for more traversable area
-    cellularIterations = 3, -- number of smoothing iterations
-    -- After terrain generation, convert most obstacles to trees (visual bias)
-    stoneToTreeChance = 0.9, -- 90% of obstacle cells become TREE instead of STONE
-    -- Decoration placement (way more trees than stones)
-    treeDensity = 0.50, -- attempts per tile for tree placement (very high - dense forests)
-    stoneDensity = 0.005, -- attempts per tile for stone placement (extremely low - almost none)
-    minTreeSpacing = 0, -- minimum grid distance between trees (no spacing requirement - can be adjacent)
-    minStoneSpacing = 4, -- minimum grid distance between stones (very spread out)
-    treeEdgeChance = 1.0, -- chance to place tree when conditions met (100% - always place if conditions met)
-    stonePlaceChance = 0.1, -- chance to place stone when conditions met (very low)
-    -- Ground sprite decorations (sparingly placed)
-    groundSpriteChance = 0.05, -- 5% chance per ground tile to have decorative sprite
-    -- Enemy placement
-    enemyDensity = 0.105, -- percentage of valid positions to place enemies (30% fewer than 0.15)
-    minEnemyDistance = 8, -- minimum distance from start to place enemy
-    minEnemySpacing = 3, -- minimum spacing between enemies (grid distance)
-    minEnemies = 13, -- minimum number of enemies on map (30% fewer than 18)
-    maxEnemies = 15, -- maximum number of enemies on map (30% fewer than 22)
-    -- Rest node placement
-    restDensity = 0.01, -- attempts per tile to place rest nodes (sparse)
-    minRestSpacing = 5, -- minimum spacing between rest nodes (grid distance)
-    minRestDistanceFromPlayer = 6, -- keep rests a bit away from start
-    minRests = 3, -- minimum number of rest nodes on map
-    maxRests = 5, -- maximum number of rest nodes on map
-    -- Treasure placement
-    treasureDensity = 0.05, -- percentage of valid positions to place treasures
-    minTreasureDistance = 6, -- minimum distance from start to place treasure
-    minTreasureSpacing = 4, -- minimum spacing between treasures (grid distance)
-    minTreasures = 6, -- minimum number of treasures on map
-    maxTreasures = 8, -- maximum number of treasures on map
-    treasureProtectionChance = 1.0, -- chance that a treasure is protected by an adjacent enemy (90%)
-    -- Event placement (more common than treasures)
-    eventDensity = 0.08, -- percentage of valid positions to place events (higher than treasures)
-    minEventDistance = 5, -- minimum distance from start to place event
-    minEventSpacing = 10, -- minimum spacing between events (grid distance) - doubled to prevent clustering
-    minEvents = 6, -- minimum number of events on map
-    maxEvents = 8, -- maximum number of events on map
+    width = 90, -- expanded grid width for longer routes
+    height = 68, -- expanded grid height for more exploration space
+    corridor = {
+      edgeMargin = 4, -- keep the primary spine comfortably away from map borders
+      mainSegmentCount = 12, -- additional directional pushes to stretch the main corridor
+      jitterChance = 0.18, -- minimal drift keeps corridors needle-thin
+      branchCount = 18, -- additional optional branches off the spine
+      branchLengthMin = 13, -- minimum length of a branch (tiles)
+      branchLengthMax = 31, -- maximum length of a branch (tiles)
+      branchTurnChance = 0.22, -- very few turns keep branches straight
+      widenChance = 0.01, -- almost never widen corridors
+    },
+    groundSpriteChance = 0.06, -- chance per ground tile to receive a decorative sprite
+    enemy = {
+      min = 14,
+      max = 16,
+      minSpacing = 6,
+      minDistanceFromStart = 9,
+    },
+    event = {
+      min = 5,
+      max = 6,
+      minSpacing = 6,
+      minDistanceFromStart = 7,
+    },
+    rest = {
+      min = 5,
+      max = 6,
+      minSpacing = 7,
+      minDistanceFromStart = 6,
+    },
+    merchant = {
+      min = 4,
+      max = 5,
+      minSpacing = 6,
+      minDistanceFromStart = 9,
+    },
   },
 }
 

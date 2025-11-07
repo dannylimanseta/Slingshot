@@ -165,7 +165,7 @@ end
 
 function SceneManager:mousepressed(x, y, button, isTouch, presses)
   if self.currentScene and self.currentScene.mousepressed then
-    self.currentScene:mousepressed(x, y, button, isTouch, presses)
+    return self.currentScene:mousepressed(x, y, button, isTouch, presses)
   end
 end
 

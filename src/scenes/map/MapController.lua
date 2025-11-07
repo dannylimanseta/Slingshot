@@ -61,6 +61,11 @@ end
 
 function MapController:keypressed(key, scancode, isRepeat)
   local s = self.scene
+  if key == "p" and not isRepeat then
+    -- Open encounter selection menu
+    return "open_encounter_select"
+  end
+  
   if key == "space" and not s.daySystem:canMove() and not s.isMoving then
     s._endDayPressed = true
     s._endDaySpinTime = 0
@@ -234,25 +239,21 @@ function MapController:update(deltaTime)
         s.playerTargetY = nil
         s.isMoving = false
         s._movementTime = 0
-        local battleTriggered, battleType, treasureX, treasureY = s.mapManager:completeMovement()
+        local battleTriggered, result = s.mapManager:completeMovement()
         if battleTriggered then
           s._returnGridX = s.mapManager.previousGridX or s.mapManager.playerGridX
           s._returnGridY = s.mapManager.previousGridY or s.mapManager.playerGridY
           s._enemyTileX = s.mapManager.playerGridX
           s._enemyTileY = s.mapManager.playerGridY
-          if battleType == "protected_treasure" and treasureX and treasureY then
-            s._treasureTileX = treasureX
-            s._treasureTileY = treasureY
-          end
           s._battleTransitionDelay = 0
-        elseif battleType == "treasure_collected" then
-          local px, py = s.mapManager:getPlayerWorldPosition(s.gridSize, s.offsetX, s.offsetY)
-          s.playerWorldX = px
-          s.playerWorldY = py
-        elseif battleType == "event_collected" then
+        elseif result == "event_collected" then
           local px2, py2 = s.mapManager:getPlayerWorldPosition(s.gridSize, s.offsetX, s.offsetY)
           s.playerWorldX = px2
           s.playerWorldY = py2
+        elseif result == "merchant_visited" then
+          local px3, py3 = s.mapManager:getPlayerWorldPosition(s.gridSize, s.offsetX, s.offsetY)
+          s.playerWorldX = px3
+          s.playerWorldY = py3
         end
       else
         local oldX = s.playerWorldX

@@ -45,6 +45,15 @@ function DaySystem:getMaxMoves()
   return self.maxMovesPerDay
 end
 
+function DaySystem:setMaxMovesPerDay(newMax)
+  if not newMax then
+    return
+  end
+  local clamped = math.max(1, math.floor(newMax))
+  self.maxMovesPerDay = clamped
+  self.movesRemaining = clamped
+end
+
 function DaySystem:advanceDay()
   self.currentDay = self.currentDay + 1
   self.movesRemaining = self.maxMovesPerDay

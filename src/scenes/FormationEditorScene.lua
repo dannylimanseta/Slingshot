@@ -257,9 +257,24 @@ function FormationEditorScene.new()
     mouseX = 0,
     mouseY = 0,
     hoveredBlockIndex = nil,
-    selectedBlockIndex = nil, -- Currently selected block
+    selectedBlockIndex = nil, -- Currently selected block (for backward compatibility)
+    selectedBlockIndices = {}, -- Array of selected block indices (for multi-select)
     deleteMode = false, -- When true, clicking blocks deletes them instead of selecting
     gridSnapEnabled = true, -- Toggle for grid snapping (can be disabled for free placement)
+    -- Selection box state
+    isSelecting = false, -- Whether we're currently dragging a selection box
+    selectionBoxStartX = 0,
+    selectionBoxStartY = 0,
+    selectionBoxEndX = 0,
+    selectionBoxEndY = 0,
+    mouseDownX = 0, -- Track mouse position when button was pressed
+    mouseDownY = 0,
+    hasMovedForSelection = false, -- Track if mouse moved enough to start selection box
+    -- Group drag state
+    isDraggingSelection = false, -- Whether we're dragging selected blocks
+    dragStartX = 0,
+    dragStartY = 0,
+    dragOriginalPositions = {}, -- Store original positions when drag starts {[index] = {x, y}}
     -- Status
     statusMessage = "",
     statusMessageTimer = 0,
@@ -334,26 +349,64 @@ function FormationEditorScene:update(dt)
     self.statusMessageTimer = self.statusMessageTimer - dt
   end
   
-  -- Update hovered block index
-  self.hoveredBlockIndex = nil
-  local scaleMul = config.blocks.spriteScale or 1
-  local blockSize = config.blocks.baseSize * scaleMul
-  local halfSize = blockSize * 0.5
-  
-  -- Apply horizontal spacing factor to match BlockManager
-  local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
-  local effectivePlayfieldW = self.playfieldW * horizontalSpacingFactor
-  local playfieldXOffset = self.playfieldW * (1 - horizontalSpacingFactor) * 0.5
-  
-  for i, block in ipairs(self.blocks) do
-    local bx = self.playfieldX + playfieldXOffset + block.x * effectivePlayfieldW
-    local by = self.playfieldY + block.y * self.playfieldH
-    local dx = math.abs(self.mouseX - bx)
-    local dy = math.abs(self.mouseY - by)
-    if dx <= halfSize and dy <= halfSize then
-      self.hoveredBlockIndex = i
-      break
+  -- Update dragging if active
+  if self.isDraggingSelection then
+    -- Calculate normalized mouse delta
+    local currentNormX = self:screenToNormalizedX(self.mouseX)
+    local currentNormY = self:screenToNormalizedY(self.mouseY)
+    local startNormX = self:screenToNormalizedX(self.dragStartX)
+    local startNormY = self:screenToNormalizedY(self.dragStartY)
+    
+    local deltaNormX = currentNormX - startNormX
+    local deltaNormY = currentNormY - startNormY
+    
+    -- Apply grid snapping if enabled
+    if self.gridSnapEnabled then
+      local snappedCurrentX, snappedCurrentY = self:snapToGrid(currentNormX, currentNormY)
+      local snappedStartX, snappedStartY = self:snapToGrid(startNormX, startNormY)
+      deltaNormX = snappedCurrentX - snappedStartX
+      deltaNormY = snappedCurrentY - snappedStartY
     end
+    
+    -- Update positions of all selected blocks relative to their original positions
+    for _, idx in ipairs(self.selectedBlockIndices) do
+      if self.blocks[idx] and self.dragOriginalPositions[idx] then
+        local origX = self.dragOriginalPositions[idx].x
+        local origY = self.dragOriginalPositions[idx].y
+        self.blocks[idx].x = origX + deltaNormX
+        self.blocks[idx].y = origY + deltaNormY
+      end
+    end
+  end
+  
+  -- Update hovered block index (only if not dragging)
+  if not self.isDraggingSelection then
+    self.hoveredBlockIndex = nil
+    local scaleMul = config.blocks.spriteScale or 1
+    local blockSize = config.blocks.baseSize * scaleMul
+    local halfSize = blockSize * 0.5
+    
+    -- Apply horizontal spacing factor to match BlockManager
+    local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+    local effectivePlayfieldW = self.playfieldW * horizontalSpacingFactor
+    local playfieldXOffset = self.playfieldW * (1 - horizontalSpacingFactor) * 0.5
+    
+    for i, block in ipairs(self.blocks) do
+      local bx = self.playfieldX + playfieldXOffset + block.x * effectivePlayfieldW
+      local by = self.playfieldY + block.y * self.playfieldH
+      local dx = math.abs(self.mouseX - bx)
+      local dy = math.abs(self.mouseY - by)
+      if dx <= halfSize and dy <= halfSize then
+        self.hoveredBlockIndex = i
+        break
+      end
+    end
+  end
+  
+  -- Update selection box end position
+  if self.isSelecting then
+    self.selectionBoxEndX = self.mouseX
+    self.selectionBoxEndY = self.mouseY
   end
 end
 
@@ -389,8 +442,17 @@ function FormationEditorScene:draw()
     local bx = self.playfieldX + playfieldXOffset + block.x * effectivePlayfieldW
     local by = self.playfieldY + block.y * self.playfieldH
     
+    -- Check if block is in multi-select
+    local isMultiSelected = false
+    for _, idx in ipairs(self.selectedBlockIndices) do
+      if idx == i then
+        isMultiSelected = true
+        break
+      end
+    end
+    
     -- Highlight selected block (stronger than hover)
-    local isSelected = (i == self.selectedBlockIndex)
+    local isSelected = (i == self.selectedBlockIndex) or isMultiSelected
     local isHovered = (i == self.hoveredBlockIndex and not isSelected)
     
     if isSelected then
@@ -406,6 +468,11 @@ function FormationEditorScene:draw()
     
     -- Draw block sprite with overlays
     self:drawBlock(bx, by, block.kind, blockSize, block.hp)
+  end
+  
+  -- Draw selection box (dotted line)
+  if self.isSelecting then
+    self:drawSelectionBox()
   end
   
   -- Draw cursor preview (if within playfield)
@@ -582,13 +649,23 @@ function FormationEditorScene:drawUI()
   -- Show selection info, delete mode status, or grid snap status
   if self.deleteMode then
     theme.drawTextWithOutline("DELETE MODE: Click blocks to delete", 20, 80, 1, 0.3, 0.3, 1, 2)
+  elseif #self.selectedBlockIndices > 0 then
+    if #self.selectedBlockIndices == 1 then
+      local block = self.blocks[self.selectedBlockIndices[1]]
+      local infoText = string.format("Selected: %s block (Click & drag to move, Delete to remove)", block.kind)
+      theme.drawTextWithOutline(infoText, 20, 80, 0.4, 0.8, 1, 1, 2)
+    else
+      local infoText = string.format("Selected: %d blocks (Click & drag to move, Delete to remove)", #self.selectedBlockIndices)
+      theme.drawTextWithOutline(infoText, 20, 80, 0.4, 0.8, 1, 1, 2)
+    end
   elseif self.selectedBlockIndex then
+    -- Backward compatibility
     local block = self.blocks[self.selectedBlockIndex]
     local infoText = string.format("Selected: %s block (Delete to remove)", block.kind)
     theme.drawTextWithOutline(infoText, 20, 80, 0.4, 0.8, 1, 1, 2)
   else
     -- Show grid snap status when nothing is selected
-    local snapStatus = self.gridSnapEnabled and "Grid snap: ON (G to toggle)" or "Grid snap: OFF - Free placement (G to toggle)"
+    local snapStatus = self.gridSnapEnabled and "Grid snap: ON (G to toggle) | Click & drag to select multiple blocks" or "Grid snap: OFF - Free placement (G to toggle) | Click & drag to select multiple blocks"
     theme.drawTextWithOutline(snapStatus, 20, 80, 0.6, 0.6, 0.6, 0.8, 2)
   end
 end
@@ -611,64 +688,53 @@ function FormationEditorScene:mousepressed(x, y, button)
             -- Adjust selection index if a block before it was removed
             self.selectedBlockIndex = self.selectedBlockIndex - 1
           end
+          -- Update multi-select indices
+          for i = #self.selectedBlockIndices, 1, -1 do
+            local idx = self.selectedBlockIndices[i]
+            if idx == removedIndex then
+              table.remove(self.selectedBlockIndices, i)
+            elseif idx > removedIndex then
+              self.selectedBlockIndices[i] = idx - 1
+            end
+          end
           self:showStatus("Block deleted")
         else
-          -- Normal mode: select it
-          self.selectedBlockIndex = self.hoveredBlockIndex
-          self:showStatus("Block selected")
+          -- Check if clicking on a selected block (start dragging)
+          if self:isBlockInSelection(self.hoveredBlockIndex) then
+            -- Start dragging selected blocks - store original positions
+            self.isDraggingSelection = true
+            self.dragStartX = x
+            self.dragStartY = y
+            self.dragOriginalPositions = {}
+            for _, idx in ipairs(self.selectedBlockIndices) do
+              if self.blocks[idx] then
+                self.dragOriginalPositions[idx] = {
+                  x = self.blocks[idx].x,
+                  y = self.blocks[idx].y
+                }
+              end
+            end
+            self:showStatus("Dragging " .. #self.selectedBlockIndices .. " block(s)")
+          else
+            -- Select single block (clear multi-select)
+            self.selectedBlockIndex = self.hoveredBlockIndex
+            self.selectedBlockIndices = {self.hoveredBlockIndex}
+            self:showStatus("Block selected")
+          end
         end
       else
-        -- Click on empty space: place new block
-        local normX = self:screenToNormalizedX(x)
-        local normY = self:screenToNormalizedY(y)
-        
-        -- Apply grid snapping if enabled
-        if self.gridSnapEnabled then
-          normX, normY = self:snapToGrid(normX, normY)
-        end
-        
-        -- Check if block would exceed actual playfield bounds
-        local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
-        local effectivePlayfieldW = self.playfieldW * horizontalSpacingFactor
-        local playfieldXOffset = self.playfieldW * (1 - horizontalSpacingFactor) * 0.5
-        local blockX = self.playfieldX + playfieldXOffset + normX * effectivePlayfieldW
-        local blockY = self.playfieldY + normY * self.playfieldH
-        
-        -- Calculate block size for bounds checking
-        local scaleMul = config.blocks.spriteScale or 1
-        local blockSize = config.blocks.baseSize * scaleMul
-        local halfSize = blockSize * 0.5
-        
-        -- Check if block fits within actual playfield bounds (horizontal and vertical)
-        local blockLeft = blockX - halfSize
-        local blockRight = blockX + halfSize
-        local blockTop = blockY - halfSize
-        local blockBottom = blockY + halfSize
-        -- Extend top boundary to accommodate extra grid row
-        local cellSize = config.blocks.gridSnap.cellSize
-        local actualPlayfieldLeft = self.playfieldX
-        local actualPlayfieldRight = self.playfieldX + self.actualPlayfieldW
-        local actualPlayfieldTop = self.playfieldY - cellSize * 0.5 - 50 -- Extend upward by half cellSize + 50px
-        local actualPlayfieldBottom = self.playfieldY + self.playfieldH
-        
-        if blockLeft >= actualPlayfieldLeft and blockRight <= actualPlayfieldRight and
-           blockTop >= actualPlayfieldTop and blockBottom <= actualPlayfieldBottom then
-          table.insert(self.blocks, {
-            x = normX,
-            y = normY,
-            kind = self.currentBlockType,
-            hp = 1
-          })
-          self:showStatus("Block placed")
-          -- Clear selection after placing
-          self.selectedBlockIndex = nil
-        else
-          self:showStatus("Cannot place block: exceeds playfield bounds")
-        end
+        -- Click on empty space: prepare for either placement or selection box
+        self.mouseDownX = x
+        self.mouseDownY = y
+        self.hasMovedForSelection = false
+        -- Clear previous selection
+        self.selectedBlockIndex = nil
+        self.selectedBlockIndices = {}
       end
     else
       -- Click outside playfield: clear selection
       self.selectedBlockIndex = nil
+      self.selectedBlockIndices = {}
     end
   elseif button == 2 then -- Right click
     if self.hoveredBlockIndex then
@@ -682,6 +748,15 @@ function FormationEditorScene:mousepressed(x, y, button)
         -- Adjust selection index if a block before it was removed
         self.selectedBlockIndex = self.selectedBlockIndex - 1
       end
+      -- Update multi-select indices
+      for i = #self.selectedBlockIndices, 1, -1 do
+        local idx = self.selectedBlockIndices[i]
+        if idx == removedIndex then
+          table.remove(self.selectedBlockIndices, i)
+        elseif idx > removedIndex then
+          self.selectedBlockIndices[i] = idx - 1
+        end
+      end
       self:showStatus("Block removed")
     end
   end
@@ -690,6 +765,105 @@ end
 function FormationEditorScene:mousemoved(x, y, dx, dy)
   self.mouseX = x
   self.mouseY = y
+  
+  -- Check if mouse moved enough to start selection box (when clicking empty space)
+  -- Only if we're not already selecting/dragging and mouse was pressed on empty space
+  if not self.isSelecting and not self.isDraggingSelection and 
+     self.mouseDownX ~= 0 and self.mouseDownY ~= 0 and
+     not self.hoveredBlockIndex then
+    local dragThreshold = 5 -- pixels
+    local distMoved = math.sqrt((x - self.mouseDownX)^2 + (y - self.mouseDownY)^2)
+    if distMoved > dragThreshold and not self.hasMovedForSelection then
+      -- Start selection box
+      self.isSelecting = true
+      self.hasMovedForSelection = true
+      self.selectionBoxStartX = self.mouseDownX
+      self.selectionBoxStartY = self.mouseDownY
+      self.selectionBoxEndX = x
+      self.selectionBoxEndY = y
+    end
+  end
+end
+
+function FormationEditorScene:mousereleased(x, y, button)
+  self.mouseX = x
+  self.mouseY = y
+  
+  if button == 1 then -- Left mouse button release
+    if self.isSelecting then
+      -- Finalize selection box
+      self.isSelecting = false
+      local selectedIndices = self:getBlocksInSelectionBox()
+      if #selectedIndices > 0 then
+        self.selectedBlockIndices = selectedIndices
+        self.selectedBlockIndex = selectedIndices[1] -- Set single selection for backward compatibility
+        self:showStatus(#selectedIndices .. " block(s) selected")
+      else
+        -- No blocks selected, clear selection
+        self.selectedBlockIndex = nil
+        self.selectedBlockIndices = {}
+      end
+      self.hasMovedForSelection = false
+    elseif self.isDraggingSelection then
+      -- Finalize drag
+      self.isDraggingSelection = false
+      self.dragOriginalPositions = {}
+      self:showStatus("Blocks moved")
+    elseif not self.hasMovedForSelection and self:isMouseInPlayfield() and not self.hoveredBlockIndex then
+      -- Quick click on empty space: place a block
+      local normX = self:screenToNormalizedX(x)
+      local normY = self:screenToNormalizedY(y)
+      
+      -- Apply grid snapping if enabled
+      if self.gridSnapEnabled then
+        normX, normY = self:snapToGrid(normX, normY)
+      end
+      
+      -- Check if block would exceed actual playfield bounds
+      local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+      local effectivePlayfieldW = self.playfieldW * horizontalSpacingFactor
+      local playfieldXOffset = self.playfieldW * (1 - horizontalSpacingFactor) * 0.5
+      local blockX = self.playfieldX + playfieldXOffset + normX * effectivePlayfieldW
+      local blockY = self.playfieldY + normY * self.playfieldH
+      
+      -- Calculate block size for bounds checking
+      local scaleMul = config.blocks.spriteScale or 1
+      local blockSize = config.blocks.baseSize * scaleMul
+      local halfSize = blockSize * 0.5
+      
+      -- Check if block fits within actual playfield bounds (horizontal and vertical)
+      local blockLeft = blockX - halfSize
+      local blockRight = blockX + halfSize
+      local blockTop = blockY - halfSize
+      local blockBottom = blockY + halfSize
+      -- Extend top boundary to accommodate extra grid row
+      local cellSize = config.blocks.gridSnap.cellSize
+      local actualPlayfieldLeft = self.playfieldX
+      local actualPlayfieldRight = self.playfieldX + self.actualPlayfieldW
+      local actualPlayfieldTop = self.playfieldY - cellSize * 0.5 - 50 -- Extend upward by half cellSize + 50px
+      local actualPlayfieldBottom = self.playfieldY + self.playfieldH
+      
+      if blockLeft >= actualPlayfieldLeft and blockRight <= actualPlayfieldRight and
+         blockTop >= actualPlayfieldTop and blockBottom <= actualPlayfieldBottom then
+        table.insert(self.blocks, {
+          x = normX,
+          y = normY,
+          kind = self.currentBlockType,
+          hp = 1
+        })
+        self:showStatus("Block placed")
+        -- Clear selection after placing
+        self.selectedBlockIndex = nil
+        self.selectedBlockIndices = {}
+      else
+        self:showStatus("Cannot place block: exceeds playfield bounds")
+      end
+    end
+    -- Reset mouse down tracking
+    self.mouseDownX = 0
+    self.mouseDownY = 0
+    self.hasMovedForSelection = false
+  end
 end
 
 function FormationEditorScene:keypressed(key, scancode, isRepeat)
@@ -719,13 +893,32 @@ function FormationEditorScene:keypressed(key, scancode, isRepeat)
   elseif key == "l" then
     self:loadFormation()
   elseif key == "delete" or key == "backspace" then
-    -- Delete selected block, or hovered block if no selection
-    local blockToDelete = self.selectedBlockIndex or self.hoveredBlockIndex
-    if blockToDelete then
-      table.remove(self.blocks, blockToDelete)
-      -- Clear selection
+    -- Delete selected blocks (multi-select) or single selected/hovered block
+    if #self.selectedBlockIndices > 0 then
+      -- Delete all selected blocks (in reverse order to maintain indices)
+      local sortedIndices = {}
+      for _, idx in ipairs(self.selectedBlockIndices) do
+        table.insert(sortedIndices, idx)
+      end
+      table.sort(sortedIndices, function(a, b) return a > b end) -- Sort descending
+      
+      for _, idx in ipairs(sortedIndices) do
+        table.remove(self.blocks, idx)
+      end
+      
+      self:showStatus(#sortedIndices .. " block(s) removed")
       self.selectedBlockIndex = nil
-      self:showStatus("Block removed")
+      self.selectedBlockIndices = {}
+    else
+      -- Fallback to single block deletion
+      local blockToDelete = self.selectedBlockIndex or self.hoveredBlockIndex
+      if blockToDelete then
+        table.remove(self.blocks, blockToDelete)
+        -- Clear selection
+        self.selectedBlockIndex = nil
+        self.selectedBlockIndices = {}
+        self:showStatus("Block removed")
+      end
     end
   elseif key == "g" then
     -- Toggle grid snapping (enables/disables snapping to grid)
@@ -823,6 +1016,97 @@ function FormationEditorScene:snapToGrid(normX, normY)
   local snappedNormY = snappedY / self.playfieldH
   
   return snappedNormX, snappedNormY
+end
+
+function FormationEditorScene:drawSelectionBox()
+  -- Draw dotted line selection box
+  local x1 = math.min(self.selectionBoxStartX, self.selectionBoxEndX)
+  local y1 = math.min(self.selectionBoxStartY, self.selectionBoxEndY)
+  local x2 = math.max(self.selectionBoxStartX, self.selectionBoxEndX)
+  local y2 = math.max(self.selectionBoxStartY, self.selectionBoxEndY)
+  local w = x2 - x1
+  local h = y2 - y1
+  
+  love.graphics.setColor(0.4, 0.8, 1, 0.8) -- Light blue
+  love.graphics.setLineWidth(2)
+  
+  -- Draw dotted rectangle using line segments
+  local dashLength = 8
+  local gapLength = 4
+  local totalLength = dashLength + gapLength
+  
+  -- Top edge
+  for x = x1, x2, totalLength do
+    local endX = math.min(x + dashLength, x2)
+    if endX > x then
+      love.graphics.line(x, y1, endX, y1)
+    end
+  end
+  
+  -- Bottom edge
+  for x = x1, x2, totalLength do
+    local endX = math.min(x + dashLength, x2)
+    if endX > x then
+      love.graphics.line(x, y2, endX, y2)
+    end
+  end
+  
+  -- Left edge
+  for y = y1, y2, totalLength do
+    local endY = math.min(y + dashLength, y2)
+    if endY > y then
+      love.graphics.line(x1, y, x1, endY)
+    end
+  end
+  
+  -- Right edge
+  for y = y1, y2, totalLength do
+    local endY = math.min(y + dashLength, y2)
+    if endY > y then
+      love.graphics.line(x2, y, x2, endY)
+    end
+  end
+  
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
+function FormationEditorScene:getBlocksInSelectionBox()
+  -- Get all blocks that are within the selection box
+  local x1 = math.min(self.selectionBoxStartX, self.selectionBoxEndX)
+  local y1 = math.min(self.selectionBoxStartY, self.selectionBoxEndY)
+  local x2 = math.max(self.selectionBoxStartX, self.selectionBoxEndX)
+  local y2 = math.max(self.selectionBoxStartY, self.selectionBoxEndY)
+  
+  local scaleMul = config.blocks.spriteScale or 1
+  local blockSize = config.blocks.baseSize * scaleMul
+  local halfSize = blockSize * 0.5
+  
+  local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+  local effectivePlayfieldW = self.playfieldW * horizontalSpacingFactor
+  local playfieldXOffset = self.playfieldW * (1 - horizontalSpacingFactor) * 0.5
+  
+  local selectedIndices = {}
+  for i, block in ipairs(self.blocks) do
+    local bx = self.playfieldX + playfieldXOffset + block.x * effectivePlayfieldW
+    local by = self.playfieldY + block.y * self.playfieldH
+    
+    -- Check if block center is within selection box
+    if bx >= x1 and bx <= x2 and by >= y1 and by <= y2 then
+      table.insert(selectedIndices, i)
+    end
+  end
+  
+  return selectedIndices
+end
+
+function FormationEditorScene:isBlockInSelection(blockIndex)
+  -- Check if a block index is in the selected blocks array
+  for _, idx in ipairs(self.selectedBlockIndices) do
+    if idx == blockIndex then
+      return true
+    end
+  end
+  return false
 end
 
 function FormationEditorScene:drawGrid()

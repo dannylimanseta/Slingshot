@@ -112,7 +112,7 @@ function MapRenderer:draw(scene)
         local worldX = scene.offsetX + (x - 1) * gridSize
         local worldY = scene.offsetY + (y - 1) * gridSize
 
-        if tile.type == MapManager.TileType.GROUND or tile.type == MapManager.TileType.ENEMY or tile.type == MapManager.TileType.REST or tile.type == MapManager.TileType.TREASURE or tile.type == MapManager.TileType.EVENT then
+        if tile.type == MapManager.TileType.GROUND or tile.type == MapManager.TileType.ENEMY or tile.type == MapManager.TileType.REST or tile.type == MapManager.TileType.MERCHANT or tile.type == MapManager.TileType.EVENT then
           if tile.spriteVariant then
             local sprite = sprites.ground[tile.spriteVariant]
             if sprite then
@@ -199,17 +199,18 @@ function MapRenderer:draw(scene)
                 love.graphics.pop()
               end, false)
             end
-          elseif tile.type == MapManager.TileType.TREASURE then
-            local sprite = sprites.treasure
+          elseif tile.type == MapManager.TileType.MERCHANT then
+            local sprite = sprites.merchant or sprites.event
             if sprite then
               addToQueue(worldY, worldX, function()
                 love.graphics.setColor(1, 1, 1, 1)
                 local baseSx = (gridSize * oversize) / sprite:getWidth()
                 local baseSy = (gridSize * oversize) / sprite:getHeight()
                 local bobConfig = config.map.restBob
-                local phaseOffset = (x + y * 100) * bobConfig.phaseVariation
-                local time = scene._treeSwayTime * bobConfig.speed * 2 * math.pi + phaseOffset
-                local heightScale = 1 + math.sin(time) * bobConfig.heightVariation
+                local phaseOffset = (x + y * 100) * bobConfig.phaseVariation * 0.4
+                local time = scene._treeSwayTime * (bobConfig.speed * 0.55) * 2 * math.pi + phaseOffset
+                local heightScale = 1 + math.sin(time) * (bobConfig.heightVariation * 0.6)
+                local skewX = math.sin(time * 0.5) * (bobConfig.maxShear * 0.4)
                 local sx = baseSx
                 local sy = baseSy * heightScale
                 local ox = (gridSize * (oversize - 1)) * 0.5
@@ -221,6 +222,7 @@ function MapRenderer:draw(scene)
                 local centerWorldY = worldY - oy + spriteH * baseSy
                 love.graphics.push()
                 love.graphics.translate(centerWorldX, centerWorldY)
+                love.graphics.shear(skewX, 0)
                 love.graphics.translate(-pivotX * sx, -pivotY * sy)
                 love.graphics.draw(sprite, 0, 0, 0, sx, sy)
                 love.graphics.pop()

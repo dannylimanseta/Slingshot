@@ -8,6 +8,7 @@ local SplitScene = require("scenes.SplitScene")
 local FormationEditorScene = require("scenes.FormationEditorScene")
 local RewardsScene = require("scenes.RewardsScene")
 local OrbRewardScene = require("scenes.OrbRewardScene")
+local EncounterSelectScene = require("scenes.EncounterSelectScene")
 
 local sceneManager
 local screenCanvas
@@ -149,6 +150,24 @@ function love.keypressed(key, scancode, isRepeat)
         mapScene = MapScene.new()
         sceneManager:set(mapScene)
       end
+    elseif result == "open_encounter_select" then
+      -- Open encounter selection menu
+      local selectScene = EncounterSelectScene.new()
+      selectScene:setPreviousScene(sceneManager.currentScene)
+      previousScene = sceneManager.currentScene
+      sceneManager:set(selectScene)
+    elseif result == "start_battle" then
+      -- Start battle with selected encounter
+      previousScene = mapScene
+      sceneManager:set(SplitScene.new())
+    elseif result == "cancel" then
+      -- Return to previous scene (map)
+      if previousScene then
+        sceneManager:set(previousScene)
+        previousScene = nil
+      elseif mapScene then
+        sceneManager:set(mapScene)
+      end
     end
   end
 end
@@ -160,7 +179,15 @@ end
 function love.mousepressed(x, y, button, isTouch, presses)
   local vx = (x - offsetX) / scaleFactor
   local vy = (y - offsetY) / scaleFactor
-  if sceneManager then sceneManager:mousepressed(vx, vy, button, isTouch, presses) end
+  if sceneManager then 
+    local result = sceneManager:mousepressed(vx, vy, button, isTouch, presses)
+    -- Handle scene switching signals from mouse clicks
+    if result == "start_battle" then
+      -- Start battle with selected encounter
+      previousScene = mapScene
+      sceneManager:set(SplitScene.new())
+    end
+  end
 end
 
 function love.mousereleased(x, y, button, isTouch, presses)
