@@ -24,7 +24,8 @@ local function shuffle(t)
   end
 end
 
-function OrbRewardScene.new()
+function OrbRewardScene.new(params)
+  params = params or {}
   return setmetatable({
     time = 0,
     shader = nil,
@@ -40,6 +41,7 @@ function OrbRewardScene.new()
     scales = {}, -- per-option hover scale
     skipButton = nil,
     topBar = TopBar.new(),
+    returnToPreviousOnExit = not not params.returnToPreviousOnExit,
   }, OrbRewardScene)
 end
 
@@ -133,7 +135,11 @@ end
 function OrbRewardScene:update(dt)
   if self.choice then
     self:applyChoice(self.choice)
-    return "return_to_map"
+    if self.returnToPreviousOnExit then
+      return "return_to_previous"
+    else
+      return "return_to_map"
+    end
   end
   -- Animate shader backdrop
   self.time = self.time + dt

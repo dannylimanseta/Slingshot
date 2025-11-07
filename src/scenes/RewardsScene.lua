@@ -151,17 +151,28 @@ function RewardsScene:update(dt)
   end
   if self._selectedOrb then
     self._selectedOrb = false
-    return "open_orb_reward"
+    local shouldReturn = (self.goldButton ~= nil) and (not self._goldButtonClicked)
+    return { type = "open_orb_reward", returnToRewards = shouldReturn }
   end
   
   -- Update button layouts and hover states
   local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
   local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
   
-  -- Layout orb button (row 0) using helper function
-  local layoutRewardButton = createRewardButtonLayout(vw, vh, 0, dt, self._mouseX, self._mouseY)
+  -- If coming back from OrbRewardScene after a choice/skip, remove the orb button
+  if self._removeOrbButtonOnReturn then
+    self.orbButton = nil
+    self._removeOrbButtonOnReturn = nil
+  end
+  
+  -- Dynamic row index for stacking buttons from top to bottom
+  local nextRowIndex = 0
+  
+  -- Layout orb button if present
   if self.orbButton then
-    layoutRewardButton(self.orbButton)
+    local layoutRow = createRewardButtonLayout(vw, vh, nextRowIndex, dt, self._mouseX, self._mouseY)
+    layoutRow(self.orbButton)
+    nextRowIndex = nextRowIndex + 1
   end
   
   if self.skipButton then
@@ -190,9 +201,10 @@ function RewardsScene:update(dt)
       end)
     end
     
-    -- Layout gold button (row 1)
-    local layoutGoldButton = createRewardButtonLayout(vw, vh, 1, dt, self._mouseX, self._mouseY)
+    -- Layout gold button at current row
+    local layoutGoldButton = createRewardButtonLayout(vw, vh, nextRowIndex, dt, self._mouseX, self._mouseY)
     layoutGoldButton(self.goldButton)
+    nextRowIndex = nextRowIndex + 1
   end
   
   -- Update coin animations
@@ -230,6 +242,16 @@ function RewardsScene:update(dt)
       -- Counting done; clear override to use real PlayerState gold
       self.topBar.overrideGold = nil
       self._goldCounting = false
+    end
+  end
+
+  -- If there are no more reward buttons (orb removed AND gold finished and faded or no gold), return to map
+  do
+    local hasOrb = (self.orbButton ~= nil)
+    local hadGold = ((self.params and self.params.goldReward) or 0) > 0
+    local goldDone = (not hadGold) or (self._goldAnimationComplete and (self._goldButtonFadeAlpha or 0) <= 0)
+    if (not hasOrb) and goldDone then
+      return "return_to_map"
     end
   end
 end

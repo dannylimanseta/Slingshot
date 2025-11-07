@@ -83,8 +83,20 @@ function love.update(deltaTime)
         mapScene = MapScene.new()
         sceneManager:set(mapScene)
       end
+    elseif type(result) == "table" and result.type == "open_orb_reward" then
+      -- If RewardsScene indicates pending actions remain, remember it to return after orb pick
+      if result.returnToRewards then
+        previousScene = sceneManager.currentScene
+        if previousScene then previousScene._removeOrbButtonOnReturn = true end
+      end
+      sceneManager:set(OrbRewardScene.new({ returnToPreviousOnExit = result.returnToRewards }))
     elseif result == "open_orb_reward" then
       sceneManager:set(OrbRewardScene.new())
+    elseif result == "return_to_previous" then
+      if previousScene then
+        sceneManager:set(previousScene)
+        previousScene = nil
+      end
     end
   end
 end
