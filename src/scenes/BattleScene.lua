@@ -632,51 +632,58 @@ function BattleScene:update(dt, bounds)
   self:_updateShockwaveSequence(dt)
 
   -- Handle staggered enemy attack delays
+  -- Don't process staggered attacks while shockwave sequence is active
+  local shockwaveActive = self._shockwaveSequence ~= nil
   local aliveAttackDelays = {}
   for _, delayData in ipairs(self._enemyAttackDelays or {}) do
-    delayData.delay = delayData.delay - dt
-    if delayData.delay <= 0 then
-      -- Perform attack for this enemy
-      local enemy = self.enemies[delayData.index]
-      if enemy and enemy.hp > 0 then
-        local dmg = love.math.random(enemy.damageMin, enemy.damageMax)
-        local blocked = math.min(self.playerArmor or 0, dmg)
-        local net = dmg - blocked
-        self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
-        self.playerHP = math.max(0, self.playerHP - net)
-        
-        if net <= 0 then
-          self.armorIconFlashTimer = 0.5
-          table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
-        else
-          self.playerFlash = config.battle.hitFlashDuration
-          self.playerKnockbackTime = 1e-6
-          table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
-          pushLog(self, "Enemy " .. delayData.index .. " dealt " .. net)
-          -- Emit hit burst particles from player center
-          if self.particles then
-            local px, py = self:getPlayerCenterPivot(self._lastBounds)
-            if px and py then
-              self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
+    if shockwaveActive then
+      -- Shockwave is active, don't count down - just keep the delay data
+      table.insert(aliveAttackDelays, delayData)
+    else
+      delayData.delay = delayData.delay - dt
+      if delayData.delay <= 0 then
+        -- Perform attack for this enemy
+        local enemy = self.enemies[delayData.index]
+        if enemy and enemy.hp > 0 then
+          local dmg = love.math.random(enemy.damageMin, enemy.damageMax)
+          local blocked = math.min(self.playerArmor or 0, dmg)
+          local net = dmg - blocked
+          self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
+          self.playerHP = math.max(0, self.playerHP - net)
+          
+          if net <= 0 then
+            self.armorIconFlashTimer = 0.5
+            table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+          else
+            self.playerFlash = config.battle.hitFlashDuration
+            self.playerKnockbackTime = 1e-6
+            table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
+            pushLog(self, "Enemy " .. delayData.index .. " dealt " .. net)
+            -- Emit hit burst particles from player center
+            if self.particles then
+              local px, py = self:getPlayerCenterPivot(self._lastBounds)
+              if px and py then
+                self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
+              end
+            end
+            if self.onPlayerDamage then
+              self.onPlayerDamage()
             end
           end
-          if self.onPlayerDamage then
-            self.onPlayerDamage()
+          enemy.lungeTime = 1e-6
+          self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+          
+          if self.playerHP <= 0 then
+            self.state = "lose"
+            pushLog(self, "You were defeated!")
+            if self.turnManager then
+              self.turnManager:transitionTo(TurnManager.States.DEFEAT)
+            end
           end
         end
-        enemy.lungeTime = 1e-6
-        self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
-        
-        if self.playerHP <= 0 then
-          self.state = "lose"
-          pushLog(self, "You were defeated!")
-          if self.turnManager then
-            self.turnManager:transitionTo(TurnManager.States.DEFEAT)
-          end
-        end
+      else
+        table.insert(aliveAttackDelays, delayData)
       end
-    else
-      table.insert(aliveAttackDelays, delayData)
     end
   end
   self._enemyAttackDelays = aliveAttackDelays
@@ -996,6 +1003,7 @@ function BattleScene:_updateShockwaveSequence(dt)
   local screenshakeDelay = 0.1 -- Delay after jump lands
   local damageDelay = 0.1 -- Delay after screenshake
   local blocksDelay = 0.1 -- Delay after damage
+  local blocksDropDuration = 0.6 -- Time for blocks to fully drop and fade
   
   if seq.phase == "jump" then
     -- Wait for jump to complete
@@ -1058,7 +1066,13 @@ function BattleScene:_updateShockwaveSequence(dt)
       if self.turnManager then
         self.turnManager:emit("enemy_shockwave_blocks")
       end
-      -- Sequence complete
+      seq.phase = "waiting_for_blocks"
+      seq.timer = 0
+    end
+  elseif seq.phase == "waiting_for_blocks" then
+    -- Wait for blocks to finish dropping (0.6s total duration)
+    if seq.timer >= blocksDropDuration then
+      -- Sequence complete - now other enemies can attack
       self._shockwaveSequence = nil
     end
   end
