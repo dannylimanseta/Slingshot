@@ -27,7 +27,8 @@ end
 function OrbRewardScene.new(params)
   params = params or {}
   return setmetatable({
-    time = 0,
+    time = params.shaderTime or 0,
+    _fadeTimer = 0,
     shader = nil,
     decorImage = nil,
     arrowIcon = nil,
@@ -39,6 +40,7 @@ function OrbRewardScene.new(params)
     mouseY = 0,
     bounds = {}, -- clickable bounds per option
     scales = {}, -- per-option hover scale
+    optionAlphas = {}, -- per-option fade-in alpha
     skipButton = nil,
     topBar = TopBar.new(),
     returnToPreviousOnExit = not not params.returnToPreviousOnExit,
@@ -46,9 +48,19 @@ function OrbRewardScene.new(params)
 end
 
 function OrbRewardScene:load()
-  self.time = 0
   -- Shader and decor image (match RewardsScene)
   self.shader = RewardsBackdropShader.getShader()
+  -- Fade-in timings for options
+  self._fadeInDuration = 0.65
+  self._fadeInDelayStep = 0.25
+  self._fadeStartDelay = 1.0
+  self._fadeTimer = 0
+  -- Circle pulse on scene entry (drives shader u_transitionProgress)
+  self._enterPulseTimer = 0
+  self._enterPulseDuration = (config.transition and config.transition.duration) or 0.6
+  self._enterPulsePhase = "rising"
+  self._enterFalloffTimer = 0
+  self._enterFalloffDuration = 0.4
   local decorPath = "assets/images/decor_1.png"
   local okDecor, imgDecor = pcall(love.graphics.newImage, decorPath)
   if okDecor then self.decorImage = imgDecor end
@@ -100,11 +112,14 @@ function OrbRewardScene:load()
   -- Init per-option scales
   self.scales = {}
   for i = 1, #self.options do self.scales[i] = 1.0 end
+  self.optionAlphas = {}
+  for i = 1, #self.options do self.optionAlphas[i] = 0.0 end
 
   -- Create Skip button (same sizing as Rewards skip)
   self.skipButton = Button.new({
     label = "Skip",
     font = theme.fonts.base,
+    bgColor = { 1, 1, 1, 0.1 },
     align = "center",
     onClick = function()
       self.choice = { kind = "skip" }
@@ -143,11 +158,35 @@ function OrbRewardScene:update(dt)
   end
   -- Animate shader backdrop
   self.time = self.time + dt
+  -- Advance UI fade timer (independent from shader time)
+  self._fadeTimer = self._fadeTimer + dt
   if self.shader then
     local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
     local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
     self.shader:send("u_time", self.time)
     self.shader:send("u_resolution", { vw, vh })
+    local p = 0
+    local function easeOutCubic(t) return 1 - math.pow(1 - t, 3) end
+    if self._enterPulsePhase == "rising" then
+      self._enterPulseTimer = self._enterPulseTimer + dt
+      local t = math.min(1, self._enterPulseTimer / self._enterPulseDuration)
+      p = easeOutCubic(t)
+      if t >= 1 then
+        self._enterPulsePhase = "falloff"
+        self._enterFalloffTimer = 0
+      end
+    elseif self._enterPulsePhase == "falloff" then
+      self._enterFalloffTimer = self._enterFalloffTimer + dt
+      local tf = math.min(1, self._enterFalloffTimer / self._enterFalloffDuration)
+      p = 1 - easeOutCubic(tf)
+      if tf >= 1 then
+        self._enterPulsePhase = "idle"
+        p = 0
+      end
+    else
+      p = 0
+    end
+    self.shader:send("u_transitionProgress", p)
   end
   -- Layout skip button and update hover tween targets
   local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
@@ -171,6 +210,18 @@ function OrbRewardScene:update(dt)
       local s = self.scales[i] or 1.0
       local k = math.min(1, (12 * dt))
       self.scales[i] = s + (target - s) * k
+    end
+  end
+  
+  -- Staggered fade-in for options
+  do
+    local function easeOut(a) return a * a * (3 - 2 * a) end
+    for i = 1, #self.options do
+      local delay = (i - 1) * self._fadeInDelayStep
+      local t = (self._fadeTimer - (self._fadeStartDelay or 0) - delay) / self._fadeInDuration
+      if t < 0 then t = 0 end
+      if t > 1 then t = 1 end
+      self.optionAlphas[i] = easeOut(t)
     end
   end
 end
@@ -246,10 +297,14 @@ function OrbRewardScene:draw()
 
   for i, opt in ipairs(self.options) do
     local x = startX + (i - 1) * (cardW + spacing)
+    local a = self.optionAlphas[i] or 1.0
+    -- Clamp
+    if a < 0 then a = 0 end
+    if a > 1 then a = 1 end
     -- Header label
     local header = (opt.kind == "upgrade") and "UPGRADE" or "NEW ORB!"
-    local headerCol = (opt.kind == "upgrade") and {1,1,1,0.8} or {0.6,1.0,0.6,0.9}
-    love.graphics.setColor(headerCol)
+    local headerCol = (opt.kind == "upgrade") and {1,1,1,0.8 * a} or {0.6,1.0,0.6,0.9 * a}
+    love.graphics.setColor(headerCol[1], headerCol[2], headerCol[3], headerCol[4])
     love.graphics.print(header, x, y - 44)
 
     -- Level label right
@@ -270,14 +325,16 @@ function OrbRewardScene:draw()
       local totalW = lw + spacing + (iw * scale) + spacing + rw
       local startX = x + cardW - totalW
       local baselineY = y - 44
-      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.setColor(1, 1, 1, a)
       love.graphics.print(leftText, startX, baselineY)
       if self.arrowIcon then
         local ax = startX + lw + spacing
         local ay = baselineY + (font:getAscent() - ih * scale) * 0.5 + 2
+        love.graphics.setColor(1, 1, 1, a)
         love.graphics.draw(self.arrowIcon, ax, ay, 0, scale, scale)
       end
       local rx = startX + lw + spacing + (iw * scale) + spacing
+      love.graphics.setColor(1, 1, 1, a)
       love.graphics.print(rightText, rx, baselineY)
     end
 
@@ -293,7 +350,7 @@ function OrbRewardScene:draw()
     love.graphics.translate(cx, cy)
     love.graphics.scale(scale, scale)
     love.graphics.translate(-cx, -cy)
-    drawCardWithLevel(self.card, opt.id, opt.targetLevel, x, y, 1.0)
+    drawCardWithLevel(self.card, opt.id, opt.targetLevel, x, y, a)
     love.graphics.pop()
     -- Update clickable bounds to match scaled size
     local bw = cardW * scale
@@ -319,7 +376,8 @@ end
 function OrbRewardScene:mousepressed(x, y, button)
   if button ~= 1 then return end
   for i, r in ipairs(self.bounds or {}) do
-    if x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h then
+    local a = self.optionAlphas and self.optionAlphas[i] or 1.0
+    if a > 0.85 and x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h then
       self.choice = self.options[i]
       return
     end

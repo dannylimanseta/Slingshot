@@ -872,9 +872,7 @@ function SplitScene:update(dt)
         local difficulty = encounter.difficulty or 1
         local goldReward = self:calculateGoldReward(difficulty)
         if goldReward > 0 then
-          local playerState = PlayerState.getInstance()
-          playerState:addGold(goldReward)
-          -- Store gold reward for display in RewardsScene
+          -- Store gold reward for display in RewardsScene; actual add happens on Rewards click
           self._battleGoldReward = goldReward
         end
       end

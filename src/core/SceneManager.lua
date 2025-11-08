@@ -123,7 +123,8 @@ function SceneManager:draw()
     
     -- Set shader uniforms
     self.transitionShader:send("u_fadeTimer", fadeTimer)
-    self.transitionShader:send("u_fadeType", (config.transition and config.transition.fadeType) or 1)
+    -- 0 = vertical (top-to-bottom), 1 = horizontal, 2 = center
+    self.transitionShader:send("u_fadeType", (config.transition and config.transition.fadeType) or 0)
     self.transitionShader:send("u_gridWidth", (config.transition and config.transition.gridWidth) or 28)
     self.transitionShader:send("u_gridHeight", (config.transition and config.transition.gridHeight) or 15)
     self.transitionShader:send("u_previousScene", self.previousSceneCanvas)

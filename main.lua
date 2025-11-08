@@ -89,9 +89,9 @@ function love.update(deltaTime)
         previousScene = sceneManager.currentScene
         if previousScene then previousScene._removeOrbButtonOnReturn = true end
       end
-      sceneManager:set(OrbRewardScene.new({ returnToPreviousOnExit = result.returnToRewards }))
+      sceneManager:set(OrbRewardScene.new({ returnToPreviousOnExit = result.returnToRewards, shaderTime = result.shaderTime }), true)
     elseif result == "open_orb_reward" then
-      sceneManager:set(OrbRewardScene.new())
+      sceneManager:set(OrbRewardScene.new(), true)
     elseif result == "return_to_previous" then
       if previousScene then
         sceneManager:set(previousScene)

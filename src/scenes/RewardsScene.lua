@@ -47,6 +47,7 @@ local function createRewardButton(label, icon, onClick)
   return Button.new({
     label = label,
     font = theme.fonts.base,
+    bgColor = { 1, 1, 1, 0.1 },
     icon = icon,
     iconScale = iconScale,
     iconTint = { 1, 1, 1, 0.85 },
@@ -79,6 +80,17 @@ end
 
 function RewardsScene:load()
   self.time = 0
+  self._uiFadeTimer = 0
+  self._fadeInDuration = 0.65
+  self._fadeInDelayStep = 0.25
+  self._fadeStartDelay = 0.3
+  self._goldFadeInAlpha = 0
+  -- Circle pulse on scene entry (drives shader u_transitionProgress)
+  self._enterPulseTimer = 0
+  self._enterPulseDuration = (config.transition and config.transition.duration) or 0.6
+  self._enterPulsePhase = "rising" -- "rising" -> "falloff" -> "idle"
+  self._enterFalloffTimer = 0
+  self._enterFalloffDuration = 0.4
   -- Load decorative image (same asset as turn indicator)
   local decorPath = "assets/images/decor_1.png"
   local okDecor, imgDecor = pcall(love.graphics.newImage, decorPath)
@@ -105,6 +117,7 @@ function RewardsScene:load()
   self.skipButton = Button.new({
     label = "Skip rewards",
     font = theme.fonts.base,
+    bgColor = { 1, 1, 1, 0.1 },
     align = "center",
     onClick = function()
       self._exitRequested = true
@@ -123,15 +136,13 @@ function RewardsScene:load()
     local PlayerState = require("core.PlayerState")
     local playerState = PlayerState.getInstance()
     local currentGold = playerState:getGold()
-    local reward = (self.params and self.params.goldReward) or 0
-    self._goldDisplayStart = math.max(0, currentGold - reward)
+    -- Reward is not yet applied; start and target are currentGold
+    self._goldDisplayStart = currentGold
     self._goldDisplayTarget = currentGold
     self._goldCounting = false
     self._goldCountTime = 0
     self._goldCountDuration = 0.6 -- seconds to count up
-    if self.topBar then
-      self.topBar.overrideGold = self._goldDisplayStart
-    end
+    if self.topBar then self.topBar.overrideGold = nil end
   end
   
   -- Gold button (will be created/updated when gold reward is available)
@@ -140,11 +151,35 @@ end
 
 function RewardsScene:update(dt)
   self.time = self.time + dt
+  self._uiFadeTimer = self._uiFadeTimer + dt
   if self.shader then
     local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
     local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
     self.shader:send("u_time", self.time)
     self.shader:send("u_resolution", { vw, vh })
+    -- Drive circle growth only during entry pulse window
+    local p = 0
+    local function easeOutCubic(t) return 1 - math.pow(1 - t, 3) end
+    if self._enterPulsePhase == "rising" then
+      self._enterPulseTimer = self._enterPulseTimer + dt
+      local t = math.min(1, self._enterPulseTimer / self._enterPulseDuration)
+      p = easeOutCubic(t)
+      if t >= 1 then
+        self._enterPulsePhase = "falloff"
+        self._enterFalloffTimer = 0
+      end
+    elseif self._enterPulsePhase == "falloff" then
+      self._enterFalloffTimer = self._enterFalloffTimer + dt
+      local tf = math.min(1, self._enterFalloffTimer / self._enterFalloffDuration)
+      p = 1 - easeOutCubic(tf)
+      if tf >= 1 then
+        self._enterPulsePhase = "idle"
+        p = 0
+      end
+    else
+      p = 0
+    end
+    self.shader:send("u_transitionProgress", p)
   end
   if self._exitRequested then
     return "return_to_map"
@@ -152,7 +187,7 @@ function RewardsScene:update(dt)
   if self._selectedOrb then
     self._selectedOrb = false
     local shouldReturn = (self.goldButton ~= nil) and (not self._goldButtonClicked)
-    return { type = "open_orb_reward", returnToRewards = shouldReturn }
+    return { type = "open_orb_reward", returnToRewards = shouldReturn, shaderTime = self.time }
   end
   
   -- Update button layouts and hover states
@@ -196,6 +231,12 @@ function RewardsScene:update(dt)
         -- Handle gold button click
         if not self._goldButtonClicked then
           self._goldButtonClicked = true
+          -- Apply gold to PlayerState now (so persistent state updates only on click)
+          local PlayerState = require("core.PlayerState")
+          local playerState = PlayerState.getInstance()
+          playerState:addGold(goldReward)
+          -- Update target for counting to reflect new total
+          self._goldDisplayTarget = playerState:getGold()
           self:_startCoinAnimation(goldReward, vw, vh)
         end
       end)
@@ -205,6 +246,31 @@ function RewardsScene:update(dt)
     local layoutGoldButton = createRewardButtonLayout(vw, vh, nextRowIndex, dt, self._mouseX, self._mouseY)
     layoutGoldButton(self.goldButton)
     nextRowIndex = nextRowIndex + 1
+  end
+  
+  -- Compute staged fade-in alphas (top-to-bottom: orb, gold, skip)
+  do
+    local idx = 0
+    local function easeOut(a)
+      -- smoothstep-like ease
+      return a * a * (3 - 2 * a)
+    end
+    local function alphaFor(index)
+      local t = (self._uiFadeTimer - (self._fadeStartDelay or 0) - index * self._fadeInDelayStep) / self._fadeInDuration
+      t = math.max(0, math.min(1, t))
+      return easeOut(t)
+    end
+    if self.orbButton then
+      self.orbButton.alpha = alphaFor(idx); idx = idx + 1
+    end
+    if self.goldButton then
+      self._goldFadeInAlpha = alphaFor(idx); idx = idx + 1
+    else
+      self._goldFadeInAlpha = 0
+    end
+    if self.skipButton then
+      self.skipButton.alpha = alphaFor(idx)
+    end
   end
   
   -- Update coin animations
@@ -339,7 +405,9 @@ function RewardsScene:draw()
     
     -- Draw button with alpha applied
     love.graphics.push()
-    love.graphics.setColor(Button.defaults.bgColor[1], Button.defaults.bgColor[2], Button.defaults.bgColor[3], Button.defaults.bgColor[4] * self._goldButtonFadeAlpha)
+    local bg = self.goldButton.bgColor or Button.defaults.bgColor
+    local combinedAlpha = ((bg[4] or 1) * self._goldButtonFadeAlpha * (self._goldFadeInAlpha or 1))
+    love.graphics.setColor(bg[1], bg[2], bg[3], combinedAlpha)
     love.graphics.push()
     love.graphics.translate(cx, cy)
     love.graphics.scale(s, s)
@@ -361,13 +429,13 @@ function RewardsScene:draw()
     
     if self.goldButton.icon then
       local tint = self.goldButton.iconTint or {1, 1, 1, 0.8}
-      love.graphics.setColor(tint[1], tint[2], tint[3], tint[4] * self._goldButtonFadeAlpha)
+      love.graphics.setColor(tint[1], tint[2], tint[3], (tint[4] or 1) * self._goldButtonFadeAlpha * (self._goldFadeInAlpha or 1))
       love.graphics.draw(self.goldButton.icon, startX, -iconH * 0.5, 0, (self.goldButton.iconScale or 1.0), (self.goldButton.iconScale or 1.0))
       startX = startX + iconW + spacing
     end
     
     local textColor = Button.defaults.textColor
-    love.graphics.setColor(textColor[1], textColor[2], textColor[3], textColor[4] * self._goldButtonFadeAlpha)
+    love.graphics.setColor(textColor[1], textColor[2], textColor[3], (textColor[4] or 1) * self._goldButtonFadeAlpha * (self._goldFadeInAlpha or 1))
     love.graphics.print(self.goldButton.label, startX, centerY)
     love.graphics.pop()
     love.graphics.pop()

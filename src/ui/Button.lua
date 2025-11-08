@@ -28,6 +28,8 @@ function Button.new(opts)
     iconTint = opts.iconTint or { 1, 1, 1, 0.8 },
     align = opts.align or "left", -- "left" or "center"
     onClick = opts.onClick,
+    bgColor = opts.bgColor, -- optional per-instance override
+    alpha = opts.alpha or 1.0, -- overall opacity multiplier
     -- internal state
     _hovered = false,
     _scale = 1.0,
@@ -73,7 +75,8 @@ function Button:draw()
   love.graphics.scale(s, s)
 
   -- Background
-  love.graphics.setColor(Button.defaults.bgColor)
+  local bg = self.bgColor or Button.defaults.bgColor
+  love.graphics.setColor(bg[1], bg[2], bg[3], (bg[4] or 1) * (self.alpha or 1))
   love.graphics.rectangle("fill", -self.w * 0.5, -self.h * 0.5, self.w, self.h, Button.defaults.cornerRadius, Button.defaults.cornerRadius)
 
   -- Icon + text (scaled together)
@@ -100,12 +103,14 @@ function Button:draw()
 
   local centerY = -th * 0.5
   if self.icon then
-    love.graphics.setColor(self.iconTint[1], self.iconTint[2], self.iconTint[3], self.iconTint[4])
+    local it = self.iconTint or {1,1,1,1}
+    love.graphics.setColor(it[1], it[2], it[3], (it[4] or 1) * (self.alpha or 1))
     love.graphics.draw(self.icon, startX, -iconH * 0.5, 0, (self.iconScale or 1.0), (self.iconScale or 1.0))
     startX = startX + iconW + spacing
   end
 
-  love.graphics.setColor(Button.defaults.textColor)
+  local tc = Button.defaults.textColor
+  love.graphics.setColor(tc[1], tc[2], tc[3], (tc[4] or 1) * (self.alpha or 1))
   love.graphics.print(self.label, startX, centerY)
 
   love.graphics.pop()
