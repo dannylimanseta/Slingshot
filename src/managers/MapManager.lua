@@ -260,7 +260,12 @@ end
 
 function MapManager:_carveDirectedPath(currentX, currentY, targetX, targetY, pathTiles, pathSet, corridorCfg)
   local jitterChance = (corridorCfg and corridorCfg.jitterChance) or 0.25
+  local maxStraightLength = (corridorCfg and corridorCfg.maxStraightLength) or 5
   local attempts = self.gridWidth * self.gridHeight * 4
+  
+  -- Track consecutive moves in the same direction (actual movement direction, not target direction)
+  local lastDirX, lastDirY = nil, nil
+  local straightCount = 0
 
   while (currentX ~= targetX or currentY ~= targetY) and attempts > 0 do
     attempts = attempts - 1
@@ -269,26 +274,63 @@ function MapManager:_carveDirectedPath(currentX, currentY, targetX, targetY, pat
     local dx = targetX - currentX
     local dy = targetY - currentY
     local options = {}
+    local primaryOptions = {}
+    local perpendicularOptions = {}
 
+    -- Determine primary direction options (towards target)
     if dx ~= 0 then
       local stepX = dx > 0 and 1 or -1
       for _ = 1, 3 do
-        table.insert(options, { currentX + stepX, currentY })
+        table.insert(primaryOptions, { currentX + stepX, currentY })
       end
-      if self:randomFloat() < jitterChance then
-        table.insert(options, { currentX, currentY + 1 })
-        table.insert(options, { currentX, currentY - 1 })
-      end
+      -- Perpendicular options (vertical)
+      table.insert(perpendicularOptions, { currentX, currentY + 1 })
+      table.insert(perpendicularOptions, { currentX, currentY - 1 })
     end
 
     if dy ~= 0 then
       local stepY = dy > 0 and 1 or -1
       for _ = 1, 3 do
-        table.insert(options, { currentX, currentY + stepY })
+        table.insert(primaryOptions, { currentX, currentY + stepY })
+      end
+      -- Perpendicular options (horizontal)
+      table.insert(perpendicularOptions, { currentX + 1, currentY })
+      table.insert(perpendicularOptions, { currentX - 1, currentY })
+    end
+
+    -- If we've been going straight too long, prioritize perpendicular movement
+    local forceTurn = false
+    if lastDirX ~= nil and lastDirY ~= nil and straightCount >= maxStraightLength then
+      forceTurn = true
+    end
+
+    if forceTurn then
+      -- Force a turn: only use perpendicular options
+      for _, opt in ipairs(perpendicularOptions) do
+        table.insert(options, opt)
+      end
+      -- If no perpendicular options, fall back to primary (but this shouldn't happen often)
+      if #options == 0 then
+        for _, opt in ipairs(primaryOptions) do
+          table.insert(options, opt)
+        end
+      end
+    else
+      -- Normal behavior: mix primary and perpendicular based on jitterChance
+      for _, opt in ipairs(primaryOptions) do
+        table.insert(options, opt)
       end
       if self:randomFloat() < jitterChance then
-        table.insert(options, { currentX + 1, currentY })
-        table.insert(options, { currentX - 1, currentY })
+        for _, opt in ipairs(perpendicularOptions) do
+          table.insert(options, opt)
+        end
+      end
+    end
+
+    if #options == 0 then
+      -- Fallback: use primary options if no perpendicular options available
+      for _, opt in ipairs(primaryOptions) do
+        table.insert(options, opt)
       end
     end
 
@@ -308,6 +350,22 @@ function MapManager:_carveDirectedPath(currentX, currentY, targetX, targetY, pat
     end
 
     local choice = filtered[self:random(1, #filtered)]
+    local newDirX = choice[1] - currentX
+    local newDirY = choice[2] - currentY
+    
+    -- Update direction tracking based on actual movement
+    if newDirX ~= 0 or newDirY ~= 0 then
+      if lastDirX == newDirX and lastDirY == newDirY then
+        -- Still going same direction
+        straightCount = straightCount + 1
+      else
+        -- Changed direction
+        lastDirX = newDirX
+        lastDirY = newDirY
+        straightCount = 1
+      end
+    end
+    
     currentX, currentY = choice[1], choice[2]
   end
 

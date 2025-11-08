@@ -65,18 +65,6 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "potion",
-                              x = 0.817,
-                              y = 0.077
-                            },
-                    {
-                              hp = 1,
-                              kind = "potion",
-                              x = 0.186,
-                              y = 0.083
-                            },
-                    {
-                              hp = 1,
                               kind = "armor",
                               x = 0.595,
                               y = 0.406

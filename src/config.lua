@@ -376,6 +376,7 @@ config.map = {
       edgeMargin = 4, -- keep the primary spine comfortably away from map borders
       mainSegmentCount = 12, -- additional directional pushes to stretch the main corridor
       jitterChance = 0.18, -- minimal drift keeps corridors needle-thin
+      maxStraightLength = 5, -- maximum consecutive moves in same direction before forcing a turn
       branchCount = 18, -- additional optional branches off the spine
       branchLengthMin = 13, -- minimum length of a branch (tiles)
       branchLengthMax = 31, -- maximum length of a branch (tiles)
