@@ -232,6 +232,10 @@ function RewardsScene:update(dt)
           -- Apply gold to PlayerState now (so persistent state updates only on click)
           local PlayerState = require("core.PlayerState")
           local playerState = PlayerState.getInstance()
+          -- Freeze top bar display at pre-reward amount to avoid instant jump
+          local preGold = playerState:getGold()
+          self._goldDisplayStart = preGold
+          if self.topBar then self.topBar.overrideGold = preGold end
           playerState:addGold(goldReward)
           -- Update target for counting to reflect new total
           self._goldDisplayTarget = playerState:getGold()

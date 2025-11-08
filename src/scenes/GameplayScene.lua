@@ -708,6 +708,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
         local ball1 = Ball.new(self.world, self.aimStartX, self.aimStartY, ndx, ndy, {
           maxBounces = maxBounces,
           spritePath = spritePath,
+          trailConfig = (config.ball and config.ball.twinStrike and config.ball.twinStrike.trail) or nil,
           onLastBounce = function(ball)
             ball:destroy()
           end
@@ -717,6 +718,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
         local ball2 = Ball.new(self.world, self.aimStartX, self.aimStartY, -ndx, ndy, {
           maxBounces = maxBounces,
           spritePath = spritePath,
+          trailConfig = (config.ball and config.ball.twinStrike and config.ball.twinStrike.trail) or nil,
           onLastBounce = function(ball)
             ball:destroy()
           end

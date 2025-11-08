@@ -188,7 +188,7 @@ end
 function Shooter:calculateSlotSize(relativePosition)
   local r = config.shooter.radius
   local ballSize = r * 0.7
-  local activeBallSize = ballSize * 1.2
+  local activeBallSize = ballSize * 1.2 * 1.2
   
   local distanceFromCenter = math.abs(relativePosition)
   
@@ -358,13 +358,14 @@ function Shooter:draw()
     local carouselCfg = config.shooter.carousel
     local ballSpacing = r * carouselCfg.ballSpacingMultiplier
     
-    -- Calculate width to cover visible slots (using dynamic maxVisibleSlots)
-    local slotsWidth = self.maxVisibleSlots * ballSpacing
+    -- Calculate width to cover a constant number of slots (keep background size constant)
+    local baseVisibleSlots = 5
+    local slotsWidth = baseVisibleSlots * ballSpacing
     local iw, ih = self.ballSlotsImage:getWidth(), self.ballSlotsImage:getHeight()
-    local scale = (slotsWidth / math.max(iw, ih)) * 2 -- Reduced by 3x (was * 6)
+    local scale = (slotsWidth / math.max(iw, ih)) * 2
     
     -- Center the background on shooter position
-    love.graphics.draw(self.ballSlotsImage, self.x, drawY, 0, scale, scale, iw * 0.5, ih * 0.5)
+    love.graphics.draw(self.ballSlotsImage, self.x, drawY - 15, 0, scale, scale, iw * 0.5, ih * 0.5)
   end
   
   -- Draw all slots from render cache

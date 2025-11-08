@@ -20,6 +20,17 @@ vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
 }
 ]])
 
+-- Simple brightness shader for projectile sprites
+local BRIGHTNESS_SHADER = love.graphics.newShader([[
+extern float u_brightness;
+
+vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
+  vec4 c = Texel(tex, uv) * color;
+  c.rgb = min(vec3(1.0), c.rgb * u_brightness);
+  return c;
+}
+]])
+
 -- Utility: radial gradient image for glow (alpha falls off toward edge)
 local function makeRadialGlow(diameter)
   local data = love.image.newImageData(diameter, diameter)
@@ -151,6 +162,15 @@ function Ball:draw()
       if g.outerGlow and g.outerGlow.enabled then
         local outer = g.outerGlow
         local outerCol = outer.color or { 0.3, 0.8, 1, 0.4 }
+        do
+          local trailCfg = self.trail and self.trail.cfg or nil
+          if trailCfg then
+            local src = trailCfg.colorStart or trailCfg.color or trailCfg.colorEnd
+            if src then
+              outerCol = { src[1] or outerCol[1], src[2] or outerCol[2], src[3] or outerCol[3], outerCol[4] or 0.4 }
+            end
+          end
+        end
         local outerAlpha = outerCol[4] or 0.4
         -- Apply burst intensity to outer glow too (scaled up for more visibility)
         if burstIntensity > 0 then
@@ -169,6 +189,15 @@ function Ball:draw()
       
       -- Main glow layer (brighter, closer to ball)
       local col = g.color or { 0.3, 0.8, 1, 0.7 }
+      do
+        local trailCfg = self.trail and self.trail.cfg or nil
+        if trailCfg then
+          local src = trailCfg.colorStart or trailCfg.color or trailCfg.colorEnd
+          if src then
+            col = { src[1] or col[1], src[2] or col[2], src[3] or col[3], col[4] or 0.7 }
+          end
+        end
+      end
       local alpha = col[4] or 0.7
       if g.pulse then
         local p = (math.sin(self.glowT * (g.pulseSpeed or 1.6)) * 0.5 + 0.5) * (g.pulseAmount or 0.2)
@@ -197,7 +226,12 @@ function Ball:draw()
   if self.ballImg then
     local imgW, imgH = self.ballImg:getWidth(), self.ballImg:getHeight()
     local scale = (self.radius * 2) / math.max(imgW, imgH) -- scale to fit radius
+    love.graphics.push("all")
+    love.graphics.setShader(BRIGHTNESS_SHADER)
+    BRIGHTNESS_SHADER:send("u_brightness", 1.5) -- +50% brightness
     love.graphics.draw(self.ballImg, x, y, 0, scale, scale, imgW * 0.5, imgH * 0.5)
+    love.graphics.setShader()
+    love.graphics.pop()
   else
     -- Fallback to circle if sprite missing
     love.graphics.setColor(theme.colors.ball)

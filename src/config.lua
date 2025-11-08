@@ -43,13 +43,30 @@ config.ball = {
       maxPoints = 32,
       sampleInterval = 0.016, -- seconds between samples (~60Hz)
       softness = 0.25, -- 0..0.5 edge softness across width
-      color = { 0.5, 0.9, 0.6, 0.6 }, -- RGBA (fallback color - less saturated green)
-      colorStart = { 0.5, 0.9, 0.6, 0.6 }, -- Color at head (soft green)
-      colorEnd = { 0.4, 0.75, 0.5, 0.6 }, -- Color at tail (softer darker green)
+      color = { 1.0, 0.518, 0.0, 0.6 }, -- Hex #FF8400
+      colorStart = { 1.0, 0.518, 0.0, 0.6 }, -- Hex #FF8400
+      colorEnd = { 1.0, 0.518, 0.0, 0.6 }, -- Hex #FF8400
       additive = true,
       overlap = 5.46, -- 30% smaller than regular overlap (7.8 * 0.7)
       taperPower = 1.4, -- controls how quickly width tapers toward tail
       invert = true, -- invert along-length gradient (bright at head)
+    },
+  },
+  -- Twin strike (ball_3) visual settings
+  twinStrike = {
+    trail = {
+      enabled = true,
+      width = 23.4, -- match base trail width
+      maxPoints = 32,
+      sampleInterval = 0.016,
+      softness = 0.25,
+      color = { 0.765, 0.298, 0.298, 0.6 }, -- Hex #C34C4C
+      colorStart = { 0.765, 0.298, 0.298, 0.6 }, -- Hex #C34C4C
+      colorEnd = { 0.765, 0.298, 0.298, 0.6 }, -- Hex #C34C4C
+      additive = true,
+      overlap = 7.8, -- match base overlap
+      taperPower = 1.4,
+      invert = true,
     },
   },
   easing = {
@@ -60,13 +77,13 @@ config.ball = {
   bounceSpeedScale = 1.01, -- +8% target speed per bounce
   trail = {
     enabled = true,
-    width = 23.4, -- increased by 30% (was 18)
+    width = 18, -- reduced thickness
     maxPoints = 32,
     sampleInterval = 0.016, -- seconds between samples (~60Hz)
     softness = 0.25, -- 0..0.5 edge softness across width
-    color = { 1, 0.65, 0.2, 0.6 }, -- RGBA (fallback color)
-    colorStart = { 1, 0.65, 0.2, 0.6 }, -- Color at head (orange)
-    colorEnd = { 1, 0.2, 0.1, 0.6 }, -- Color at tail (red)
+    color = { 1, 1, 1, 0.6 }, -- White
+    colorStart = { 1, 1, 1, 0.6 }, -- White
+    colorEnd = { 1, 1, 1, 0.6 }, -- White
     additive = true,
     overlap = 7.8, -- pixels to extend each segment at both ends to cover joins (increased by 30%, was 6)
     taperPower = 1.4, -- controls how quickly width tapers toward tail
