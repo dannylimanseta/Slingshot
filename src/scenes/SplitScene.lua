@@ -108,6 +108,9 @@ function SplitScene:load()
   self.left:load({ x = 0, y = 0, w = centerRect.w, h = h }, self.currentProjectileId, battleProfile)
   self.right:load({ x = centerRect.w, y = 0, w = w - centerRect.w, h = h }, battleProfile)
   self._lastCenterW = centerRect.w
+  -- Ensure only SplitScene draws the shared top bar
+  if self.left then self.left.disableTopBar = true end
+  if self.right then self.right.disableTopBar = true end
 
   -- Remove per-first-enemy runtime scale multiplier for consistent enemy sizes
 

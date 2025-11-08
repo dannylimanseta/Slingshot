@@ -39,11 +39,20 @@ function TopBar:draw()
   local maxHealth = playerState:getMaxHealth()
   local gold = (self.overrideGold ~= nil) and self.overrideGold or playerState:getGold()
   
-  -- Draw top bar background
-  love.graphics.setColor(theme.colors.topbar or { 14/255, 16/255, 20/255, 1 })
+  -- Draw top bar background (darkened, 0.8 alpha)
+  do
+    local c = theme.colors.topbar or { 14/255, 16/255, 20/255, 1 }
+    local r = (c[1] or 0.055) * 0.7
+    local g = (c[2] or 0.063) * 0.7
+    local b = (c[3] or 0.078) * 0.7
+    love.graphics.setColor(r, g, b, 0.8)
+  end
   love.graphics.rectangle("fill", 0, 0, vw, barHeight)
   -- Bottom divider line
-  love.graphics.setColor(theme.colors.topbarDivider or {0,0,0,1})
+  do
+    local c = theme.colors.topbarDivider or {0, 0, 0, 1}
+    love.graphics.setColor(c[1] or 0, c[2] or 0, c[3] or 0, 0.8)
+  end
   love.graphics.rectangle("fill", 0, barHeight, vw, 2)
   
   -- Draw health section (left side)

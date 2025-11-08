@@ -602,7 +602,7 @@ function GameplayScene:draw(bounds)
   love.graphics.pop() -- Pop screenshake transform (must be last, after all drawing)
   
   -- Draw top bar on top (z-order)
-  if self.topBar then
+  if self.topBar and not self.disableTopBar then
     self.topBar:draw()
   end
 end

@@ -879,7 +879,7 @@ function BattleScene:draw(bounds)
   end
   
   -- Draw top bar on top (z-order)
-  if self.topBar then
+  if self.topBar and not self.disableTopBar then
     self.topBar:draw()
   end
 end

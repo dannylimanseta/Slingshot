@@ -301,7 +301,8 @@ function OrbRewardScene:draw()
     if a > 1 then a = 1 end
     -- Header label
     local header = (opt.kind == "upgrade") and "UPGRADE" or "NEW ORB!"
-    local headerCol = (opt.kind == "upgrade") and {1,1,1,0.8 * a} or {0.6,1.0,0.6,0.9 * a}
+    -- Make "NEW ORB!" white as well
+    local headerCol = (opt.kind == "upgrade") and {1,1,1,0.8 * a} or {1,1,1,0.9 * a}
     love.graphics.setColor(headerCol[1], headerCol[2], headerCol[3], headerCol[4])
     love.graphics.print(header, x, y - 44)
 
