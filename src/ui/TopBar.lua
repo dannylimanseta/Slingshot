@@ -56,7 +56,7 @@ function TopBar:draw()
   love.graphics.rectangle("fill", 0, barHeight, vw, 2)
   
   -- Draw health section (left side)
-  local iconSize = 32
+  local iconSize = 24
   local iconSpacing = 12
   local leftPadding = 24
   local topPadding = (barHeight - iconSize) * 0.5
