@@ -163,8 +163,10 @@ function OrbRewardScene:update(dt)
   if self.shader then
     local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
     local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
+    -- Account for supersampling: shader resolution should match canvas size
+    local supersamplingFactor = _G.supersamplingFactor or 1
     self.shader:send("u_time", self.time)
-    self.shader:send("u_resolution", { vw, vh })
+    self.shader:send("u_resolution", { vw * supersamplingFactor, vh * supersamplingFactor })
     local p = 0
     local function easeOutCubic(t) return 1 - math.pow(1 - t, 3) end
     if self._enterPulsePhase == "rising" then

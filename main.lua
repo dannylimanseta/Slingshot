@@ -32,10 +32,23 @@ function love.load()
 
   virtualW = (config.video and config.video.virtualWidth) or 1280
   virtualH = (config.video and config.video.virtualHeight) or 720
-  screenCanvas = love.graphics.newCanvas(virtualW, virtualH)
-  -- Use linear filtering so upscaled text looks smooth in fullscreen
+
+  -- Supersampling setup: render at higher resolution for smooth downscaling
+  local supersamplingEnabled = config.video and config.video.supersampling and config.video.supersampling.enabled
+  local supersamplingFactor = supersamplingEnabled and (config.video.supersampling.factor or 1) or 1
+
+  -- Calculate supersampled canvas size
+  local canvasW = virtualW * supersamplingFactor
+  local canvasH = virtualH * supersamplingFactor
+
+  screenCanvas = love.graphics.newCanvas(canvasW, canvasH)
+  -- Use linear filtering for smooth downscaling from supersampled resolution
   screenCanvas:setFilter('linear', 'linear')
   love.graphics.setDefaultFilter('linear', 'linear', 1)
+
+  -- Store supersampling factor for rendering calculations
+  _G.supersamplingFactor = supersamplingFactor
+
   updateScreenScale()
 
   sceneManager = SceneManager.new()
@@ -102,15 +115,31 @@ function love.update(deltaTime)
 end
 
 function love.draw()
-  -- Draw everything to virtual canvas
+  -- Draw everything to supersampled canvas
   love.graphics.setCanvas(screenCanvas)
   love.graphics.clear(0, 0, 0, 0)
+
+  -- Apply supersampling transformation: scale up rendering to fill the larger canvas
+  local supersamplingFactor = _G.supersamplingFactor or 1
+  if supersamplingFactor > 1 then
+    love.graphics.push()
+    love.graphics.scale(supersamplingFactor, supersamplingFactor)
+  end
+
+  -- Render at virtual resolution (gets scaled up by supersampling factor)
   if sceneManager then sceneManager:draw() end
+
+  if supersamplingFactor > 1 then
+    love.graphics.pop()
+  end
+
   love.graphics.setCanvas()
 
-  -- Present canvas scaled with letterboxing
+  -- Present supersampled canvas scaled down and then up to window size
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.draw(screenCanvas, offsetX, offsetY, 0, scaleFactor, scaleFactor)
+  -- Draw at 1/supersamplingFactor scale first (downscale), then apply window scaleFactor
+  love.graphics.draw(screenCanvas, offsetX, offsetY, 0,
+    scaleFactor / supersamplingFactor, scaleFactor / supersamplingFactor)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -189,9 +218,10 @@ function love.keyreleased(key, scancode)
 end
 
 function love.mousepressed(x, y, button, isTouch, presses)
+  -- Convert screen coordinates to virtual coordinates (reverse of draw scaling)
   local vx = (x - offsetX) / scaleFactor
   local vy = (y - offsetY) / scaleFactor
-  if sceneManager then 
+  if sceneManager then
     local result = sceneManager:mousepressed(vx, vy, button, isTouch, presses)
     -- Handle scene switching signals from mouse clicks
     if result == "start_battle" then
@@ -203,12 +233,14 @@ function love.mousepressed(x, y, button, isTouch, presses)
 end
 
 function love.mousereleased(x, y, button, isTouch, presses)
+  -- Convert screen coordinates to virtual coordinates (reverse of draw scaling)
   local vx = (x - offsetX) / scaleFactor
   local vy = (y - offsetY) / scaleFactor
   if sceneManager then sceneManager:mousereleased(vx, vy, button, isTouch, presses) end
 end
 
 function love.mousemoved(x, y, dx, dy, isTouch)
+  -- Convert screen coordinates to virtual coordinates (reverse of draw scaling)
   local vx = (x - offsetX) / scaleFactor
   local vy = (y - offsetY) / scaleFactor
   local vdx = dx / scaleFactor

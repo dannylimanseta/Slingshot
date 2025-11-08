@@ -331,18 +331,10 @@ function Visuals.draw(scene, bounds)
     -- Check if we're on a Retina display
     local isRetina = (pixelW > logicalW + 1) or (pixelH > logicalH + 1)
     
-    if currentCanvas and isRetina then
-      -- Retina + canvas: sc appears to be window pixel coordinates
-      -- Map canvas space to the portion of window pixels it occupies
-      -- The canvas fills a portion of the window, so we need to scale accordingly
-      local dpiScaleX = pixelW / logicalW
-      local dpiScaleY = pixelH / logicalH
-      -- Canvas dimensions in pixel space (how many pixels the canvas occupies)
-      scene.fogShader:send("u_resolution", {w * dpiScaleX, h * dpiScaleY})
-    else
-      -- Non-Retina or no canvas: sc is canvas/logical relative
-      scene.fogShader:send("u_resolution", {w, h})
-    end
+    -- With supersampling, we're always rendering to a canvas at supersampled resolution
+    -- The shader coordinates (sc) are relative to the supersampled canvas
+    local supersamplingFactor = _G.supersamplingFactor or 1
+    scene.fogShader:send("u_resolution", {w * supersamplingFactor, h * supersamplingFactor})
     scene.fogShader:send("u_cloudDensity", fogConfig.cloudDensity or 0.15)
     scene.fogShader:send("u_noisiness", fogConfig.noisiness or 0.35)
     scene.fogShader:send("u_speed", fogConfig.speed or 0.1)

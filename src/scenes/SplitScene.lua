@@ -343,7 +343,10 @@ end
 
 local function withScissor(bounds, fn)
   love.graphics.push("all")
-  love.graphics.setScissor(bounds.x, bounds.y, bounds.w, bounds.h)
+  -- Account for supersampling: scissor coordinates need to be scaled
+  local supersamplingFactor = _G.supersamplingFactor or 1
+  love.graphics.setScissor(bounds.x * supersamplingFactor, bounds.y * supersamplingFactor,
+                          bounds.w * supersamplingFactor, bounds.h * supersamplingFactor)
   love.graphics.translate(bounds.x, bounds.y)
   fn()
   love.graphics.pop()

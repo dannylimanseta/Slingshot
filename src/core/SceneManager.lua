@@ -37,17 +37,29 @@ function SceneManager:set(scene, skipTransition)
     -- Capture current scene to canvas before switching
     local virtualW = (config.video and config.video.virtualWidth) or 1280
     local virtualH = (config.video and config.video.virtualHeight) or 720
-    local canvas = love.graphics.newCanvas(virtualW, virtualH)
+    -- Account for supersampling: create canvas at supersampled resolution
+    local supersamplingFactor = _G.supersamplingFactor or 1
+    local canvasW = virtualW * supersamplingFactor
+    local canvasH = virtualH * supersamplingFactor
+    local canvas = love.graphics.newCanvas(canvasW, canvasH)
     love.graphics.push('all')
     love.graphics.setCanvas(canvas)
     love.graphics.origin()
     love.graphics.clear(0, 0, 0, 0)
+    -- Apply supersampling transformation when rendering to transition canvas
+    if supersamplingFactor > 1 then
+      love.graphics.push()
+      love.graphics.scale(supersamplingFactor, supersamplingFactor)
+    end
     if self.currentScene.draw then
       self.currentScene:draw()
     end
+    if supersamplingFactor > 1 then
+      love.graphics.pop()
+    end
     love.graphics.setCanvas()
     love.graphics.pop()
-    
+
     self.previousScene = self.currentScene
     self.previousSceneCanvas = canvas
     
@@ -71,8 +83,12 @@ function SceneManager:set(scene, skipTransition)
   -- Create reusable canvas for current scene
   local virtualW = (config.video and config.video.virtualWidth) or 1280
   local virtualH = (config.video and config.video.virtualHeight) or 720
+  -- Account for supersampling: create canvas at supersampled resolution
+  local supersamplingFactor = _G.supersamplingFactor or 1
+  local canvasW = virtualW * supersamplingFactor
+  local canvasH = virtualH * supersamplingFactor
   if not self.currentSceneCanvas then
-    self.currentSceneCanvas = love.graphics.newCanvas(virtualW, virtualH)
+    self.currentSceneCanvas = love.graphics.newCanvas(canvasW, canvasH)
   end
 end
 
@@ -107,8 +123,17 @@ function SceneManager:draw()
     love.graphics.setCanvas(self.currentSceneCanvas)
     love.graphics.origin()
     love.graphics.clear(0, 0, 0, 0)
+    -- Apply supersampling transformation when rendering to transition canvas
+    local supersamplingFactor = _G.supersamplingFactor or 1
+    if supersamplingFactor > 1 then
+      love.graphics.push()
+      love.graphics.scale(supersamplingFactor, supersamplingFactor)
+    end
     if self.currentScene and self.currentScene.draw then
       self.currentScene:draw()
+    end
+    if supersamplingFactor > 1 then
+      love.graphics.pop()
     end
     love.graphics.setCanvas()
     love.graphics.pop()

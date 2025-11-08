@@ -4,6 +4,15 @@ local config = {}
 config.video = {
   virtualWidth = 1280,
   virtualHeight = 720,
+  -- Supersampling for smooth scaling on larger monitors
+  -- Renders at higher resolution internally, then downscales for crisp visuals
+  supersampling = {
+    enabled = true,
+    factor = 2, -- 2x supersampling (renders at 2560x1440, displays at 1280x720)
+    -- factor = 1 disables supersampling (renders at native resolution)
+    -- factor = 2 gives 2x supersampling (recommended for most games)
+    -- factor = 4 gives 4x supersampling (higher quality but more GPU intensive)
+  },
 }
 
 -- Critical tunables (single source of truth)

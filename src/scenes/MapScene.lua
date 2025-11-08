@@ -150,6 +150,19 @@ function MapScene:load()
     end
   end
   
+  -- Reset movement state when returning to map
+  self.isMoving = false
+  self.playerTargetX = nil
+  self.playerTargetY = nil
+  self._movementTime = 0
+  -- Clear hold-to-move state
+  self._heldMoveKey = nil
+  self._heldDirX = 0
+  self._heldDirY = 0
+  self._holdElapsed = 0
+  self._repeatElapsed = 0
+  self._hasFiredInitialRepeat = false
+
   -- Handle return from battle
   if self._battleVictory and self._enemyTileX and self._enemyTileY then
     -- Victory: player stays on enemy tile, convert it to ground
