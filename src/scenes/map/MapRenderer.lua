@@ -437,7 +437,9 @@ function MapRenderer:drawUI(scene)
     end
     local textAlpha = (scene._endDayHovered and 1.0 or 0.7) * a
     love.graphics.setColor(1, 1, 1, textAlpha)
-    local textY = cy - (love.graphics.getFont():getHeight() * 0.5)
+    -- Center text vertically by accounting for font baseline/ascent, with small offset to shift down
+    local currentFont = love.graphics.getFont()
+    local textY = cy - currentFont:getAscent() + currentFont:getHeight() * 0.5 + 2
     love.graphics.print(label, cx, textY)
     cx = cx + textW
     if scene.keySpaceIcon then

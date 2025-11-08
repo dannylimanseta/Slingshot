@@ -339,7 +339,8 @@ function MapScene:drawUI()
     -- Label - use hover alpha (0.7 normally, 1.0 on hover)
     local textAlpha = (self._endDayHovered and 1.0 or 0.7) * a
     love.graphics.setColor(1, 1, 1, textAlpha)
-    local textY = cy - textH * 0.5
+    -- Center text vertically by accounting for font baseline/ascent, with small offset to shift down
+    local textY = cy - font:getAscent() + textH * 0.5 + 2
     love.graphics.print(label, cx, textY)
     cx = cx + textW
 

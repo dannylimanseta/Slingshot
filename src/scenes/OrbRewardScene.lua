@@ -68,12 +68,8 @@ function OrbRewardScene:load()
   local okArrow, imgArrow = pcall(love.graphics.newImage, "assets/images/icon_arrow.png")
   if okArrow then self.arrowIcon = imgArrow end
 
-  -- Fonts (same size as Rewards title ~50px)
-  local fontPath = (config.assets and config.assets.fonts and config.assets.fonts.ui) or nil
-  if fontPath then
-    local ok, f = pcall(love.graphics.newFont, fontPath, 50)
-    if ok then self.titleFont = f end
-  end
+  -- Fonts (same size as Rewards title ~50px, scaled for crisp rendering)
+  self.titleFont = theme.newFont(50)
 
   -- Build options
   local equipped, equippedSet = getEquipped()
@@ -161,12 +157,21 @@ function OrbRewardScene:update(dt)
   -- Advance UI fade timer (independent from shader time)
   self._fadeTimer = self._fadeTimer + dt
   if self.shader then
-    local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
-    local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
-    -- Account for supersampling: shader resolution should match canvas size
-    local supersamplingFactor = _G.supersamplingFactor or 1
+    -- Get the actual dimensions of the current drawing target
+    -- This accounts for the coordinate system we're drawing in
+    local canvas = love.graphics.getCanvas()
+    local drawW, drawH
+    if canvas then
+      -- When drawing to canvas with scale applied, fragCoord is in virtual space
+      local vw = (config.video and config.video.virtualWidth) or 1280
+      local vh = (config.video and config.video.virtualHeight) or 720
+      drawW, drawH = vw, vh
+    else
+      -- When drawing directly to screen, use actual dimensions
+      drawW, drawH = love.graphics.getDimensions()
+    end
     self.shader:send("u_time", self.time)
-    self.shader:send("u_resolution", { vw * supersamplingFactor, vh * supersamplingFactor })
+    self.shader:send("u_resolution", { drawW, drawH })
     local p = 0
     local function easeOutCubic(t) return 1 - math.pow(1 - t, 3) end
     if self._enterPulsePhase == "rising" then
@@ -234,10 +239,25 @@ function OrbRewardScene:draw()
 
   -- Backdrop shader (match RewardsScene)
   if self.shader then
+    -- Ensure shader resolution matches the actual render target's pixel size
+    do
+      local canvas = love.graphics.getCanvas()
+      local resW, resH
+      if canvas then
+        resW, resH = canvas:getDimensions()
+      else
+        -- Fallback to window dimensions
+        resW, resH = love.graphics.getDimensions()
+      end
+      self.shader:send("u_resolution", { resW, resH })
+      self.shader:send("u_time", self.time)
+    end
     love.graphics.push('all')
     love.graphics.setShader(self.shader)
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.rectangle('fill', 0, 0, vw, vh)
+    -- Draw shader to fill entire virtual resolution area
+    -- Use a large rectangle to ensure full coverage (accounting for any coordinate system quirks)
+    love.graphics.rectangle('fill', -1, -1, vw + 2, vh + 2)
     love.graphics.setShader()
     love.graphics.pop()
   end

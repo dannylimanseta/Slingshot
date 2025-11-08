@@ -26,28 +26,157 @@ theme.metrics = {
   stepCornerRadius = 3, -- corner radius for step rectangles in the top bar
 }
 
+-- Get supersampling factor for font scaling
+local function getSupersamplingFactor()
+  if config.video and config.video.supersampling and config.video.supersampling.enabled then
+    return config.video.supersampling.factor or 1
+  end
+  return 1
+end
+
+-- Wrap a font to scale down measurements for layout calculations
+local function wrapFont(font, scale)
+  if scale <= 1 then return font end
+  
+  local wrapper = {
+    _font = font,
+    _scale = scale,
+    _invScale = 1 / scale
+  }
+  
+  -- Proxy all font methods, scaling measurements
+  setmetatable(wrapper, {
+    __index = function(t, k)
+      local fontMethod = font[k]
+      if type(fontMethod) == "function" then
+        if k == "getWidth" or k == "getHeight" or k == "getAscent" or k == "getDescent" or k == "getBaseline" or k == "getLineHeight" then
+          return function(self, ...)
+            local result = fontMethod(font, ...)
+            return result * wrapper._invScale
+          end
+        else
+          -- For setFont and other methods, pass through to actual font
+          return function(self, ...)
+            return fontMethod(font, ...)
+          end
+        end
+      elseif k == "_font" then
+        -- Allow access to underlying font for setFont
+        return font
+      else
+        return fontMethod
+      end
+    end,
+    __call = function(self, ...)
+      -- If wrapper is called directly, return the actual font
+      return font
+    end
+  })
+  
+  return wrapper
+end
+
+-- Helper function to create a font at supersampled resolution for crisp rendering
+-- baseSize: the desired font size at virtual resolution
+-- Returns: a wrapped font object that scales measurements correctly
+function theme.newFont(baseSize, fontPath)
+  fontPath = fontPath or (config.assets and config.assets.fonts and config.assets.fonts.ui) or nil
+  
+  -- Create font at supersampled resolution for crisp rendering
+  local supersamplingFactor = getSupersamplingFactor()
+  local scaledSize = baseSize * supersamplingFactor
+  
+  local font
+  if fontPath then
+    local ok, f = pcall(love.graphics.newFont, fontPath, scaledSize)
+    if ok then font = f end
+  end
+  
+  if not font then
+    font = love.graphics.newFont(scaledSize)
+  end
+  
+  -- Wrap font to scale measurements
+  return wrapFont(font, supersamplingFactor)
+end
+
+-- Store original love.graphics functions
+local originalPrint = love.graphics.print
+local originalPrintf = love.graphics.printf
+
+-- Override love.graphics.setFont to handle wrapped fonts
+local originalSetFont = love.graphics.setFont
+love.graphics.setFont = function(font)
+  -- If font is wrapped, extract the actual font
+  if font and font._font then
+    return originalSetFont(font._font)
+  end
+  return originalSetFont(font)
+end
+
+-- Override love.graphics.print to automatically scale down supersampled fonts
+love.graphics.print = function(text, x, y, r, sx, sy, ox, oy, kx, ky)
+  local scale = theme._supersamplingFactor or 1
+  if scale > 1 then
+    local invScale = 1 / scale
+    love.graphics.push()
+    love.graphics.translate(x or 0, y or 0)
+    love.graphics.scale(invScale, invScale)
+    originalPrint(text, 0, 0, r, sx, sy, ox, oy, kx, ky)
+    love.graphics.pop()
+  else
+    originalPrint(text, x, y, r, sx, sy, ox, oy, kx, ky)
+  end
+end
+
+-- Override love.graphics.printf to automatically scale down supersampled fonts
+love.graphics.printf = function(text, x, y, limit, align, r, g, b, a)
+  local scale = theme._supersamplingFactor or 1
+  if scale > 1 then
+    local invScale = 1 / scale
+    love.graphics.push()
+    love.graphics.translate(x, y)
+    love.graphics.scale(invScale, invScale)
+    originalPrintf(text, 0, 0, limit * scale, align, r, g, b, a)
+    love.graphics.pop()
+  else
+    originalPrintf(text, x, y, limit, align, r, g, b, a)
+  end
+end
+
 do
   local fontPath = (config.assets and config.assets.fonts and config.assets.fonts.ui) or nil
+  local supersamplingFactor = getSupersamplingFactor()
+  -- Increased base font size from 20 to 24 for better readability in UI elements
+  local baseSize = 24
   local base, large, popup, jackpot
   if fontPath then
-    local ok1, f1 = pcall(love.graphics.newFont, fontPath, 20)
-    local ok2, f2 = pcall(love.graphics.newFont, fontPath, 67)
-    local ok3, f3 = pcall(love.graphics.newFont, fontPath, 40)
-    local ok4, f4 = pcall(love.graphics.newFont, fontPath, 80)
-    if ok1 then base = f1 end
-    if ok2 then large = f2 end
-    if ok3 then popup = f3 end
-    if ok4 then jackpot = f4 end
+    local ok1, f1 = pcall(love.graphics.newFont, fontPath, baseSize * supersamplingFactor)
+    local ok2, f2 = pcall(love.graphics.newFont, fontPath, 67 * supersamplingFactor)
+    local ok3, f3 = pcall(love.graphics.newFont, fontPath, 40 * supersamplingFactor)
+    local ok4, f4 = pcall(love.graphics.newFont, fontPath, 80 * supersamplingFactor)
+    if ok1 then base = wrapFont(f1, supersamplingFactor) end
+    if ok2 then large = wrapFont(f2, supersamplingFactor) end
+    if ok3 then popup = wrapFont(f3, supersamplingFactor) end
+    if ok4 then jackpot = wrapFont(f4, supersamplingFactor) end
   end
+  if not base then base = wrapFont(love.graphics.newFont(baseSize * supersamplingFactor), supersamplingFactor) end
+  if not large then large = wrapFont(love.graphics.newFont(67 * supersamplingFactor), supersamplingFactor) end
+  if not popup then popup = wrapFont(love.graphics.newFont(40 * supersamplingFactor), supersamplingFactor) end
+  if not jackpot then jackpot = wrapFont(love.graphics.newFont(100 * supersamplingFactor), supersamplingFactor) end
+  
   theme.fonts = {
-    base = base or love.graphics.newFont(20),
-    large = large or love.graphics.newFont(67),
-    popup = popup or love.graphics.newFont(40),
-    jackpot = jackpot or love.graphics.newFont(100),
+    base = base,
+    large = large,
+    popup = popup,
+    jackpot = jackpot,
   }
+  -- Store supersampling factor for text drawing helpers
+  theme._supersamplingFactor = supersamplingFactor
 end
 
 -- Helper function to draw text with black outline for better legibility
+-- Automatically handles scaling for crisp supersampled fonts
 function theme.drawTextWithOutline(text, x, y, r, g, b, a, outlineWidth)
   outlineWidth = outlineWidth or 2
   a = a or 1
@@ -55,25 +184,37 @@ function theme.drawTextWithOutline(text, x, y, r, g, b, a, outlineWidth)
   g = g or 1
   b = b or 1
   
+  local scale = theme._supersamplingFactor or 1
+  local invScale = 1 / scale
+  
+  -- Scale down to compensate for supersampled font size
+  love.graphics.push()
+  love.graphics.translate(x, y)
+  love.graphics.scale(invScale, invScale)
+  
   -- Draw black outline by drawing text in 8 directions (optimized)
+  -- Use originalPrint to avoid double-scaling
   love.graphics.setColor(0, 0, 0, a)
   for i = 1, outlineWidth do
-    love.graphics.print(text, x - i, y) -- left
-    love.graphics.print(text, x + i, y) -- right
-    love.graphics.print(text, x, y - i) -- up
-    love.graphics.print(text, x, y + i) -- down
-    love.graphics.print(text, x - i, y - i) -- top-left
-    love.graphics.print(text, x + i, y - i) -- top-right
-    love.graphics.print(text, x - i, y + i) -- bottom-left
-    love.graphics.print(text, x + i, y + i) -- bottom-right
+    originalPrint(text, -i * scale, 0) -- left
+    originalPrint(text, i * scale, 0) -- right
+    originalPrint(text, 0, -i * scale) -- up
+    originalPrint(text, 0, i * scale) -- down
+    originalPrint(text, -i * scale, -i * scale) -- top-left
+    originalPrint(text, i * scale, -i * scale) -- top-right
+    originalPrint(text, -i * scale, i * scale) -- bottom-left
+    originalPrint(text, i * scale, i * scale) -- bottom-right
   end
   
   -- Draw main text on top
   love.graphics.setColor(r, g, b, a)
-  love.graphics.print(text, x, y)
+  originalPrint(text, 0, 0)
+  
+  love.graphics.pop()
 end
 
 -- Helper function to draw formatted text with black outline
+-- Automatically handles scaling for crisp supersampled fonts
 function theme.printfWithOutline(text, x, y, limit, align, r, g, b, a, outlineWidth)
   outlineWidth = outlineWidth or 2
   a = a or 1
@@ -81,22 +222,33 @@ function theme.printfWithOutline(text, x, y, limit, align, r, g, b, a, outlineWi
   g = g or 1
   b = b or 1
   
+  local scale = theme._supersamplingFactor or 1
+  local invScale = 1 / scale
+  
+  -- Scale down to compensate for supersampled font size
+  love.graphics.push()
+  love.graphics.translate(x, y)
+  love.graphics.scale(invScale, invScale)
+  
   -- Draw black outline by drawing text in 8 directions (optimized)
+  -- Use originalPrintf to avoid double-scaling
   love.graphics.setColor(0, 0, 0, a)
   for i = 1, outlineWidth do
-    love.graphics.printf(text, x - i, y, limit, align) -- left
-    love.graphics.printf(text, x + i, y, limit, align) -- right
-    love.graphics.printf(text, x, y - i, limit, align) -- up
-    love.graphics.printf(text, x, y + i, limit, align) -- down
-    love.graphics.printf(text, x - i, y - i, limit, align) -- top-left
-    love.graphics.printf(text, x + i, y - i, limit, align) -- top-right
-    love.graphics.printf(text, x - i, y + i, limit, align) -- bottom-left
-    love.graphics.printf(text, x + i, y + i, limit, align) -- bottom-right
+    originalPrintf(text, -i * scale, 0, limit * scale, align) -- left
+    originalPrintf(text, i * scale, 0, limit * scale, align) -- right
+    originalPrintf(text, 0, -i * scale, limit * scale, align) -- up
+    originalPrintf(text, 0, i * scale, limit * scale, align) -- down
+    originalPrintf(text, -i * scale, -i * scale, limit * scale, align) -- top-left
+    originalPrintf(text, i * scale, -i * scale, limit * scale, align) -- top-right
+    originalPrintf(text, -i * scale, i * scale, limit * scale, align) -- bottom-left
+    originalPrintf(text, i * scale, i * scale, limit * scale, align) -- bottom-right
   end
   
   -- Draw main text on top
   love.graphics.setColor(r, g, b, a)
-  love.graphics.printf(text, x, y, limit, align)
+  originalPrintf(text, 0, 0, limit * scale, align)
+  
+  love.graphics.pop()
 end
 
 return theme

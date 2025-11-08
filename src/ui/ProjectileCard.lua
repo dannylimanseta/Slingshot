@@ -40,37 +40,13 @@ local function buildDynamicStats(projectile, effective)
 end
 
 function ProjectileCard.new()
-  -- Create fonts with specified sizes
-  local fontPath = (config.assets and config.assets.fonts and config.assets.fonts.ui) or nil
-  local rarityFont = nil
-  local nameFont = nil
-  local statFont = nil
-  
-  if fontPath then
-    -- Rarity: 12px
-    local ok1, f1 = pcall(love.graphics.newFont, fontPath, 12)
-    if ok1 then rarityFont = f1 end
-    -- Name/Level: 18px (larger)
-    local ok2, f2 = pcall(love.graphics.newFont, fontPath, 18)
-    if ok2 then
-      nameFont = f2
-    end
-    -- Stats: 14px
-    local ok3, f3 = pcall(love.graphics.newFont, fontPath, 14)
-    if ok3 then
-      statFont = f3
-    end
-  end
-  
-  if not rarityFont then
-    rarityFont = love.graphics.newFont(12)
-  end
-  if not nameFont then
-    nameFont = love.graphics.newFont(18)
-  end
-  if not statFont then
-    statFont = love.graphics.newFont(14)
-  end
+  -- Create fonts with specified sizes (scaled for crisp rendering)
+  -- Increased sizes for better readability: Rarity: 14px (was 12px)
+  local rarityFont = theme.newFont(14)
+  -- Name/Level: 20px (was 18px)
+  local nameFont = theme.newFont(20)
+  -- Stats: 16px (was 14px)
+  local statFont = theme.newFont(16)
   
   return setmetatable({
     iconImage = nil, -- Cached icon image
