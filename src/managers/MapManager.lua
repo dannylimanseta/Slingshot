@@ -12,6 +12,7 @@ MapManager.TileType = {
   REST = "rest",
   EVENT = "event",
   MERCHANT = "merchant",
+    TREASURE = "treasure",
 }
 
 local function coordKey(x, y)
@@ -62,6 +63,12 @@ function MapManager:loadSprites()
   else
     self.sprites.merchant = self.sprites.event
   end
+    local ok2, treasureSprite = pcall(love.graphics.newImage, "assets/images/map/treasure_1.png")
+    if ok2 and treasureSprite then
+      self.sprites.treasure = treasureSprite
+    else
+      self.sprites.treasure = self.sprites.event
+    end
 end
 
 function MapManager:initRandom(seed)
@@ -108,7 +115,8 @@ function MapManager:isTraversable(x, y)
     or tile.type == MapManager.TileType.ENEMY
     or tile.type == MapManager.TileType.REST
     or tile.type == MapManager.TileType.EVENT
-    or tile.type == MapManager.TileType.MERCHANT
+      or tile.type == MapManager.TileType.MERCHANT
+      or tile.type == MapManager.TileType.TREASURE
 end
 
 function MapManager:_fillWithTrees()
@@ -499,7 +507,7 @@ function MapManager:_isFarEnough(x, y, positions, minSpacing)
   return true
 end
 
-function MapManager:_placeNodeGroup(nodeType, pathTiles, groupCfg, occupied, placed)
+function MapManager:_placeNodeGroup(nodeType, pathTiles, groupCfg, occupied, placed, avoid)
   local minCount = groupCfg and groupCfg.min or 0
   local maxCount = groupCfg and groupCfg.max or minCount
   if maxCount <= 0 then
@@ -507,6 +515,7 @@ function MapManager:_placeNodeGroup(nodeType, pathTiles, groupCfg, occupied, pla
   end
   local minSpacing = groupCfg and groupCfg.minSpacing or 0
   local minDistance = groupCfg and (groupCfg.minDistanceFromStart or groupCfg.minDistance) or 0
+  local avoidList = avoid or {}
 
   local candidates = {}
   for _, pos in ipairs(pathTiles) do
@@ -535,7 +544,10 @@ function MapManager:_placeNodeGroup(nodeType, pathTiles, groupCfg, occupied, pla
   while placedCount < target and spacing >= 0 do
     local placedThisPass = false
     for _, candidate in ipairs(candidates) do
-      if not occupied[candidate.key] and self:_isFarEnough(candidate.x, candidate.y, results, spacing) then
+      if not occupied[candidate.key]
+        and self:_isFarEnough(candidate.x, candidate.y, results, spacing)
+        and self:_isFarEnough(candidate.x, candidate.y, avoidList, spacing)
+      then
         local tile = self:getTile(candidate.x, candidate.y)
         if tile then
           tile.type = nodeType
@@ -616,11 +628,91 @@ function MapManager:_enforceEventGrouping(eventPositions, occupied, minSpacing)
       end
     end
   end
-
   return kept
 end
 
-function MapManager:_placeEvents(pathTiles, pathSet, groupCfg, occupied)
+function MapManager:_placeTreasures(pathTiles, pathSet, occupied, count)
+  -- Configurable count and spacing
+  local treasCfg = (config.map and config.map.generation and config.map.generation.treasure) or nil
+  local minSpacing = math.max(6, treasCfg and treasCfg.minSpacing or 12)
+  count = count or (treasCfg and treasCfg.count) or 5
+  local deadEnds = self:_findDeadEnds(pathTiles, pathSet)
+  if #deadEnds == 0 then
+    deadEnds = {}
+  end
+
+  local candidates = {}
+  for _, deadEnd in ipairs(deadEnds) do
+    if not occupied[deadEnd.key] then
+      local dist = math.abs(deadEnd.x - self.playerGridX) + math.abs(deadEnd.y - self.playerGridY)
+      table.insert(candidates, {
+        x = deadEnd.x,
+        y = deadEnd.y,
+        key = deadEnd.key,
+        distance = dist,
+      })
+    end
+  end
+
+  table.sort(candidates, function(a, b)
+    return a.distance > b.distance
+  end)
+
+  local results = {}
+  local placed = 0
+  for _, candidate in ipairs(candidates) do
+    if placed >= count then
+      break
+    end
+    local tile = self:getTile(candidate.x, candidate.y)
+    if tile and self:_isFarEnough(candidate.x, candidate.y, results, minSpacing) then
+      tile.type = MapManager.TileType.TREASURE
+      tile.spriteVariant = nil
+      tile.decoration = nil
+      occupied[candidate.key] = true
+      table.insert(results, { x = candidate.x, y = candidate.y })
+      placed = placed + 1
+    end
+  end
+
+  -- Fallback: if not enough dead-ends exist, place on furthest corridor tiles
+  if placed < count then
+    local corridorCandidates = {}
+    for _, pos in ipairs(pathTiles) do
+      local key = coordKey(pos.x, pos.y)
+      if not occupied[key] then
+        local neighborCount = self:_countPathNeighbors(pos.x, pos.y, pathSet)
+        -- Prefer corridor tiles (degree 2) over hubs; exclude the start tile
+        local isStart = (pos.x == self.playerGridX and pos.y == self.playerGridY)
+        if not isStart and neighborCount == 2 then
+          local dist = math.abs(pos.x - self.playerGridX) + math.abs(pos.y - self.playerGridY)
+          table.insert(corridorCandidates, {
+            x = pos.x, y = pos.y, key = key, distance = dist
+          })
+        end
+      end
+    end
+    table.sort(corridorCandidates, function(a, b)
+      return a.distance > b.distance
+    end)
+    for _, cand in ipairs(corridorCandidates) do
+      if placed >= count then break end
+      local tile = self:getTile(cand.x, cand.y)
+      if tile and self:_isFarEnough(cand.x, cand.y, results, minSpacing) then
+        tile.type = MapManager.TileType.TREASURE
+        tile.spriteVariant = nil
+        tile.decoration = nil
+        occupied[cand.key] = true
+        table.insert(results, { x = cand.x, y = cand.y })
+        placed = placed + 1
+      end
+    end
+  end
+
+  return results
+end
+
+function MapManager:_placeEvents(pathTiles, pathSet, groupCfg, occupied, avoid)
   local minCount = groupCfg and groupCfg.min or 0
   local maxCount = groupCfg and groupCfg.max or minCount
 
@@ -628,6 +720,7 @@ function MapManager:_placeEvents(pathTiles, pathSet, groupCfg, occupied)
   local configSpacing = groupCfg and groupCfg.minSpacing or 0
   local minSpacing = math.max(3, configSpacing)
   local minDistance = groupCfg and (groupCfg.minDistanceFromStart or groupCfg.minDistance) or 0
+  local avoidList = avoid or {}
 
   local deadEnds = self:_findDeadEnds(pathTiles, pathSet)
   self:_shuffle(deadEnds)
@@ -636,13 +729,17 @@ function MapManager:_placeEvents(pathTiles, pathSet, groupCfg, occupied)
     if not occupied[deadEnd.key] then
       local dist = math.abs(deadEnd.x - self.playerGridX) + math.abs(deadEnd.y - self.playerGridY)
       if dist >= minDistance then
-        local tile = self:getTile(deadEnd.x, deadEnd.y)
-        if tile then
-          tile.type = MapManager.TileType.EVENT
-          tile.spriteVariant = nil
-          tile.decoration = nil
-          occupied[deadEnd.key] = true
-          table.insert(results, { x = deadEnd.x, y = deadEnd.y, key = deadEnd.key })
+        if self:_isFarEnough(deadEnd.x, deadEnd.y, results, minSpacing)
+          and self:_isFarEnough(deadEnd.x, deadEnd.y, avoidList, minSpacing)
+        then
+          local tile = self:getTile(deadEnd.x, deadEnd.y)
+          if tile then
+            tile.type = MapManager.TileType.EVENT
+            tile.spriteVariant = nil
+            tile.decoration = nil
+            occupied[deadEnd.key] = true
+            table.insert(results, { x = deadEnd.x, y = deadEnd.y, key = deadEnd.key })
+          end
         end
       end
     end
@@ -674,7 +771,11 @@ function MapManager:_placeEvents(pathTiles, pathSet, groupCfg, occupied)
   while #results < desired and spacing >= 3 do
     local placedThisPass = false
     for _, candidate in ipairs(generalCandidates) do
-      if not candidate.used and not occupied[candidate.key] and self:_isFarEnough(candidate.x, candidate.y, results, spacing) then
+      if not candidate.used
+        and not occupied[candidate.key]
+        and self:_isFarEnough(candidate.x, candidate.y, results, spacing)
+        and self:_isFarEnough(candidate.x, candidate.y, avoidList, spacing)
+      then
         local tile = self:getTile(candidate.x, candidate.y)
         if tile then
           tile.type = MapManager.TileType.EVENT
@@ -799,12 +900,32 @@ function MapManager:_placeSpecialNodes(pathTiles, pathSet, genConfig)
     merchant = {},
     event = {},
     enemy = {},
+      treasure = {},
   }
 
-  placements.event = self:_placeEvents(pathTiles, pathSet, genConfig and genConfig.event or nil, occupied)
-  placements.event = self:_enforceEventGrouping(placements.event, occupied, 3)
-  placements.rest = self:_placeNodeGroup(MapManager.TileType.REST, pathTiles, genConfig and genConfig.rest or nil, occupied, placements.rest)
-  placements.merchant = self:_placeNodeGroup(MapManager.TileType.MERCHANT, pathTiles, genConfig and genConfig.merchant or nil, occupied, placements.merchant)
+  -- Place treasures first so they reserve the furthest dead-ends
+  local treasCfg = (config.map and config.map.generation and config.map.generation.treasure) or nil
+  local treasureCount = (treasCfg and treasCfg.count) or 5
+  placements.treasure = self:_placeTreasures(pathTiles, pathSet, occupied, treasureCount)
+
+  -- Events must avoid treasures
+  placements.event = self:_placeEvents(pathTiles, pathSet, genConfig and genConfig.event or nil, occupied, placements.treasure)
+    placements.event = self:_enforceEventGrouping(placements.event, occupied, 3)
+  -- Rest must avoid treasures and events
+  do
+    local avoid = {}
+    for _, p in ipairs(placements.treasure) do table.insert(avoid, p) end
+    for _, p in ipairs(placements.event) do table.insert(avoid, p) end
+    placements.rest = self:_placeNodeGroup(MapManager.TileType.REST, pathTiles, genConfig and genConfig.rest or nil, occupied, placements.rest, avoid)
+  end
+  -- Merchant must avoid treasures, events, and rest
+  do
+    local avoid = {}
+    for _, p in ipairs(placements.treasure) do table.insert(avoid, p) end
+    for _, p in ipairs(placements.event) do table.insert(avoid, p) end
+    for _, p in ipairs(placements.rest) do table.insert(avoid, p) end
+    placements.merchant = self:_placeNodeGroup(MapManager.TileType.MERCHANT, pathTiles, genConfig and genConfig.merchant or nil, occupied, placements.merchant, avoid)
+  end
   placements.enemy = self:_placeEnemies(pathTiles, pathSet, genConfig and genConfig.enemy or nil, occupied)
 
   self:_applyTerrainVariations(pathTiles, occupied)
@@ -833,6 +954,7 @@ function MapManager:generateMap(width, height, seed)
     merchants = placements.merchant and #placements.merchant or 0,
     events = placements.event and #placements.event or 0,
     enemies = placements.enemy and #placements.enemy or 0,
+      treasures = placements.treasure and #placements.treasure or 0,
   }
 
   self:_sealBordersWithTrees()
@@ -946,6 +1068,11 @@ function MapManager:completeMovement()
     if tile and tile.type == MapManager.TileType.MERCHANT then
       tile.type = MapManager.TileType.GROUND
       return false, "merchant_visited"
+    end
+
+    if tile and tile.type == MapManager.TileType.TREASURE then
+      tile.type = MapManager.TileType.GROUND
+      return false, "treasure_collected"
     end
   end
 

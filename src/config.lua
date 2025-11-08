@@ -383,6 +383,10 @@ config.map = {
       branchTurnChance = 0.22, -- very few turns keep branches straight
       widenChance = 0.01, -- almost never widen corridors
     },
+    treasure = {
+      count = 5, -- maximum number of treasures to place
+      minSpacing = 12, -- enforce spacing between treasures to spread them around
+    },
     groundSpriteChance = 0.06, -- chance per ground tile to receive a decorative sprite
     enemy = {
       min = 14,

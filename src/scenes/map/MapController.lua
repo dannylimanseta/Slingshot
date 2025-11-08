@@ -254,6 +254,10 @@ function MapController:update(deltaTime)
           local px3, py3 = s.mapManager:getPlayerWorldPosition(s.gridSize, s.offsetX, s.offsetY)
           s.playerWorldX = px3
           s.playerWorldY = py3
+        elseif result == "treasure_collected" then
+          local px4, py4 = s.mapManager:getPlayerWorldPosition(s.gridSize, s.offsetX, s.offsetY)
+          s.playerWorldX = px4
+          s.playerWorldY = py4
         end
       else
         local oldX = s.playerWorldX
