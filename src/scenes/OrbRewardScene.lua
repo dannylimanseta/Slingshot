@@ -53,7 +53,7 @@ function OrbRewardScene:load()
   -- Fade-in timings for options
   self._fadeInDuration = 0.65
   self._fadeInDelayStep = 0.25
-  self._fadeStartDelay = 1.0
+  self._fadeStartDelay = 0.6
   self._fadeTimer = 0
   -- Circle pulse on scene entry (drives shader u_transitionProgress)
   self._enterPulseTimer = 0
@@ -119,7 +119,7 @@ function OrbRewardScene:load()
   self.skipButton = Button.new({
     label = "Skip",
     font = theme.fonts.base,
-    bgColor = { 1, 1, 1, 0.1 },
+    bgColor = { 0, 0, 0, 0.7 },
     align = "center",
     onClick = function()
       self.choice = { kind = "skip" }

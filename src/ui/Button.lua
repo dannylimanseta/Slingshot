@@ -12,6 +12,8 @@ Button.defaults = {
   paddingY = 8,
   bgColor = { 0, 0, 0, 0.55 },
   textColor = { 0.78, 0.92, 0.6, 1 }, -- light green (matches stepFilled)
+  borderColor = { 1, 1, 1, 0.1 },
+  borderWidth = 2,
 }
 
 function Button.new(opts)
@@ -78,6 +80,16 @@ function Button:draw()
   local bg = self.bgColor or Button.defaults.bgColor
   love.graphics.setColor(bg[1], bg[2], bg[3], (bg[4] or 1) * (self.alpha or 1))
   love.graphics.rectangle("fill", -self.w * 0.5, -self.h * 0.5, self.w, self.h, Button.defaults.cornerRadius, Button.defaults.cornerRadius)
+
+  -- Border (white with 0.1 alpha by default)
+  do
+    local bc = Button.defaults.borderColor
+    love.graphics.setColor(bc[1], bc[2], bc[3], (bc[4] or 1) * (self.alpha or 1))
+    local oldLW = love.graphics.getLineWidth()
+    love.graphics.setLineWidth(Button.defaults.borderWidth)
+    love.graphics.rectangle("line", -self.w * 0.5, -self.h * 0.5, self.w, self.h, Button.defaults.cornerRadius, Button.defaults.cornerRadius)
+    love.graphics.setLineWidth(oldLW or 1)
+  end
 
   -- Icon + text (scaled together)
   love.graphics.setFont(self.font)

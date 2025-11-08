@@ -47,7 +47,7 @@ local function createRewardButton(label, icon, onClick)
   return Button.new({
     label = label,
     font = theme.fonts.base,
-    bgColor = { 1, 1, 1, 0.1 },
+    bgColor = { 0, 0, 0, 0.7 },
     icon = icon,
     iconScale = iconScale,
     iconTint = { 1, 1, 1, 0.85 },
@@ -117,7 +117,7 @@ function RewardsScene:load()
   self.skipButton = Button.new({
     label = "Skip rewards",
     font = theme.fonts.base,
-    bgColor = { 1, 1, 1, 0.1 },
+    bgColor = { 0, 0, 0, 0.7 },
     align = "center",
     onClick = function()
       self._exitRequested = true
@@ -412,6 +412,16 @@ function RewardsScene:draw()
     love.graphics.translate(cx, cy)
     love.graphics.scale(s, s)
     love.graphics.rectangle("fill", -self.goldButton.w * 0.5, -self.goldButton.h * 0.5, self.goldButton.w, self.goldButton.h, Button.defaults.cornerRadius, Button.defaults.cornerRadius)
+    -- Border (white, 0.1 alpha, matches Button default)
+    do
+      local bc = Button.defaults.borderColor or {1,1,1,0.1}
+      local borderAlpha = (bc[4] or 1) * self._goldButtonFadeAlpha * (self._goldFadeInAlpha or 1)
+      love.graphics.setColor(bc[1], bc[2], bc[3], borderAlpha)
+      local oldLW = love.graphics.getLineWidth()
+      love.graphics.setLineWidth(Button.defaults.borderWidth or 2)
+      love.graphics.rectangle("line", -self.goldButton.w * 0.5, -self.goldButton.h * 0.5, self.goldButton.w, self.goldButton.h, Button.defaults.cornerRadius, Button.defaults.cornerRadius)
+      love.graphics.setLineWidth(oldLW or 1)
+    end
     
     -- Draw icon and text with alpha
     love.graphics.setFont(self.goldButton.font or theme.fonts.base)
