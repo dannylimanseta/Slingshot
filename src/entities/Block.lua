@@ -428,71 +428,32 @@ function Block:draw()
     iconToUse = ICON_HEAL
   end
   
-  if valueText and iconToUse then
-    -- Use theme font for text, scaled down by 30%
+  if iconToUse then
+    -- Use theme font height to size the icon consistently with previous layout
     local baseFont = theme.fonts.base or love.graphics.getFont()
     love.graphics.setFont(baseFont)
-    
-    -- Get base text dimensions (before scaling)
-    local baseTextWidth = baseFont:getWidth(valueText)
     local baseTextHeight = baseFont:getHeight()
-    
-    -- Scale factor for 30% reduction
     local textScale = 0.7
-    
-    -- Scaled dimensions
-    local textWidth = baseTextWidth * textScale
     local textHeight = baseTextHeight * textScale
-    
-    -- Icon dimensions and spacing
-    local iconSpacing = 1 -- pixels between text and icon (reduced from 4, then by 2px)
-    local iconSize = textHeight * 0.595 -- icon size matches text height, reduced by 30%, then reduced by 15%
-    local iconWidth = iconToUse and iconSize or 0
-    local iconHeight = iconToUse and iconSize or 0
-    
-    -- Calculate total width for centering
-    local totalWidth = textWidth + iconSpacing + iconWidth
-    
-    -- Calculate starting X position (centered, pixel-aligned for crisp rendering, shifted right by 2px)
-    local startX = math.floor(self.cx - totalWidth * 0.5 + 0.5) + 2
-    
-    -- Text position (shifted up by 7px total: 5px previous + 2px additional, pixel-aligned)
-    local textX = startX
-    local textY = math.floor(self.cy + yOffset - textHeight * 0.5 - 7 + 0.5)
-    
-    -- Draw text with scale transform (no outline, black color, crisp rendering, 50% opacity)
+    local iconSize = textHeight * 0.9
+    local iconW, iconH = iconToUse:getDimensions()
+    local iconScale = iconSize / math.max(iconW, iconH)
+    -- Center icon horizontally; keep slight vertical lift (armor a touch higher)
+    local iconYOffset = (self.kind == "armor") and -7 or -6
+    local iconXOffset = (self.kind == "armor") and 2 or ((self.kind == "potion") and 2 or 0)
+    local iconX = math.floor(self.cx - iconSize * 0.5 + iconXOffset + 0.5)
+    local iconY = math.floor(self.cy + yOffset - iconSize * 0.5 + iconYOffset + 0.5)
     love.graphics.push("all")
     love.graphics.setBlendMode("alpha")
-    love.graphics.translate(textX, textY)
-    love.graphics.scale(textScale, textScale)
-    love.graphics.setColor(0, 0, 0, alpha * 0.5)
-    love.graphics.print(valueText, 0, 0)
-    love.graphics.pop()
-    
-    -- Draw icon to the right of text (tinted black, no shadow, crisp rendering)
-    if iconToUse then
-      local iconX = math.floor(startX + textWidth + iconSpacing + 0.5)
-      -- Icon Y position: armor blocks shifted up by 2px more (relative to attack blocks)
-      local iconYOffset = (self.kind == "armor") and -7 or -6
-      local iconY = math.floor(self.cy + yOffset - iconHeight * 0.5 + iconYOffset + 0.5)
-      
-      local iconW, iconH = iconToUse:getDimensions()
-      local iconScale = iconSize / math.max(iconW, iconH)
-      
-      -- Use shader to remove shadows and convert to pure black (50% opacity)
-      love.graphics.push("all")
-      love.graphics.setBlendMode("alpha")
-      love.graphics.setColor(1, 1, 1, alpha * 0.5)
-      if shadowRemovalShader then
-        love.graphics.setShader(shadowRemovalShader)
-      else
-        -- Fallback: use black color if shader unavailable
-        love.graphics.setColor(0, 0, 0, alpha * 0.5)
-      end
-      love.graphics.draw(iconToUse, iconX, iconY, 0, iconScale, iconScale, 0, 0)
-      love.graphics.setShader() -- Reset shader
-      love.graphics.pop()
+    love.graphics.setColor(1, 1, 1, alpha * 0.5)
+    if shadowRemovalShader then
+      love.graphics.setShader(shadowRemovalShader)
+    else
+      love.graphics.setColor(0, 0, 0, alpha * 0.5)
     end
+    love.graphics.draw(iconToUse, iconX, iconY, 0, iconScale, iconScale, 0, 0)
+    love.graphics.setShader()
+    love.graphics.pop()
   end
   
   -- Reset color for other draw calls

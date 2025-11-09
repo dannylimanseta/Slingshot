@@ -31,7 +31,7 @@ block_types.types = {
     displayName = "Crit",
     spritePath = "block_crit",
     hotkey = 3,
-    description = "Critical hit block (2x damage multiplier)"
+    description = "Critical hit block (2x damage)"
   },
   {
     key = "multiplier",

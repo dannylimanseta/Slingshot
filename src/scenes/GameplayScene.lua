@@ -627,8 +627,8 @@ function GameplayScene:draw(bounds)
   
   love.graphics.pop() -- Pop screenshake transform (must be last, after all drawing)
   
-  -- Draw block tooltip if hovering for >1 second (outside screenshake transform)
-  if self.hoveredBlock and self.hoverTime >= 1.0 then
+  -- Draw block tooltip if hovering for >0.3s (outside screenshake transform)
+  if self.hoveredBlock and self.hoverTime >= 0.3 then
     local block_types = require("data.block_types")
     local blockType = block_types.getByKey(self.hoveredBlock.kind)
     if blockType and blockType.description then
@@ -638,19 +638,27 @@ function GameplayScene:draw(bounds)
       -- Calculate tooltip size with reduced font
       local font = theme.fonts.base
       love.graphics.setFont(font)
-      -- Extract description without block name prefix and remove parentheses
-      local fullDescription = blockType.description
-      local text = fullDescription
-      -- Remove prefix before opening parenthesis (e.g., "Basic damage block " from "Basic damage block (+1 damage)")
-      local parenStart = fullDescription:find("%(")
-      if parenStart then
-        text = fullDescription:sub(parenStart)
-        -- Remove opening and closing parentheses
-        text = text:gsub("^%(", ""):gsub("%)$", "")
-      end
-      -- Apply sentence capitalization (capitalize first letter, lowercase rest)
-      if #text > 0 then
-        text = text:sub(1, 1):upper() .. text:sub(2):lower()
+      -- Build tooltip text
+      local text
+      if self.hoveredBlock.kind == "multiplier" then
+        -- Use configured damage multiplier, e.g., x4 damage
+        local dmgMult = (config.score and config.score.damageMultiplier) or 4
+        text = "x" .. tostring(dmgMult) .. " damage"
+      else
+        -- Extract description without block name prefix and remove parentheses
+        local fullDescription = blockType.description
+        text = fullDescription
+        -- Remove prefix before opening parenthesis (e.g., "Basic damage block " from "Basic damage block (+1 damage)")
+        local parenStart = fullDescription:find("%(")
+        if parenStart then
+          text = fullDescription:sub(parenStart)
+          -- Remove opening and closing parentheses
+          text = text:gsub("^%(", ""):gsub("%)$", "")
+        end
+        -- Apply sentence capitalization (capitalize first letter, lowercase rest)
+        if #text > 0 then
+          text = text:sub(1, 1):upper() .. text:sub(2):lower()
+        end
       end
       -- Calculate text size at 65% scale (reduced from 75%)
       local baseTextW = font:getWidth(text)
@@ -680,7 +688,7 @@ function GameplayScene:draw(bounds)
       end
       
       -- Fade in tooltip (smooth appearance)
-      local fadeProgress = math.min(1.0, (self.hoverTime - 1.0) / 0.3) -- Fade in over 0.3 seconds
+      local fadeProgress = math.min(1.0, (self.hoverTime - 0.3) / 0.3) -- Fade in over 0.3 seconds
       
       -- Bounce animation when fading in (small upward bounce)
       local bounceHeight = 8 -- pixels

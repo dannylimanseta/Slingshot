@@ -572,32 +572,17 @@ function FormationEditorScene:drawBlock(x, y, kind, size, hp)
     iconToUse = ICON_HEAL
   end
 
-  if valueText and iconToUse then
+  if iconToUse then
     local baseFont = theme.fonts.base or love.graphics.getFont()
     love.graphics.setFont(baseFont)
-    local baseTextWidth = baseFont:getWidth(valueText)
     local baseTextHeight = baseFont:getHeight()
     local textScale = 0.7
-    local textWidth = baseTextWidth * textScale
     local textHeight = baseTextHeight * textScale
-    local iconSpacing = 1
-    local iconSize = textHeight * 0.595
-    local totalWidth = textWidth + iconSpacing + iconSize
-    local startX = math.floor(x - totalWidth * 0.5 + 0.5) + 2
-    local textX = startX
-    local textY = math.floor(y - textHeight * 0.5 - 7 + 0.5)
-
-    love.graphics.push("all")
-    love.graphics.setBlendMode("alpha")
-    love.graphics.translate(textX, textY)
-    love.graphics.scale(textScale, textScale)
-    love.graphics.setColor(0, 0, 0, 0.5)
-    love.graphics.print(valueText, 0, 0)
-    love.graphics.pop()
-
+    local iconSize = textHeight * 0.9
     local iconW, iconH = iconToUse:getDimensions()
     local iconScale = iconSize / math.max(iconW, iconH)
-    local iconX = math.floor(startX + textWidth + iconSpacing + 0.5)
+    local iconXOffset = (kind == "armor") and 2 or ((kind == "potion") and 2 or 0)
+    local iconX = math.floor(x - iconSize * 0.5 + iconXOffset + 0.5)
     local iconYOffset = (kind == "armor") and -7 or -6
     local iconY = math.floor(y - iconSize * 0.5 + iconYOffset + 0.5)
     love.graphics.push("all")
