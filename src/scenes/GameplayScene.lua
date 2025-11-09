@@ -1,6 +1,7 @@
 local config = require("config")
 local theme = require("theme")
 local math2d = require("utils.math2d")
+local playfield = require("utils.playfield")
 local BlockManager = require("managers.BlockManager")
 local Ball = require("entities.Ball")
 local Shooter = require("entities.Shooter")
@@ -58,29 +59,6 @@ function GameplayScene.new()
   }, GameplayScene)
 end
 
--- Helper function to calculate grid bounds (matching editor exactly)
-local function calculateGridBounds(width, height)
-  local margin = config.playfield.margin
-  local playfieldW = width - 2 * margin
-  local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
-  local effectivePlayfieldW = playfieldW * horizontalSpacingFactor
-  local playfieldXOffset = playfieldW * (1 - horizontalSpacingFactor) * 0.5
-  
-  local gridPadding = (config.blocks.gridSnap.padding) or 30
-  local sidePadding = (config.blocks.gridSnap.sidePadding) or 40
-  local gridAvailableWidth = effectivePlayfieldW - 2 * gridPadding - 2 * sidePadding
-  local cellSize = (config.blocks.gridSnap.cellSize) or 38
-  local numCellsX = math.floor(gridAvailableWidth / cellSize)
-  local gridWidth = numCellsX * cellSize
-  local gridOffsetX = sidePadding + gridPadding + (gridAvailableWidth - gridWidth) * 0.5
-  
-  -- Grid starts at margin + playfieldXOffset + gridOffsetX
-  local gridStartX = margin + playfieldXOffset + gridOffsetX
-  local gridEndX = gridStartX + gridWidth
-  
-  return gridStartX, gridEndX
-end
-
 function GameplayScene:load(bounds, projectileId, battleProfile)
   local width = (bounds and bounds.w) or love.graphics.getWidth()
   local height = (bounds and bounds.h) or love.graphics.getHeight()
@@ -88,7 +66,7 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
   self.world:setCallbacks(function(a, b, contact) self:beginContact(a, b, contact) end, nil, nil, nil)
 
   -- Calculate grid bounds to match editor exactly
-  local gridStartX, gridEndX = calculateGridBounds(width, height)
+  local gridStartX, gridEndX = playfield.calculateGridBounds(width, height)
   
   -- Walls (static) - account for top bar and use grid boundaries
   local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
@@ -963,7 +941,7 @@ function GameplayScene:updateWalls(newWidth, newHeight)
   end
   
   -- Calculate grid bounds to match editor exactly
-  local gridStartX, gridEndX = calculateGridBounds(newWidth, newHeight)
+  local gridStartX, gridEndX = playfield.calculateGridBounds(newWidth, newHeight)
   
   -- Create new walls with updated dimensions (account for top bar and use grid boundaries)
   local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
@@ -1168,6 +1146,59 @@ function GameplayScene:triggerBlockShakeAndDrop()
     -- Clear onDestroyed callback to prevent particle explosions - blocks should just drop and fade
     block.onDestroyed = nil
   end
+end
+
+-- Cleanup method: destroys all physics objects and clears references
+function GameplayScene:unload()
+  -- Destroy all balls (single ball and balls array)
+  if self.ball and self.ball.alive then
+    self.ball:destroy()
+    self.ball = nil
+  end
+  
+  if self.balls then
+    for i = #self.balls, 1, -1 do
+      local ball = self.balls[i]
+      if ball and ball.alive then
+        ball:destroy()
+      end
+      table.remove(self.balls, i)
+    end
+    self.balls = {}
+  end
+  
+  -- Destroy all blocks via BlockManager
+  if self.blocks and self.blocks.clearAll then
+    self.blocks:clearAll()
+  end
+  self.blocks = nil
+  
+  -- Destroy wall fixtures (must be destroyed before body)
+  if self.wallFixtures then
+    for _, fixture in pairs(self.wallFixtures) do
+      if fixture and fixture.destroy then
+        pcall(function() fixture:destroy() end)
+      end
+    end
+    self.wallFixtures = nil
+  end
+  
+  -- Destroy wall body (must be destroyed before world)
+  if self.wallBody and self.wallBody.destroy then
+    pcall(function() self.wallBody:destroy() end)
+    self.wallBody = nil
+  end
+  
+  -- Clear world callbacks to prevent callbacks after cleanup
+  if self.world then
+    self.world:setCallbacks(nil, nil, nil, nil)
+    self.world = nil
+  end
+  
+  -- Clear other references
+  self.shooter = nil
+  self.particles = nil
+  self.turnManager = nil
 end
 
 return GameplayScene

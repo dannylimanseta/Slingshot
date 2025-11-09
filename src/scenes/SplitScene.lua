@@ -1,6 +1,7 @@
 local theme = require("theme")
 local config = require("config")
 local Trail = require("utils.trail")
+local playfield = require("utils.playfield")
 local GameplayScene = require("scenes.GameplayScene")
 local BattleScene = require("scenes.BattleScene")
 local TurnManager = require("core.TurnManager")
@@ -27,29 +28,6 @@ local function makeRadialGlow(diameter)
     return 1, 1, 1, a
   end)
   return love.graphics.newImage(data)
-end
-
--- Helper function to calculate grid bounds (matching editor exactly)
-local function calculateGridBounds(width, height)
-  local margin = config.playfield.margin
-  local playfieldW = width - 2 * margin
-  local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
-  local effectivePlayfieldW = playfieldW * horizontalSpacingFactor
-  local playfieldXOffset = playfieldW * (1 - horizontalSpacingFactor) * 0.5
-  
-  local gridPadding = (config.blocks.gridSnap.padding) or 30
-  local sidePadding = (config.blocks.gridSnap.sidePadding) or 40
-  local gridAvailableWidth = effectivePlayfieldW - 2 * gridPadding - 2 * sidePadding
-  local cellSize = (config.blocks.gridSnap.cellSize) or 38
-  local numCellsX = math.floor(gridAvailableWidth / cellSize)
-  local gridWidth = numCellsX * cellSize
-  local gridOffsetX = sidePadding + gridPadding + (gridAvailableWidth - gridWidth) * 0.5
-  
-  -- Grid starts at margin + playfieldXOffset + gridOffsetX
-  local gridStartX = margin + playfieldXOffset + gridOffsetX
-  local gridEndX = gridStartX + gridWidth
-  
-  return gridStartX, gridEndX
 end
 
 local EncounterManager = require("core.EncounterManager")
@@ -365,7 +343,7 @@ function SplitScene:draw()
   
   -- Calculate grid bounds (matching editor exactly)
   -- Note: grid bounds are relative to the center canvas, so we need to add centerX offset
-  local gridStartX, gridEndX = calculateGridBounds(centerW, h)
+  local gridStartX, gridEndX = playfield.calculateGridBounds(centerW, h)
   local gridStartXAbsolute = centerX + gridStartX
   local gridEndXAbsolute = centerX + gridEndX
 
@@ -1020,6 +998,24 @@ function SplitScene:reloadBlocks()
   if self.left and self.left.reloadBlocks then
     self.left:reloadBlocks(battleProfile, bounds)
   end
+end
+
+-- Cleanup method: propagates unload to child scenes
+function SplitScene:unload()
+  -- Unload child scenes (GameplayScene and BattleScene)
+  if self.left and self.left.unload then
+    self.left:unload()
+  end
+  if self.right and self.right.unload then
+    self.right:unload()
+  end
+  
+  -- Clear references
+  self.left = nil
+  self.right = nil
+  self.turnManager = nil
+  self.projectileCard = nil
+  self.layoutManager = nil
 end
 
 return SplitScene
