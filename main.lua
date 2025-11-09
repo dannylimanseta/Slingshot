@@ -257,8 +257,13 @@ function love.draw()
     local hotX = imgW * 0.5
     local hotY = imgH * 0.5
     
+    -- Scale cursor for retina/high-DPI displays
+    -- Use smaller base scale, adjusted by the press-down scale
+    local baseScale = 1.0
+    local finalScale = baseScale * cursorScale
+    
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(currentCursorImage, mx, my, 0, cursorScale, cursorScale, hotX, hotY)
+    love.graphics.draw(currentCursorImage, mx, my, 0, finalScale, finalScale, hotX, hotY)
   end
   
   love.graphics.setColor(1, 1, 1, 1)

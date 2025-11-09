@@ -175,10 +175,10 @@ function BattleScene:load(bounds, battleProfile)
     if ok then self.iconArmor = img end
   end
   
-  -- Load potion icon
-  local iconPotionPath = (config.assets and config.assets.images and config.assets.images.icon_potion) or nil
-  if iconPotionPath then
-    local ok, img = pcall(love.graphics.newImage, iconPotionPath)
+  -- Load heal icon
+  local iconHealPath = (config.assets and config.assets.images and config.assets.images.icon_heal) or nil
+  if iconHealPath then
+    local ok, img = pcall(love.graphics.newImage, iconHealPath)
     if ok then self.iconPotion = img end
   end
   

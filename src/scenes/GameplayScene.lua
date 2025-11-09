@@ -51,6 +51,10 @@ function GameplayScene.new()
     shakeTime = 0,
     projectileId = "strike", -- default projectile ID
     topBar = TopBar.new(),
+    -- Block hover tooltip tracking
+    hoveredBlock = nil,
+    hoverTime = 0,
+    lastHoveredBlock = nil,
   }, GameplayScene)
 end
 
@@ -257,6 +261,37 @@ function GameplayScene:update(dt, bounds)
       self.shakeTime = 0
       self.shakeMagnitude = 0
     end
+  end
+  
+  -- Update block hover detection for tooltips
+  self.hoveredBlock = nil
+  if self.blocks and self.blocks.blocks then
+    local scaleMul = config.blocks.spriteScale or 1
+    local baseSize = config.blocks.baseSize or 24
+    local blockSize = baseSize * scaleMul
+    local halfSize = blockSize * 0.5
+    
+    for _, block in ipairs(self.blocks.blocks) do
+      if block and block.alive then
+        local x, y, w, h = block:getAABB()
+        -- Check if cursor is within block bounds
+        if self.cursorX >= x and self.cursorX <= x + w and
+           self.cursorY >= y and self.cursorY <= y + h then
+          self.hoveredBlock = block
+          break
+        end
+      end
+    end
+  end
+  
+  -- Update hover time
+  if self.hoveredBlock == self.lastHoveredBlock and self.hoveredBlock then
+    -- Same block, accumulate time
+    self.hoverTime = self.hoverTime + dt
+  else
+    -- Different block or no block, reset timer
+    self.hoverTime = 0
+    self.lastHoveredBlock = self.hoveredBlock
   end
 end
 
@@ -600,6 +635,94 @@ function GameplayScene:draw(bounds)
   end
   
   love.graphics.pop() -- Pop screenshake transform (must be last, after all drawing)
+  
+  -- Draw block tooltip if hovering for >1 second (outside screenshake transform)
+  if self.hoveredBlock and self.hoverTime >= 1.0 then
+    local block_types = require("data.block_types")
+    local blockType = block_types.getByKey(self.hoveredBlock.kind)
+    if blockType and blockType.description then
+      local x, y, w, h = self.hoveredBlock:getAABB()
+      local baseTooltipY = y - 10 -- Base position above block (lowered from -20)
+      
+      -- Calculate tooltip size with reduced font
+      local font = theme.fonts.base
+      love.graphics.setFont(font)
+      -- Extract description without block name prefix and remove parentheses
+      local fullDescription = blockType.description
+      local text = fullDescription
+      -- Remove prefix before opening parenthesis (e.g., "Basic damage block " from "Basic damage block (+1 damage)")
+      local parenStart = fullDescription:find("%(")
+      if parenStart then
+        text = fullDescription:sub(parenStart)
+        -- Remove opening and closing parentheses
+        text = text:gsub("^%(", ""):gsub("%)$", "")
+      end
+      -- Apply sentence capitalization (capitalize first letter, lowercase rest)
+      if #text > 0 then
+        text = text:sub(1, 1):upper() .. text:sub(2):lower()
+      end
+      -- Calculate text size at 65% scale (reduced from 75%)
+      local baseTextW = font:getWidth(text)
+      local baseTextH = font:getHeight()
+      local textScale = 0.5
+      local textW = baseTextW * textScale -- 65% width for display
+      local textH = baseTextH * textScale -- 65% height for display
+      local padding = 8
+      -- Tooltip width matches scaled text width
+      local tooltipW = textW + padding * 2
+      local tooltipH = textH + padding * 2
+      
+      -- Calculate tooltip X position (centered on block by default)
+      local tooltipX = x + w * 0.5
+      
+      -- Clamp tooltip to canvas bounds to prevent cropping
+      local canvasLeft = 0
+      local canvasRight = bounds and bounds.w or love.graphics.getWidth()
+      local tooltipLeft = tooltipX - tooltipW * 0.5
+      local tooltipRight = tooltipX + tooltipW * 0.5
+      
+      -- Adjust tooltip X if it would go off the edges
+      if tooltipLeft < canvasLeft then
+        tooltipX = canvasLeft + tooltipW * 0.5
+      elseif tooltipRight > canvasRight then
+        tooltipX = canvasRight - tooltipW * 0.5
+      end
+      
+      -- Fade in tooltip (smooth appearance)
+      local fadeProgress = math.min(1.0, (self.hoverTime - 1.0) / 0.3) -- Fade in over 0.3 seconds
+      
+      -- Bounce animation when fading in (small upward bounce)
+      local bounceHeight = 8 -- pixels
+      local bounceProgress = fadeProgress
+      -- Use ease-out bounce curve
+      local c1, c3 = 1.70158, 2.70158
+      local u = (bounceProgress - 1)
+      local bounce = 1 + c3 * (u * u * u) + c1 * (u * u)
+      local bounceOffset = (1 - bounce) * bounceHeight
+      local tooltipY = baseTooltipY - bounceOffset
+      
+      -- Draw tooltip background
+      love.graphics.setColor(0, 0, 0, 0.85 * fadeProgress)
+      love.graphics.rectangle("fill", tooltipX - tooltipW * 0.5, tooltipY - tooltipH, tooltipW, tooltipH, 4, 4)
+      
+      -- Draw tooltip border
+      love.graphics.setColor(1, 1, 1, 0.3 * fadeProgress)
+      love.graphics.setLineWidth(1)
+      love.graphics.rectangle("line", tooltipX - tooltipW * 0.5, tooltipY - tooltipH, tooltipW, tooltipH, 4, 4)
+      
+      -- Draw tooltip text at 75% scale
+      love.graphics.push()
+      love.graphics.translate(tooltipX - tooltipW * 0.5 + padding, tooltipY - tooltipH + padding)
+      love.graphics.scale(textScale, textScale)
+      love.graphics.setColor(1, 1, 1, fadeProgress)
+      -- Text wrap width accounts for scale
+      local textWrapWidth = (tooltipW - padding * 2) / textScale
+      love.graphics.printf(text, 0, 0, textWrapWidth, "left")
+      love.graphics.pop()
+      
+      love.graphics.setColor(1, 1, 1, 1)
+    end
+  end
   
   -- Draw top bar on top (z-order)
   if self.topBar and not self.disableTopBar then
@@ -957,12 +1080,8 @@ function GameplayScene:beginContact(fixA, fixB, contact)
     end
     self.score = self.score + hitReward
     if block.kind == "armor" then
-      local armorMap = config.armor and config.armor.rewardByHp or nil
-      if armorMap then
-        local hpBeforeHit = math.max(1, block.hp + 1) -- hp was decremented in hit()
-        local reward = armorMap[math.max(1, math.min(3, hpBeforeHit))] or 0
-        self.armorThisTurn = self.armorThisTurn + reward
-      end
+      -- Armor block: grant flat +3 armor
+      self.armorThisTurn = self.armorThisTurn + 3
     elseif block.kind == "potion" then
       -- Potion block heals player for 8 HP
       self.healThisTurn = self.healThisTurn + 8

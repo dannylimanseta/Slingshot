@@ -24,7 +24,7 @@ block_types.types = {
     displayName = "Armor",
     spritePath = "block_defend",
     hotkey = 2,
-    description = "Armor block (grants armor)"
+    description = "Armor block (+3 armor)"
   },
   {
     key = "crit",
@@ -50,7 +50,7 @@ block_types.types = {
   {
     key = "potion",
     displayName = "Potion",
-    spritePath = "block_potion",
+    spritePath = "block_heal",
     hotkey = 6,
     description = "Potion block (heals player for 8 HP)"
   },

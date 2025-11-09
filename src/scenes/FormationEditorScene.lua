@@ -209,7 +209,7 @@ end
 -- Icons used for overlay labels (match Block.lua)
 local ICON_ATTACK = nil
 local ICON_ARMOR = nil
-local ICON_POTION = nil
+local ICON_HEAL = nil
 do
   local imgs = (config.assets and config.assets.images) or {}
   -- Load attack icon
@@ -228,12 +228,12 @@ do
       ICON_ARMOR = img
     end
   end
-  -- Load potion icon
-  if imgs.icon_potion then
-    local ok, img = pcall(love.graphics.newImage, imgs.icon_potion)
+  -- Load heal icon
+  if imgs.icon_heal then
+    local ok, img = pcall(love.graphics.newImage, imgs.icon_heal)
     if ok then
       pcall(function() img:setFilter('linear', 'linear') end)
-      ICON_POTION = img
+      ICON_HEAL = img
     end
   end
 end
@@ -563,13 +563,12 @@ function FormationEditorScene:drawBlock(x, y, kind, size, hp)
     valueText = "x4"
     iconToUse = ICON_ATTACK
   elseif kind == "armor" then
-    local armorMap = (config.armor and config.armor.rewardByHp) or { [1] = 3, [2] = 2, [3] = 1 }
-    local armorValue = armorMap[math.max(1, math.min(3, hp or 1))] or 0
-    valueText = "+" .. tostring(armorValue)
+    -- Flat armor value
+    valueText = "+3"
     iconToUse = ICON_ARMOR
   elseif kind == "potion" then
     valueText = "+8"
-    iconToUse = ICON_POTION
+    iconToUse = ICON_HEAL
   end
 
   if valueText and iconToUse then

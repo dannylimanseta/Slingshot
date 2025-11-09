@@ -652,8 +652,8 @@ function Visuals.draw(scene, bounds)
       local s = 28 / math.max(1, iconH)
       local totalW = textW + iconW * s + 6
       local startX = x - totalW * 0.5
-      -- Heal popup uses green color
-      r1, g1, b1 = 112/255, 224/255, 126/255
+      -- Heal popup uses green color #6EAD73
+      r1, g1, b1 = 110/255, 173/255, 115/255
       love.graphics.setColor(r1, g1, b1, alpha)
       love.graphics.draw(scene.iconPotion, startX, y - 40 + (theme.fonts.large:getHeight() - iconH * s) * 0.5, 0, s, s)
       theme.printfWithOutline(valueStr, startX + iconW * s + 6, y - 40, totalW - (iconW * s + 6), "left", r1, g1, b1, alpha, 2)
