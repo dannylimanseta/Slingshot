@@ -644,6 +644,9 @@ function GameplayScene:draw(bounds)
         -- Use configured damage multiplier, e.g., x4 damage
         local dmgMult = (config.score and config.score.damageMultiplier) or 4
         text = "x" .. tostring(dmgMult) .. " damage"
+      elseif self.hoveredBlock.kind == "crit" then
+        -- Force lowercase x2 wording
+        text = "x2 damage"
       else
         -- Extract description without block name prefix and remove parentheses
         local fullDescription = blockType.description
