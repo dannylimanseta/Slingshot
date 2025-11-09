@@ -72,6 +72,10 @@ function SplitScene.new()
 end
 
 function SplitScene:load()
+  -- Ensure layoutManager exists (it can be nil after unload when reusing the same scene instance)
+  if not self.layoutManager then
+    self.layoutManager = LayoutManager.new()
+  end
   -- Use virtual resolution from config (matches canvas size)
   local w = (config.video and config.video.virtualWidth) or 1280
   local h = (config.video and config.video.virtualHeight) or 720
@@ -971,6 +975,10 @@ end
 -- Reload blocks from battle profile (called when returning from formation editor)
 function SplitScene:reloadBlocks()
   if not self.left then return end
+  -- Ensure layoutManager exists if this scene was previously unloaded and is being reused
+  if not self.layoutManager then
+    self.layoutManager = LayoutManager.new()
+  end
   
   -- Reload datasets so encounters use the latest formations
   if EncounterManager and EncounterManager.reloadDatasets then

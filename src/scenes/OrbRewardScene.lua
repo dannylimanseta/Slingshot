@@ -29,6 +29,11 @@ function OrbRewardScene.new(params)
   return setmetatable({
     time = params.shaderTime or 0,
     _fadeTimer = 0,
+		-- Selection animation state
+		selectedIndex = nil,         -- which option is selected (1..n)
+		selectionTimer = 0,          -- elapsed time for selection anim
+		selectionDuration = 0.4,     -- how long the bounce/fade takes
+		pendingChoice = nil,         -- store choice to apply after anim
     shader = nil,
     decorImage = nil,
     arrowIcon = nil,
@@ -144,7 +149,16 @@ local function drawCardWithLevel(card, projectileId, level, x, y, alpha)
 end
 
 function OrbRewardScene:update(dt)
-  if self.choice then
+	-- Play selection animation if an option was chosen
+	if self.selectedIndex and self.pendingChoice then
+		self.selectionTimer = self.selectionTimer + dt
+		if self.selectionTimer >= (self.selectionDuration or 0.4) then
+			-- Do not reset selection state here; keep it so draw
+			-- remains in the faded/offset state during transition.
+			self.choice = self.pendingChoice
+		end
+	end
+	if self.choice then
     self:applyChoice(self.choice)
     if self.returnToPreviousOnExit then
       return "return_to_previous"
@@ -190,6 +204,8 @@ function OrbRewardScene:update(dt)
   local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
   local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
   if self.skipButton then
+		-- Disable skip while selection animation is playing
+		local canInteract = not (self.selectedIndex and self.pendingChoice)
     local f = self.skipButton.font or theme.fonts.base
     local th = f:getHeight()
     local bw = math.floor(vw * 0.175)
@@ -197,13 +213,17 @@ function OrbRewardScene:update(dt)
     local bx = math.floor((vw - bw) * 0.5)
     local by = math.floor(vh * 0.78)
     self.skipButton:setLayout(bx, by, bw, bh)
-    self.skipButton:update(dt, self.mouseX, self.mouseY)
+		if canInteract then
+			self.skipButton:update(dt, self.mouseX, self.mouseY)
+		end
   end
 
   -- Tween per-option scales based on hover state using existing bounds
-  if self.bounds then
+	if self.bounds then
     for i, r in ipairs(self.bounds) do
-      local hovered = (self.mouseX >= r.x and self.mouseX <= r.x + r.w and self.mouseY >= r.y and self.mouseY <= r.y + r.h)
+			-- Disable hover interactions during selection animation
+			local hoveringAllowed = not (self.selectedIndex and self.pendingChoice)
+			local hovered = hoveringAllowed and (self.mouseX >= r.x and self.mouseX <= r.x + r.w and self.mouseY >= r.y and self.mouseY <= r.y + r.h)
       local target = hovered and 1.05 or 1.0
       local s = self.scales[i] or 1.0
       local k = math.min(1, (12 * dt))
@@ -295,14 +315,18 @@ function OrbRewardScene:draw()
 
   for i, opt in ipairs(self.options) do
     local x = startX + (i - 1) * (cardW + spacing)
-    local a = self.optionAlphas[i] or 1.0
+		local a = self.optionAlphas[i] or 1.0
     -- Clamp
     if a < 0 then a = 0 end
     if a > 1 then a = 1 end
     -- Header label
     local header = (opt.kind == "upgrade") and "UPGRADE" or "NEW ORB!"
     -- Make "NEW ORB!" white as well
-    local headerCol = (opt.kind == "upgrade") and {1,1,1,0.8 * a} or {1,1,1,0.9 * a}
+		local headerCol = (opt.kind == "upgrade") and {1,1,1,0.8 * a} or {1,1,1,0.9 * a}
+		-- If another option is selected and animating, dim non-selected headers slightly
+		if self.selectedIndex and self.pendingChoice and self.selectedIndex ~= i then
+			headerCol[4] = headerCol[4] * 0.5
+		end
     love.graphics.setColor(headerCol[1], headerCol[2], headerCol[3], headerCol[4])
     love.graphics.print(header, x, y - 44)
 
@@ -342,19 +366,38 @@ function OrbRewardScene:draw()
     if p then p.level = opt.targetLevel end
     local cardH = self.card:calculateHeight(p or {})
     if p then p.level = oldLevel end
-    local scale = self.scales[i] or 1.0
+		local scale = self.scales[i] or 1.0
+		-- Selection animation: bounce slightly and fade upwards
+		local yOffset = 0
+		local alphaMul = 1.0
+		local extraScale = 1.0
+		if self.selectedIndex == i and self.pendingChoice then
+			local t = math.min(1, (self.selectionTimer or 0) / (self.selectionDuration or 0.4))
+			-- Ease-out cubic for upward motion
+			local function easeOutCubic(u) return 1 - math.pow(1 - u, 3) end
+			local moveUp = 18 * easeOutCubic(t)
+			-- Small initial bounce on scale (peaks at start, eases to 0)
+			local bounceWindow = math.min(1, t / 0.15)
+			local bounceEase = 1 - (1 - bounceWindow) * (1 - bounceWindow)
+			extraScale = 1.0 + 0.06 * (1 - bounceEase)
+			yOffset = -moveUp
+			alphaMul = (1.0 - t)
+		elseif self.selectedIndex and self.pendingChoice and self.selectedIndex ~= i then
+			-- Dim non-selected options during animation
+			alphaMul = 0.4
+		end
     love.graphics.push()
     local cx = x + cardW * 0.5
     local cy = y + cardH * 0.5
-    love.graphics.translate(cx, cy)
-    love.graphics.scale(scale, scale)
+		love.graphics.translate(cx, cy + yOffset)
+		love.graphics.scale(scale * extraScale, scale * extraScale)
     love.graphics.translate(-cx, -cy)
-    drawCardWithLevel(self.card, opt.id, opt.targetLevel, x, y, a)
+		drawCardWithLevel(self.card, opt.id, opt.targetLevel, x, y, a * alphaMul)
     love.graphics.pop()
     -- Update clickable bounds to match scaled size
-    local bw = cardW * scale
-    local bh = cardH * scale
-    self.bounds[i] = { x = cx - bw * 0.5, y = cy - bh * 0.5, w = bw, h = bh }
+		local bw = cardW * scale * extraScale
+		local bh = cardH * scale * extraScale
+		self.bounds[i] = { x = cx - bw * 0.5, y = (cy + yOffset) - bh * 0.5, w = bw, h = bh }
   end
 
   -- Draw Skip button
@@ -374,10 +417,14 @@ end
 
 function OrbRewardScene:mousepressed(x, y, button)
   if button ~= 1 then return end
+	-- Ignore input during selection animation
+	if self.selectedIndex and self.pendingChoice then return end
   for i, r in ipairs(self.bounds or {}) do
     local a = self.optionAlphas and self.optionAlphas[i] or 1.0
     if a > 0.85 and x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h then
-      self.choice = self.options[i]
+			self.selectedIndex = i
+			self.selectionTimer = 0
+			self.pendingChoice = self.options[i]
       return
     end
   end
