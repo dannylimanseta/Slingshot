@@ -172,7 +172,7 @@ config.score = {
   tickerSpeed = 10, -- points per second smoothing toward current score (base speed)
   critMultiplier = 2,
   -- Apply once if a soul block was hit this turn
-  damageMultiplier = 4,
+  powerCritMultiplier = 4,
   blockPopupLifetime = 0.8,
   blockPopupFadeMultiplier = 0.5, -- 50% faster fade within fade window (1.0 = baseline)
   blockPopupFadeStart = 0.7, -- start fading at 70% of lifetime (last 30%)

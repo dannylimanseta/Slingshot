@@ -415,7 +415,7 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
   
   -- Apply damage multiplier if any
   if multiplierCount > 0 then
-    local dmgMult = (config.score and config.score.damageMultiplier) or 4
+    local dmgMult = (config.score and config.score.powerCritMultiplier) or 4
     local afterMult = cumulative * dmgMult
     -- Show multiplier step (e.g., "16x4") - mark as multiplier step, doubled duration
     table.insert(sequence, { text = tostring(cumulative) .. "x" .. tostring(dmgMult), duration = 0.24, isMultiplier = true })
@@ -539,7 +539,9 @@ function BattleScene:update(dt, bounds)
           elseif sequenceIndex == #popup.sequence then
             -- On last step, wait for full duration plus a small linger time
             local lastStep = popup.sequence[sequenceIndex]
-            local lingerTime = 0.05 -- Additional time to linger after the step duration
+            -- Longer linger time if it has exclamation mark
+            local hasExclamation = lastStep.text and string.find(lastStep.text, "!") ~= nil
+            local lingerTime = hasExclamation and 0.2 or 0.05 -- Longer linger for final "XX!" number
             local totalDisplayTime = (lastStep.duration or 0.1) + lingerTime
             if lastStep and popup.sequenceTimer and popup.sequenceTimer < totalDisplayTime then
               return true -- Last step hasn't been shown long enough (wait for full duration + linger)
@@ -658,6 +660,57 @@ function BattleScene:update(dt, bounds)
         -- Move to next step in sequence
         p.sequenceTimer = 0
         p.sequenceIndex = math.min(p.sequenceIndex + 1, #p.sequence)
+      end
+      
+      -- Check if we're on the final step with exclamation mark - add shake effect
+      local isFinalStep = (p.sequenceIndex == #p.sequence)
+      local finalStep = p.sequence[#p.sequence]
+      local hasExclamation = finalStep and finalStep.text and string.find(finalStep.text, "!") ~= nil
+      
+      if isFinalStep and hasExclamation then
+        -- Initialize shake/rotation if not already set
+        if not p.shakeTime then
+          local finalStepDuration = finalStep.duration or 0.1
+          p.shakeTime = finalStepDuration * 2.5 -- Shake for 2.5x the final step duration
+          p.shakeRotation = 0
+          p.shakeUpdateTimer = 0 -- Timer for updating shake values
+        end
+        
+        -- Update shake and rotation
+        if p.shakeTime > 0 then
+          p.shakeTime = p.shakeTime - dt
+          p.shakeUpdateTimer = (p.shakeUpdateTimer or 0) + dt
+          
+          -- Shake offset: random jitter that decreases over time
+          local shakeDuration = (finalStep.duration or 0.1) * 2.5 -- Match the initialized duration
+          local progress = p.shakeTime / shakeDuration
+          local shakeMagnitude = 4 * progress -- Shake decreases over time
+          
+          -- Update shake values less frequently (every 0.05 seconds instead of every frame)
+          local shakeUpdateInterval = 0.05
+          if p.shakeUpdateTimer >= shakeUpdateInterval then
+            p.shakeUpdateTimer = 0
+            p.shakeOffsetX = (love.math.random() * 2 - 1) * shakeMagnitude
+            p.shakeOffsetY = (love.math.random() * 2 - 1) * shakeMagnitude
+          end
+          
+          -- Rotation: oscillate with decreasing amplitude (more noticeable rotation)
+          local rotationSpeed = 15 -- oscillations per second
+          local elapsedTime = shakeDuration - p.shakeTime
+          p.shakeRotation = math.sin(elapsedTime * rotationSpeed * 2 * math.pi) * 0.15 * progress -- Up to 0.15 radians (~8.6 degrees)
+        else
+          -- Reset shake when done
+          p.shakeOffsetX = 0
+          p.shakeOffsetY = 0
+          p.shakeRotation = 0
+          p.shakeUpdateTimer = nil
+        end
+      else
+        -- Reset shake if not on final step
+        p.shakeOffsetX = 0
+        p.shakeOffsetY = 0
+        p.shakeRotation = 0
+        p.shakeTime = nil
       end
     end
     
@@ -868,7 +921,10 @@ function BattleScene:update(dt, bounds)
               for _, step in ipairs(damageSequence) do
                 totalSequenceDuration = totalSequenceDuration + (step.duration or 0.1)
               end
-              local lingerTime = 0.05
+              -- Longer linger time if final step has exclamation mark
+              local lastStep = damageSequence[#damageSequence]
+              local hasExclamation = lastStep and lastStep.text and string.find(lastStep.text, "!") ~= nil
+              local lingerTime = hasExclamation and 0.2 or 0.05 -- Longer linger for final "XX!" number
               -- Only keep popup visible for a short time during disintegration, not the full duration
               local disintegrationDisplayTime = 0.2 -- Show during first part of disintegration
               local totalPopupLifetime = totalSequenceDuration + lingerTime + disintegrationDisplayTime
@@ -914,7 +970,9 @@ function BattleScene:update(dt, bounds)
                           break
                         elseif sequenceIndex == #popup.sequence then
                           local lastStep = popup.sequence[sequenceIndex]
-                          local lingerTime = 0.05 -- Additional time to linger after the step duration
+                          -- Longer linger time if it has exclamation mark
+                          local hasExclamation = lastStep.text and string.find(lastStep.text, "!") ~= nil
+                          local lingerTime = hasExclamation and 0.2 or 0.05 -- Longer linger for final "XX!" number
                           local totalDisplayTime = (lastStep.duration or 0.15) + lingerTime
                           if lastStep and popup.sequenceTimer and popup.sequenceTimer < totalDisplayTime then
                             damagePopupActive = true

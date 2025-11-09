@@ -560,7 +560,7 @@ function FormationEditorScene:drawBlock(x, y, kind, size, hp)
     valueText = "x2"
     iconToUse = ICON_ATTACK
   elseif kind == "multiplier" then
-    local dmgMult = (config.score and config.score.damageMultiplier) or 4
+    local dmgMult = (config.score and config.score.powerCritMultiplier) or 4
     valueText = "x" .. tostring(dmgMult)
     iconToUse = ICON_ATTACK
   elseif kind == "armor" then

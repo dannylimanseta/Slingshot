@@ -679,7 +679,30 @@ function Visuals.draw(scene, bounds)
           stepR, stepG, stepB = 220/255, 194/255, 117/255
         end
         
-        theme.printfWithOutline(displayText, x - textWidth * 0.5, y - 40, textWidth, "center", stepR, stepG, stepB, alpha, 2)
+        -- Apply shake and rotation for final step with exclamation
+        local shakeX = p.shakeOffsetX or 0
+        local shakeY = p.shakeOffsetY or 0
+        local rotation = p.shakeRotation or 0
+        local centerX = x
+        local centerY = y - 40
+        
+        -- Check if we're on the final step with exclamation to apply rotation
+        local isFinalStep = (sequenceIndex == #p.sequence)
+        local finalStep = p.sequence[#p.sequence]
+        local hasExclamation = finalStep and finalStep.text and string.find(finalStep.text, "!") ~= nil
+        
+        if isFinalStep and hasExclamation and p.shakeTime then
+          -- Draw with rotation around center point
+          love.graphics.push()
+          love.graphics.translate(centerX + shakeX, centerY + shakeY)
+          love.graphics.rotate(rotation)
+          love.graphics.translate(-textWidth * 0.5, 0)
+          theme.printfWithOutline(displayText, 0, 0, textWidth, "center", stepR, stepG, stepB, alpha, 2)
+          love.graphics.pop()
+        else
+          -- Draw without rotation, just apply shake
+          theme.printfWithOutline(displayText, centerX - textWidth * 0.5 + shakeX, centerY + shakeY, textWidth, "center", stepR, stepG, stepB, alpha, 2)
+        end
       end
     else
       theme.printfWithOutline(p.text or "", x - 40, y - 40, 80, "center", r1, g1, b1, alpha, 2)

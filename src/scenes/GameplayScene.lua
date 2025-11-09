@@ -644,7 +644,7 @@ function GameplayScene:draw(bounds)
       local text
       if self.hoveredBlock.kind == "multiplier" then
         -- Use configured damage multiplier, e.g., x4 damage
-        local dmgMult = (config.score and config.score.damageMultiplier) or 4
+        local dmgMult = (config.score and config.score.powerCritMultiplier) or 4
         text = "x" .. tostring(dmgMult) .. " damage"
       elseif self.hoveredBlock.kind == "crit" then
         -- Force lowercase x2 wording

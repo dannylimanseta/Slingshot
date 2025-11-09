@@ -35,7 +35,7 @@ love "/path/to/Slingshot"
 - **Base score on shot**: +3 points (`config.score.baseSeed`)
 - **Per-hit reward**: +1 point for every block hit (`config.score.rewardPerHit`)
 - **Crit blocks**: x2 damage multiplier per crit hit (`config.score.critMultiplier`)
-- **Multiplier blocks**: if any hit this turn, apply a one-time damage multiplier (`config.score.damageMultiplier`, default x4)
+- **Multiplier blocks**: if any hit this turn, apply a one-time damage multiplier (`config.score.powerCritMultiplier`, default x4)
 - Final turn score = base + per-hit rewards, then apply crit and (optionally) multiplier
 - Enemy takes damage equal to final turn score (1:1)
 
@@ -63,7 +63,7 @@ Blocks spawn with 1 HP and are destroyed in one hit:
 
 4. **Multiplier Blocks**
    - Rare spawns
-   - If hit this turn, apply a one-time damage multiplier to the turn (`config.score.damageMultiplier`)
+   - If hit this turn, apply a one-time damage multiplier to the turn (`config.score.powerCritMultiplier`)
    - Label shows the current multiplier (e.g., x4)
 
 5. **AOE Blocks**
@@ -145,7 +145,7 @@ All tunables live in `src/config.lua`:
 
 ### Score
 - `score.baseSeed`, `rewardPerHit`, `tickerSpeed`, `critMultiplier`
-- `score.damageMultiplier` (applied once per turn if any multiplier block is hit)
+- `score.powerCritMultiplier` (applied once per turn if any multiplier block is hit)
 - `score.blockPopupLifetime`, `blockPopupFadeStart`, `blockPopupFadeMultiplier`, `blockPopupBounceHeight`
 
 ### Armor

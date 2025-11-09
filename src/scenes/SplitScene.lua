@@ -297,7 +297,7 @@ function SplitScene:endPlayerTurnWithTurnManager()
   
   -- Apply simple damage multiplier once if any multiplier block was hit
   if multiplierCount > 0 then
-    local dmgMult = (config.score and config.score.damageMultiplier) or 4
+    local dmgMult = (config.score and config.score.powerCritMultiplier) or 4
     turnScore = turnScore * dmgMult
   end
   
