@@ -3,20 +3,14 @@ package.path = package.path .. ";src/?.lua;src/?/init.lua;src/?/?.lua"
 
 local config = require("config")
 local SceneManager = require("core.SceneManager")
-local MapScene = require("scenes.MapScene")
-local SplitScene = require("scenes.SplitScene")
-local FormationEditorScene = require("scenes.FormationEditorScene")
-local RewardsScene = require("scenes.RewardsScene")
-local OrbRewardScene = require("scenes.OrbRewardScene")
-local EncounterSelectScene = require("scenes.EncounterSelectScene")
+local SceneTransitionHandler = require("core.SceneTransitionHandler")
 
 local sceneManager
+local transitionHandler
 local screenCanvas
 local virtualW, virtualH
 local scaleFactor = 1
 local offsetX, offsetY = 0, 0
-local previousScene = nil -- Store previous scene when switching to formation editor
-local mapScene = nil -- Store map scene to return to after battle
 
 -- Cursor management
 local normalCursor = nil
@@ -129,10 +123,10 @@ function love.load()
   love.mouse.setVisible(false) -- Hide system cursor
 
   sceneManager = SceneManager.new()
+  -- Initialize transition handler with scene manager and cursor setter
+  transitionHandler = SceneTransitionHandler.new(sceneManager, setCursorForScene)
   -- Start with map exploration scene
-  mapScene = MapScene.new()
-  sceneManager:set(mapScene)
-  setCursorForScene(mapScene)
+  transitionHandler:initializeMapScene()
 end
 
 function love.update(deltaTime)
@@ -155,69 +149,9 @@ function love.update(deltaTime)
   
   if sceneManager then 
     local result = sceneManager:update(deltaTime)
-    
-    -- Handle battle transition signal from MapScene
-    if result == "enter_battle" then
-      -- Store map scene as previous scene
-      previousScene = mapScene
-      -- Switch to battle (SplitScene)
-      local battleScene = SplitScene.new()
-      sceneManager:set(battleScene)
-      setCursorForScene(battleScene)
-    elseif type(result) == "table" and result.type == "return_to_map" then
-      -- Post-battle flow
-      if result.victory then
-        -- Mark victory on map for any follow-up logic
-        if not mapScene then
-          mapScene = MapScene.new()
-        end
-        mapScene._battleVictory = true
-        -- Show rewards scene before returning to map (pass gold reward if available)
-        local rewardsScene = RewardsScene.new({ goldReward = result.goldReward or 0 })
-        sceneManager:set(rewardsScene)
-        setCursorForScene(rewardsScene)
-      else
-        -- Defeat: go straight back to map
-        if mapScene then
-          sceneManager:set(mapScene)
-          setCursorForScene(mapScene)
-          previousScene = nil
-        else
-          mapScene = MapScene.new()
-          sceneManager:set(mapScene)
-          setCursorForScene(mapScene)
-        end
-      end
-    elseif result == "return_to_map" then
-      -- Backward compatibility: handle string return
-      if mapScene then
-        sceneManager:set(mapScene)
-        setCursorForScene(mapScene)
-        previousScene = nil
-      else
-        mapScene = MapScene.new()
-        sceneManager:set(mapScene)
-        setCursorForScene(mapScene)
-      end
-    elseif type(result) == "table" and result.type == "open_orb_reward" then
-      -- If RewardsScene indicates pending actions remain, remember it to return after orb pick
-      if result.returnToRewards then
-        previousScene = sceneManager.currentScene
-        if previousScene then previousScene._removeOrbButtonOnReturn = true end
-      end
-      local orbScene = OrbRewardScene.new({ returnToPreviousOnExit = result.returnToRewards, shaderTime = result.shaderTime })
-      sceneManager:set(orbScene, true)
-      setCursorForScene(orbScene)
-    elseif result == "open_orb_reward" then
-      local orbScene = OrbRewardScene.new()
-      sceneManager:set(orbScene, true)
-      setCursorForScene(orbScene)
-    elseif result == "return_to_previous" then
-      if previousScene then
-        sceneManager:set(previousScene)
-        setCursorForScene(previousScene)
-        previousScene = nil
-      end
+    -- Handle all scene transitions through the centralized handler
+    if transitionHandler and result then
+      transitionHandler:handleTransition(result)
     end
   end
 end
@@ -277,75 +211,9 @@ end
 function love.keypressed(key, scancode, isRepeat)
   if sceneManager then 
     local result = sceneManager:keypressed(key, scancode, isRepeat)
-    
-    -- Handle scene switching signals
-    if result == "open_formation_editor" then
-      -- Store current scene as previous scene
-      previousScene = sceneManager.currentScene
-      -- Create and switch to formation editor
-      local editorScene = FormationEditorScene.new()
-      editorScene:setPreviousScene(previousScene)
-      sceneManager:set(editorScene)
-      setCursorForScene(editorScene)
-    elseif result == "restart" then
-      -- Return to previous scene (could be MapScene or SplitScene) or restart game
-      if previousScene then
-        -- Check if returning to map scene or battle scene
-        if previousScene == mapScene then
-          -- Returning to map from battle
-          sceneManager:set(previousScene)
-          setCursorForScene(previousScene)
-          previousScene = nil
-        else
-          -- Returning to battle scene (from formation editor)
-          if previousScene.reloadBlocks then
-            previousScene:reloadBlocks()
-          end
-          sceneManager:set(previousScene)
-          setCursorForScene(previousScene)
-          previousScene = nil
-        end
-      else
-        -- No previous scene, restart with map
-        mapScene = MapScene.new()
-        sceneManager:set(mapScene)
-        setCursorForScene(mapScene)
-      end
-    elseif result == "return_to_map" then
-      -- Return to map scene from battle
-      if mapScene then
-        sceneManager:set(mapScene)
-        setCursorForScene(mapScene)
-        previousScene = nil
-      else
-        -- Create new map scene if none exists
-        mapScene = MapScene.new()
-        sceneManager:set(mapScene)
-        setCursorForScene(mapScene)
-      end
-    elseif result == "open_encounter_select" then
-      -- Open encounter selection menu
-      local selectScene = EncounterSelectScene.new()
-      selectScene:setPreviousScene(sceneManager.currentScene)
-      previousScene = sceneManager.currentScene
-      sceneManager:set(selectScene)
-      setCursorForScene(selectScene)
-    elseif result == "start_battle" then
-      -- Start battle with selected encounter
-      previousScene = mapScene
-      local battleScene = SplitScene.new()
-      sceneManager:set(battleScene)
-      setCursorForScene(battleScene)
-    elseif result == "cancel" then
-      -- Return to previous scene (map)
-      if previousScene then
-        sceneManager:set(previousScene)
-        setCursorForScene(previousScene)
-        previousScene = nil
-      elseif mapScene then
-        sceneManager:set(mapScene)
-        setCursorForScene(mapScene)
-      end
+    -- Handle all scene transitions through the centralized handler
+    if transitionHandler and result then
+      transitionHandler:handleTransition(result)
     end
   end
 end
@@ -366,13 +234,9 @@ function love.mousepressed(x, y, button, isTouch, presses)
   local vy = (y - offsetY) / scaleFactor
   if sceneManager then
     local result = sceneManager:mousepressed(vx, vy, button, isTouch, presses)
-    -- Handle scene switching signals from mouse clicks
-    if result == "start_battle" then
-      -- Start battle with selected encounter
-      previousScene = mapScene
-      local battleScene = SplitScene.new()
-      sceneManager:set(battleScene)
-      setCursorForScene(battleScene)
+    -- Handle all scene transitions through the centralized handler
+    if transitionHandler and result then
+      transitionHandler:handleTransition(result)
     end
   end
 end
