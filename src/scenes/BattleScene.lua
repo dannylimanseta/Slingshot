@@ -365,7 +365,75 @@ local function createBorderFragments(x, y, w, h, gap, radius)
   return fragments
 end
 
-function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE)
+-- Helper function to build animated damage sequence
+-- Returns array of {text, duration} for the animation sequence
+local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBaseDamage, critCount, multiplierCount, finalDamage)
+  local sequence = {}
+  local config = require("config")
+  
+  -- Start cumulative from orb's base damage
+  local cumulative = orbBaseDamage or 0
+  
+  -- Track if we have any multipliers
+  local hasMultiplier = (critCount > 0) or (multiplierCount > 0)
+  
+  -- If no block hit sequence, just show final damage (but still start from base if applicable)
+  if not blockHitSequence or #blockHitSequence == 0 then
+    if cumulative > 0 and cumulative ~= finalDamage then
+      -- Show base damage first, then final
+      table.insert(sequence, { text = tostring(cumulative), duration = 0.06 })
+    end
+    local finalText = tostring(finalDamage)
+    if hasMultiplier then
+      finalText = finalText .. "!"
+    end
+    table.insert(sequence, { text = finalText, duration = 0.12, isMultiplier = hasMultiplier })
+    return sequence
+  end
+  
+  -- Show base damage first if it exists and we have block hits
+  if cumulative > 0 then
+    table.insert(sequence, { text = tostring(cumulative), duration = 0.05 })
+  end
+  
+  -- Calculate cumulative damage from block hits (add to base)
+  for i, hit in ipairs(blockHitSequence) do
+    cumulative = cumulative + hit.damage
+    -- Show each increment (e.g., 4, 5, 6, 7, 8) - faster animation
+    table.insert(sequence, { text = tostring(cumulative), duration = 0.05 })
+  end
+  
+  -- Apply crit multiplier if any
+  local mult = (config.score and config.score.critMultiplier) or 2
+  if critCount > 0 then
+    local critMultiplier = mult ^ critCount
+    local afterCrit = cumulative * critMultiplier
+    -- Show multiplier step (e.g., "8x2") - mark as multiplier step
+    table.insert(sequence, { text = tostring(cumulative) .. "x" .. tostring(critMultiplier), duration = 0.08, isMultiplier = true })
+    cumulative = afterCrit
+  end
+  
+  -- Apply damage multiplier if any
+  if multiplierCount > 0 then
+    local dmgMult = (config.score and config.score.damageMultiplier) or 4
+    local afterMult = cumulative * dmgMult
+    -- Show multiplier step (e.g., "16x4") - mark as multiplier step
+    table.insert(sequence, { text = tostring(cumulative) .. "x" .. tostring(dmgMult), duration = 0.08, isMultiplier = true })
+    cumulative = afterMult
+  end
+  
+  -- Show final total - add exclamation only if there was a multiplier
+  local finalText = tostring(finalDamage)
+  if hasMultiplier then
+    finalText = finalText .. "!"
+  end
+  -- Longer duration for final number so it lingers before disintegration
+  table.insert(sequence, { text = finalText, duration = 0.2, isMultiplier = hasMultiplier })
+  
+  return sequence
+end
+
+function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE, blockHitSequence, baseDamage, orbBaseDamage, critCount, multiplierCount)
   -- Check win/lose states via TurnManager
   local tmState = self.turnManager and self.turnManager:getState()
   if tmState == TurnManager.States.VICTORY or tmState == TurnManager.States.DEFEAT then return end
@@ -378,7 +446,12 @@ function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE)
       armor = armor or 0,
       isAOE = isAOE or false, -- Store AOE flag
       impactBlockCount = (self._pendingImpactParams and self._pendingImpactParams.blockCount) or 1,
-      impactIsCrit = (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false
+      impactIsCrit = (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false,
+      blockHitSequence = blockHitSequence or {}, -- Array of {damage, kind} for animated damage display
+      baseDamage = baseDamage or dmg, -- Base damage before multipliers
+      orbBaseDamage = orbBaseDamage or 0, -- Base damage from orb/projectile
+      critCount = critCount or 0,
+      multiplierCount = multiplierCount or 0
     }
     self._pendingImpactParams = nil -- Clear after merging
     -- Trigger player attack sequence after delay
@@ -452,10 +525,39 @@ function BattleScene:update(dt, bounds)
     end
   end
   
+  -- Helper function to check if there are active damage popups for an enemy
+  local function hasActiveDamagePopup(enemyIndex)
+    if not enemyIndex then return false end
+    for _, popup in ipairs(self.popups or {}) do
+      if popup.who == "enemy" and popup.enemyIndex == enemyIndex and popup.t > 0 then
+        -- Check if it's an animated damage popup that hasn't finished its sequence
+        if popup.kind == "animated_damage" and popup.sequence then
+          local sequenceIndex = popup.sequenceIndex or 1
+          -- If we haven't reached the last step, still animating
+          if sequenceIndex < #popup.sequence then
+            return true -- Still animating through sequence
+          elseif sequenceIndex == #popup.sequence then
+            -- On last step, wait for full duration plus a small linger time
+            local lastStep = popup.sequence[sequenceIndex]
+            local lingerTime = 0.1 -- Additional time to linger after the step duration
+            local totalDisplayTime = (lastStep.duration or 0.2) + lingerTime
+            if lastStep and popup.sequenceTimer and popup.sequenceTimer < totalDisplayTime then
+              return true -- Last step hasn't been shown long enough (wait for full duration + linger)
+            end
+          end
+        elseif popup.kind ~= "animated_damage" then
+          -- Regular popup, just check if it's still active
+          return true
+        end
+      end
+    end
+    return false
+  end
+  
   -- Check if enemies should start disintegrating (safeguard for any code path)
   -- Only auto-start if no impact animations are active and disintegration isn't pending
   -- Also check that disintegration hasn't already completed (to prevent looping)
-  for _, enemy in ipairs(self.enemies or {}) do
+  for i, enemy in ipairs(self.enemies or {}) do
     if enemy.hp <= 0 and not enemy.disintegrating and not enemy.pendingDisintegration and self.state ~= "win" then
       -- Check if disintegration has already completed (prevent restarting)
       local cfg = config.battle.disintegration or {}
@@ -464,11 +566,12 @@ function BattleScene:update(dt, bounds)
       
       if not hasCompletedDisintegration then
         local impactsActive = (self.impactInstances and #self.impactInstances > 0)
-        if impactsActive then
-          -- Wait for impact animations to finish
+        local damagePopupActive = hasActiveDamagePopup(i)
+        if impactsActive or damagePopupActive then
+          -- Wait for impact animations or damage popup to finish
           enemy.pendingDisintegration = true
         else
-          -- No impacts, start disintegration immediately
+          -- No impacts or popups, start disintegration immediately
           enemy.disintegrating = true
           enemy.disintegrationTime = 0
         end
@@ -544,10 +647,42 @@ function BattleScene:update(dt, bounds)
   -- Popups
   local alive = {}
   for _, p in ipairs(self.popups) do
+    -- Always decrement popup timer to allow normal fade
     p.t = p.t - dt
-    if p.t > 0 then table.insert(alive, p) end
+    
+    -- Update animated damage sequence
+    if p.kind == "animated_damage" and p.sequence and #p.sequence > 0 then
+      p.sequenceTimer = (p.sequenceTimer or 0) + dt
+      local currentStep = p.sequence[p.sequenceIndex]
+      if currentStep and p.sequenceTimer >= currentStep.duration then
+        -- Move to next step in sequence
+        p.sequenceTimer = 0
+        p.sequenceIndex = math.min(p.sequenceIndex + 1, #p.sequence)
+      end
+    end
+    
+    -- Keep popup alive if it has time left
+    if p.t > 0 then 
+      table.insert(alive, p) 
+    end
   end
   self.popups = alive
+  
+  -- Check if pending disintegration enemies can now start disintegrating (popups finished)
+  for i, enemy in ipairs(self.enemies or {}) do
+    if enemy.pendingDisintegration and enemy.hp <= 0 then
+      local impactsActive = (self.impactInstances and #self.impactInstances > 0)
+      local damagePopupActive = hasActiveDamagePopup(i)
+      if not impactsActive and not damagePopupActive then
+        -- Popups and impacts finished, start disintegration
+        enemy.pendingDisintegration = false
+        if not enemy.disintegrating then
+          enemy.disintegrating = true
+          enemy.disintegrationTime = 0
+        end
+      end
+    end
+  end
   
   -- Update armor icon flash timer
   if self.armorIconFlashTimer > 0 then
@@ -710,6 +845,14 @@ function BattleScene:update(dt, bounds)
           self:_createImpactInstances(impactBlockCount, impactIsCrit, isAOE)
         end
         
+        -- Build animated damage sequence
+        local blockHitSequence = self._pendingPlayerAttackDamage.blockHitSequence or {}
+        local baseDamage = self._pendingPlayerAttackDamage.baseDamage or dmg
+        local orbBaseDamage = self._pendingPlayerAttackDamage.orbBaseDamage or 0
+        local critCount = self._pendingPlayerAttackDamage.critCount or 0
+        local multiplierCount = self._pendingPlayerAttackDamage.multiplierCount or 0
+        local damageSequence = buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBaseDamage, critCount, multiplierCount, dmg)
+        
         -- Apply damage to all enemies if AOE, otherwise just selected enemy
         if isAOE then
           -- AOE attack: damage all enemies
@@ -717,10 +860,31 @@ function BattleScene:update(dt, bounds)
             if enemy and enemy.hp > 0 then
               enemy.hp = math.max(0, enemy.hp - dmg)
               
-              -- Trigger enemy hit visual effects (flash, knockback, popup)
+              -- Trigger enemy hit visual effects (flash, knockback, animated popup)
               enemy.flash = config.battle.hitFlashDuration
               enemy.knockbackTime = 1e-6
-              table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy", enemyIndex = i })
+              -- Calculate total animation duration + linger + disintegration time
+              local totalSequenceDuration = 0
+              for _, step in ipairs(damageSequence) do
+                totalSequenceDuration = totalSequenceDuration + (step.duration or 0.1)
+              end
+              local lingerTime = 0.1
+              -- Only keep popup visible for a short time during disintegration, not the full duration
+              local disintegrationDisplayTime = 0.4 -- Show during first part of disintegration
+              local totalPopupLifetime = totalSequenceDuration + lingerTime + disintegrationDisplayTime
+              
+              table.insert(self.popups, { 
+                x = 0, 
+                y = 0, 
+                kind = "animated_damage",
+                sequence = damageSequence,
+                sequenceIndex = 1,
+                sequenceTimer = 0,
+                t = totalPopupLifetime, -- Long enough to cover animation + disintegration
+                originalLifetime = totalPopupLifetime, -- Store original lifetime for progress calculation
+                who = "enemy", 
+                enemyIndex = i 
+              })
               -- Emit hit burst particles from enemy center
               if self.particles then
                 local ex, ey = self:getEnemyCenterPivot(i, self._lastBounds)
@@ -739,12 +903,37 @@ function BattleScene:update(dt, bounds)
                 if not hasCompletedDisintegration then
                   -- Check if impact animations are still playing
                   local impactsActive = (self.impactInstances and #self.impactInstances > 0)
-                  if impactsActive then
-                    -- Wait for impact animations to finish before starting disintegration
+                  -- Check if damage popup animation is still playing
+                  local damagePopupActive = false
+                  for _, popup in ipairs(self.popups or {}) do
+                    if popup.who == "enemy" and popup.enemyIndex == i and popup.t > 0 then
+                      if popup.kind == "animated_damage" and popup.sequence then
+                        local sequenceIndex = popup.sequenceIndex or 1
+                        if sequenceIndex < #popup.sequence then
+                          damagePopupActive = true
+                          break
+                        elseif sequenceIndex == #popup.sequence then
+                          local lastStep = popup.sequence[sequenceIndex]
+                          local lingerTime = 0.1 -- Additional time to linger after the step duration
+                          local totalDisplayTime = (lastStep.duration or 0.2) + lingerTime
+                          if lastStep and popup.sequenceTimer and popup.sequenceTimer < totalDisplayTime then
+                            damagePopupActive = true
+                            break
+                          end
+                        end
+                      elseif popup.kind ~= "animated_damage" then
+                        damagePopupActive = true
+                        break
+                      end
+                    end
+                  end
+                  
+                  if impactsActive or damagePopupActive then
+                    -- Wait for impact animations or damage popup to finish before starting disintegration
                     enemy.pendingDisintegration = true
                     pushLog(self, "Enemy " .. i .. " defeated!")
                   else
-                    -- Start disintegration effect immediately if no impacts
+                    -- Start disintegration effect immediately if no impacts or popups
                     if not enemy.disintegrating then
                       enemy.disintegrating = true
                       enemy.disintegrationTime = 0
@@ -764,10 +953,30 @@ function BattleScene:update(dt, bounds)
           if selectedEnemy.hp > 0 then
             selectedEnemy.hp = math.max(0, selectedEnemy.hp - dmg)
         
-            -- Trigger enemy hit visual effects (flash, knockback, popup)
+            -- Trigger enemy hit visual effects (flash, knockback, animated popup)
             selectedEnemy.flash = config.battle.hitFlashDuration
             selectedEnemy.knockbackTime = 1e-6
-            table.insert(self.popups, { x = 0, y = 0, text = tostring(dmg), t = config.battle.popupLifetime, who = "enemy", enemyIndex = i })
+            -- Calculate total animation duration + linger + disintegration time
+            local totalSequenceDuration = 0
+            for _, step in ipairs(damageSequence) do
+              totalSequenceDuration = totalSequenceDuration + (step.duration or 0.1)
+            end
+            local lingerTime = 0.3
+            local disintegrationDuration = (config.battle.disintegration and config.battle.disintegration.duration) or 1.5
+            local totalPopupLifetime = totalSequenceDuration + lingerTime + disintegrationDuration
+            
+            table.insert(self.popups, { 
+              x = 0, 
+              y = 0, 
+              kind = "animated_damage",
+              sequence = damageSequence,
+              sequenceIndex = 1,
+              sequenceTimer = 0,
+              t = totalPopupLifetime, -- Long enough to cover animation + disintegration
+              originalLifetime = totalPopupLifetime, -- Store original lifetime for progress calculation
+              who = "enemy", 
+              enemyIndex = i 
+            })
             -- Emit hit burst particles from enemy center
             if self.particles then
               local ex, ey = self:getEnemyCenterPivot(i, self._lastBounds)
@@ -786,12 +995,35 @@ function BattleScene:update(dt, bounds)
               if not hasCompletedDisintegration then
                 -- Check if impact animations are still playing
                 local impactsActive = (self.impactInstances and #self.impactInstances > 0)
-                if impactsActive then
-                  -- Wait for impact animations to finish before starting disintegration
+                -- Check if damage popup animation is still playing
+                local damagePopupActive = false
+                for _, popup in ipairs(self.popups or {}) do
+                  if popup.who == "enemy" and popup.enemyIndex == i and popup.t > 0 then
+                    if popup.kind == "animated_damage" and popup.sequence then
+                      local sequenceIndex = popup.sequenceIndex or 1
+                      if sequenceIndex < #popup.sequence then
+                        damagePopupActive = true
+                        break
+                      elseif sequenceIndex == #popup.sequence then
+                        local lastStep = popup.sequence[sequenceIndex]
+                        if lastStep and popup.sequenceTimer and popup.sequenceTimer < (lastStep.duration * 0.5) then
+                          damagePopupActive = true
+                          break
+                        end
+                      end
+                    elseif popup.kind ~= "animated_damage" then
+                      damagePopupActive = true
+                      break
+                    end
+                  end
+                end
+                
+                if impactsActive or damagePopupActive then
+                  -- Wait for impact animations or damage popup to finish before starting disintegration
                   selectedEnemy.pendingDisintegration = true
                   pushLog(self, "Enemy " .. i .. " defeated!")
                 else
-                  -- Start disintegration effect immediately if no impacts
+                  -- Start disintegration effect immediately if no impacts or popups
                   if not selectedEnemy.disintegrating then
                     selectedEnemy.disintegrating = true
                     selectedEnemy.disintegrationTime = 0

@@ -209,8 +209,17 @@ function SplitScene:setupTurnManagerEvents()
     if data.target == "enemy" and self.right and self.right.onPlayerTurnEnd then
       local turnData = self.turnManager:getTurnData()
       -- Call the old method but only pass damage (armor will be handled separately)
-      -- Pass AOE flag as third parameter
-      self.right:onPlayerTurnEnd(data.amount, turnData.armor or 0, turnData.isAOE or false)
+      -- Pass AOE flag as third parameter, and block hit sequence data for animated damage display
+      self.right:onPlayerTurnEnd(
+        data.amount, 
+        turnData.armor or 0, 
+        turnData.isAOE or false,
+        turnData.blockHitSequence or {},
+        turnData.baseDamage or data.amount,
+        turnData.orbBaseDamage or 0,
+        turnData.critCount or 0,
+        turnData.multiplierCount or 0
+      )
       -- Apply healing if any
       if turnData.heal and turnData.heal > 0 and self.right and self.right.applyHealing then
         self.right:applyHealing(turnData.heal)
@@ -275,12 +284,13 @@ function SplitScene:endPlayerTurnWithTurnManager()
   if state ~= TurnManager.States.PLAYER_TURN_ACTIVE then return false end
   
   -- Collect turn data
-  local turnScore = self.left and self.left.score or 0
+  local baseDamage = self.left and self.left.score or 0 -- Base damage before multipliers
   local mult = (config.score and config.score.critMultiplier) or 2
   local critCount = (self.left and self.left.critThisTurn) or 0
   local multiplierCount = (self.left and self.left.multiplierThisTurn) or 0
   
   -- Apply crit multiplier (2x per crit)
+  local turnScore = baseDamage
   if critCount > 0 then
     turnScore = turnScore * (mult ^ critCount)
   end
@@ -295,6 +305,8 @@ function SplitScene:endPlayerTurnWithTurnManager()
   local heal = self.left and self.left.healThisTurn or 0
   local blocksDestroyed = self.left and self.left.destroyedThisTurn or 0
   local isAOE = (self.left and self.left.aoeThisTurn) or false
+  local blockHitSequence = (self.left and self.left.blockHitSequence) or {} -- Array of {damage, kind} for animated damage display
+  local orbBaseDamage = (self.left and self.left.baseDamageThisTurn) or 0 -- Base damage from orb/projectile
   
   -- End the turn using TurnManager
   self.turnManager:endPlayerTurn({
@@ -304,6 +316,11 @@ function SplitScene:endPlayerTurnWithTurnManager()
     crits = critCount,
     blocksDestroyed = blocksDestroyed,
     isAOE = isAOE,
+    blockHitSequence = blockHitSequence, -- Pass block hit sequence for animated damage display
+    baseDamage = baseDamage, -- Store base damage before multipliers for animation
+    orbBaseDamage = orbBaseDamage, -- Base damage from orb/projectile
+    critCount = critCount,
+    multiplierCount = multiplierCount,
   })
   
   return true

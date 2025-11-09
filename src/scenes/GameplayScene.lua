@@ -38,6 +38,8 @@ function GameplayScene.new()
     critThisTurn = 0, -- count of crit blocks hit this turn
     multiplierThisTurn = 0, -- count of multiplier blocks hit this turn
     aoeThisTurn = false, -- true if any AOE blocks were hit this turn
+    blockHitSequence = {}, -- Array of {damage, kind} for each block hit this turn (for animated damage display)
+    baseDamageThisTurn = 0, -- Base damage from the orb/projectile at the start of the turn
     _prevCanShoot = true,
     turnManager = nil, -- reference to TurnManager (set by SplitScene)
     -- Combo tracking for multi-block shake
@@ -799,6 +801,8 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       self.multiplierThisTurn = 0
       self.aoeThisTurn = false
       self.blocksHitThisTurn = 0
+      self.blockHitSequence = {} -- Reset block hit sequence for animated damage display
+      self.baseDamageThisTurn = 0 -- Reset base damage for this turn
       -- Reset combo when new shot starts
       self.comboCount = 0
       self.comboTimeout = 0
@@ -849,14 +853,17 @@ function GameplayScene:mousereleased(x, y, button, bounds)
           end
         })
         
+        local baseDmg = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
         if ball1 then
-          ball1.score = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
+          ball1.score = baseDmg
           self.score = self.score + ball1.score
+          self.baseDamageThisTurn = self.baseDamageThisTurn + baseDmg -- Track base damage for animation
           table.insert(self.balls, ball1)
         end
         if ball2 then
-          ball2.score = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
+          ball2.score = baseDmg
           self.score = self.score + ball2.score
+          self.baseDamageThisTurn = self.baseDamageThisTurn + baseDmg -- Track base damage for animation
           table.insert(self.balls, ball2)
         end
       elseif projectileId == "multi_strike" then
@@ -899,8 +906,10 @@ function GameplayScene:mousereleased(x, y, button, bounds)
           })
           
           if ball then
-            ball.score = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
+            local baseDmg = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
+            ball.score = baseDmg
             self.score = self.score + ball.score
+            self.baseDamageThisTurn = self.baseDamageThisTurn + baseDmg -- Track base damage for animation
             table.insert(self.balls, ball)
             end
           end
@@ -914,8 +923,10 @@ function GameplayScene:mousereleased(x, y, button, bounds)
             end
           })
           if self.ball then
-            self.ball.score = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
+            local baseDmg = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
+            self.ball.score = baseDmg
             self.score = self.score + self.ball.score
+            self.baseDamageThisTurn = self.baseDamageThisTurn + baseDmg -- Track base damage for animation
           end
         end
       else
@@ -930,8 +941,10 @@ function GameplayScene:mousereleased(x, y, button, bounds)
           end
         })
         if self.ball then
-          self.ball.score = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
+          local baseDmg = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
+          self.ball.score = baseDmg
           self.score = self.score + self.ball.score
+          self.baseDamageThisTurn = self.baseDamageThisTurn + baseDmg -- Track base damage for animation
         end
       end
       
@@ -1081,6 +1094,14 @@ function GameplayScene:beginContact(fixA, fixB, contact)
       self.aoeThisTurn = true
     end
     self.score = self.score + hitReward
+    
+    -- Track block hit for animated damage display (only track damage-dealing blocks)
+    if block.kind == "damage" or block.kind == "attack" or block.kind == "crit" or block.kind == "multiplier" or block.kind == "aoe" then
+      table.insert(self.blockHitSequence, {
+        damage = hitReward,
+        kind = block.kind
+      })
+    end
     if block.kind == "armor" then
       -- Armor block: grant armor from config by HP
       local rewardByHp = (config.armor and config.armor.rewardByHp) or {}

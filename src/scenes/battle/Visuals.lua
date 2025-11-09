@@ -597,7 +597,8 @@ function Visuals.draw(scene, bounds)
     return 1 + c3 * (u * u * u) + c1 * (u * u)
   end
   for _, p in ipairs(scene.popups or {}) do
-    local life = math.max(0.0001, config.battle.popupLifetime)
+    -- For animated damage popups, use the actual lifetime stored in t, otherwise use default
+    local life = math.max(0.0001, p.kind == "animated_damage" and (p.originalLifetime or p.t) or config.battle.popupLifetime)
     local prog = 1 - math.max(0, p.t / life)
     local baseTop
     local x
@@ -663,6 +664,23 @@ function Visuals.draw(scene, bounds)
       local startX = x - (iconW * s) * 0.5
       love.graphics.setColor(1, 1, 1, alpha)
       love.graphics.draw(scene.iconArmor, startX, y - 40 + (theme.fonts.large:getHeight() - iconH * s) * 0.5, 0, s, s)
+    elseif p.kind == "animated_damage" and p.sequence and #p.sequence > 0 then
+      -- Display current step in animated damage sequence
+      local sequenceIndex = p.sequenceIndex or 1
+      local currentStep = p.sequence[sequenceIndex]
+      if currentStep then
+        local displayText = currentStep.text or ""
+        -- Use wider width to accommodate larger numbers (e.g., "44!", "128x4", etc.)
+        local textWidth = math.max(120, theme.fonts.large:getWidth(displayText) + 20) -- Dynamic width with padding
+        
+        -- Use DCC275 color (220, 194, 117) for multiplier steps, otherwise use default white
+        local stepR, stepG, stepB = r1, g1, b1
+        if currentStep.isMultiplier then
+          stepR, stepG, stepB = 220/255, 194/255, 117/255
+        end
+        
+        theme.printfWithOutline(displayText, x - textWidth * 0.5, y - 40, textWidth, "center", stepR, stepG, stepB, alpha, 2)
+      end
     else
       theme.printfWithOutline(p.text or "", x - 40, y - 40, 80, "center", r1, g1, b1, alpha, 2)
     end
