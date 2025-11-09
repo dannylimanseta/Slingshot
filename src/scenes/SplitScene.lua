@@ -253,7 +253,7 @@ function SplitScene:setupTurnManagerEvents()
       local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
       local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
       local centerRect = self.layoutManager:getCenterRect(vw, vh)
-      self.left:respawnDestroyedBlocks({ x = 0, y = 0, w = centerRect.w, h = vh })
+      self.left:respawnDestroyedBlocks({ x = 0, y = 0, w = centerRect.w, h = vh }, (data and data.count) or 0)
     end
   end)
   

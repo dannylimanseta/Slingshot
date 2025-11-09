@@ -15,6 +15,14 @@ config.video = {
   },
 }
 
+-- Scene transition settings (used by SceneManager)
+config.transition = {
+  duration = 2.0, -- seconds for transition animation (50% faster than 3.0)
+  gridWidth = 28, -- grid cells horizontally
+  gridHeight = 15, -- grid cells vertically
+  fadeType = 0, -- 0 = vertical (bottom-to-top), 1 = horizontal, 2 = center
+}
+
 -- Critical tunables (single source of truth)
 config.playfield = {
   margin = 24, -- pixels from window edges for spawning blocks
@@ -469,13 +477,6 @@ config.assets = {
   fonts = {
     ui = "assets/fonts/BarlowCondensed-Bold.ttf",
   },
-  -- Scene transition settings
-  transition = {
-    duration = 3.0, -- seconds for transition animation
-    gridWidth = 28, -- grid cells horizontally
-    gridHeight = 15, -- grid cells vertically
-    fadeType = 1, -- 0 = vertical, 1 = horizontal, 2 = center
-  }
 }
 
 return config

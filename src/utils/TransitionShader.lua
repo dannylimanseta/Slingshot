@@ -32,8 +32,8 @@ vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
     // Size should be small when fadeTimer > position (showing current scene)
     float diff;
     if (u_fadeType < 0.5) {
-        // Vertical fade
-        diff = fadeTimer - posI.y;
+        // Vertical fade (bottom-to-top)
+        diff = fadeTimer - (1.0 - posI.y);
     } else if (u_fadeType < 1.5) {
         // Horizontal fade
         diff = fadeTimer - posI.x;

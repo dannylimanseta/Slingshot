@@ -273,8 +273,11 @@ function GameplayScene:update(dt, bounds)
   end
 end
 
--- Public: respawn 1-2 blocks every turn (fixed respawn rate)
-function GameplayScene:respawnDestroyedBlocks(bounds)
+-- Public: respawn blocks based on last turn's destroyed count
+-- If destroyed <= 2 and > 0, respawn exactly 1 block.
+-- If destroyed > 2, respawn 1-2 blocks at random.
+-- If destroyed <= 0, respawn 0 blocks.
+function GameplayScene:respawnDestroyedBlocks(bounds, count)
   if not (self.blocks and self.blocks.addRandomBlocks) then return end
   local width = (bounds and bounds.w) or love.graphics.getWidth()
   local height = (bounds and bounds.h) or love.graphics.getHeight()
@@ -288,8 +291,18 @@ function GameplayScene:respawnDestroyedBlocks(bounds)
   -- Only spawn blocks if there are available spaces
   if availableSpaces <= 0 then return end
   
+  -- Determine desired spawn count based on destroyed count
+  local destroyed = tonumber(count or 0) or 0
+  if destroyed <= 0 then return end
+  
+  local desiredSpawn
+  if destroyed <= 2 then
+    desiredSpawn = 1
+  else
+    desiredSpawn = love.math.random(1, 2)
+  end
+  
   -- Limit spawn count to available spaces (never spawn more than available)
-  local desiredSpawn = love.math.random(1, 2) -- Want to spawn 1 or 2 blocks
   local toSpawn = math.min(desiredSpawn, availableSpaces) -- But limit to available spaces
   
   if toSpawn <= 0 then return end
