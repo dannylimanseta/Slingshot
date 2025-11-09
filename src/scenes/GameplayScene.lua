@@ -1092,6 +1092,12 @@ function GameplayScene:beginContact(fixA, fixB, contact)
       local aoeReward = 3
       hitReward = hitReward + aoeReward
       self.aoeThisTurn = true
+    elseif block.kind == "armor" then
+      -- Armor blocks don't add damage, only grant armor
+      hitReward = 0
+    elseif block.kind == "potion" then
+      -- Potion blocks don't add damage, only heal
+      hitReward = 0
     end
     self.score = self.score + hitReward
     

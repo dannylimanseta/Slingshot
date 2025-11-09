@@ -427,8 +427,8 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
   if hasMultiplier then
     finalText = finalText .. "!"
   end
-  -- Longer duration for final number so it lingers before disintegration
-  table.insert(sequence, { text = finalText, duration = 0.2, isMultiplier = hasMultiplier })
+  -- Duration for final number
+  table.insert(sequence, { text = finalText, duration = 0.1, isMultiplier = hasMultiplier })
   
   return sequence
 end
@@ -539,8 +539,8 @@ function BattleScene:update(dt, bounds)
           elseif sequenceIndex == #popup.sequence then
             -- On last step, wait for full duration plus a small linger time
             local lastStep = popup.sequence[sequenceIndex]
-            local lingerTime = 0.1 -- Additional time to linger after the step duration
-            local totalDisplayTime = (lastStep.duration or 0.2) + lingerTime
+            local lingerTime = 0.05 -- Additional time to linger after the step duration
+            local totalDisplayTime = (lastStep.duration or 0.1) + lingerTime
             if lastStep and popup.sequenceTimer and popup.sequenceTimer < totalDisplayTime then
               return true -- Last step hasn't been shown long enough (wait for full duration + linger)
             end
@@ -868,9 +868,9 @@ function BattleScene:update(dt, bounds)
               for _, step in ipairs(damageSequence) do
                 totalSequenceDuration = totalSequenceDuration + (step.duration or 0.1)
               end
-              local lingerTime = 0.1
+              local lingerTime = 0.05
               -- Only keep popup visible for a short time during disintegration, not the full duration
-              local disintegrationDisplayTime = 0.4 -- Show during first part of disintegration
+              local disintegrationDisplayTime = 0.2 -- Show during first part of disintegration
               local totalPopupLifetime = totalSequenceDuration + lingerTime + disintegrationDisplayTime
               
               table.insert(self.popups, { 
@@ -914,8 +914,8 @@ function BattleScene:update(dt, bounds)
                           break
                         elseif sequenceIndex == #popup.sequence then
                           local lastStep = popup.sequence[sequenceIndex]
-                          local lingerTime = 0.1 -- Additional time to linger after the step duration
-                          local totalDisplayTime = (lastStep.duration or 0.2) + lingerTime
+                          local lingerTime = 0.05 -- Additional time to linger after the step duration
+                          local totalDisplayTime = (lastStep.duration or 0.15) + lingerTime
                           if lastStep and popup.sequenceTimer and popup.sequenceTimer < totalDisplayTime then
                             damagePopupActive = true
                             break
