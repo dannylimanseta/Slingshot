@@ -1071,11 +1071,15 @@ function GameplayScene:beginContact(fixA, fixB, contact)
     end
     self.score = self.score + hitReward
     if block.kind == "armor" then
-      -- Armor block: grant flat +3 armor
-      self.armorThisTurn = self.armorThisTurn + 3
+      -- Armor block: grant armor from config by HP
+      local rewardByHp = (config.armor and config.armor.rewardByHp) or {}
+      local hp = (block and block.hp) or 1
+      local armorGain = rewardByHp[hp] or rewardByHp[1] or 3
+      self.armorThisTurn = self.armorThisTurn + armorGain
     elseif block.kind == "potion" then
-      -- Potion block heals player for 8 HP
-      self.healThisTurn = self.healThisTurn + 8
+      -- Potion block heals player based on config
+      local healAmount = (config.heal and config.heal.potionHeal) or 8
+      self.healThisTurn = self.healThisTurn + healAmount
     end
   end
   if ball and (aType == "bottom" or bType == "bottom") then

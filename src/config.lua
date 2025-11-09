@@ -189,6 +189,11 @@ config.armor = {
   rewardByHp = { [1] = 3, [2] = 2, [3] = 1 },
 }
 
+-- Healing config
+config.heal = {
+  potionHeal = 8, -- HP restored when hitting a potion block
+}
+
 config.shooter = {
   speed = 520, -- px/s
   radius = 12, -- half-width of diamond from center to a corner

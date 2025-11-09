@@ -414,11 +414,16 @@ function Block:draw()
     valueText = "x4"
     iconToUse = ICON_ATTACK
   elseif self.kind == "armor" then
-    -- Flat armor value
-    valueText = "+3"
+    -- Armor value from config by HP (fallback to +3)
+    local rewardByHp = (config.armor and config.armor.rewardByHp) or {}
+    local hp = self.hp or 1
+    local armorGain = rewardByHp[hp] or rewardByHp[1] or 3
+    valueText = "+" .. tostring(armorGain)
     iconToUse = ICON_ARMOR
   elseif self.kind == "potion" then
-    valueText = "+8"
+    -- Heal value from config (fallback to +8)
+    local healAmount = (config.heal and config.heal.potionHeal) or 8
+    valueText = "+" .. tostring(healAmount)
     iconToUse = ICON_HEAL
   end
   
