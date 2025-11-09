@@ -317,7 +317,8 @@ function RewardsScene:update(dt)
   do
     local hasOrb = (self.orbButton ~= nil)
     local hadGold = ((self.params and self.params.goldReward) or 0) > 0
-    local goldDone = (not hadGold) or (self._goldAnimationComplete and (self._goldButtonFadeAlpha or 0) <= 0)
+    -- Don't leave until the gold counting animation has finished updating the top bar
+    local goldDone = (not hadGold) or (self._goldAnimationComplete and (self._goldButtonFadeAlpha or 0) <= 0 and (not self._goldCounting))
     if (not hasOrb) and goldDone then
       return "return_to_map"
     end
