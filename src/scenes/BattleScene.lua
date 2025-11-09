@@ -393,14 +393,14 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
   
   -- Show base damage first if it exists and we have block hits
   if cumulative > 0 then
-    table.insert(sequence, { text = tostring(cumulative), duration = 0.05 })
+    table.insert(sequence, { text = tostring(cumulative), duration = 0.1 })
   end
   
   -- Calculate cumulative damage from block hits (add to base)
   for i, hit in ipairs(blockHitSequence) do
     cumulative = cumulative + hit.damage
-    -- Show each increment (e.g., 4, 5, 6, 7, 8) - faster animation
-    table.insert(sequence, { text = tostring(cumulative), duration = 0.05 })
+    -- Show each increment (e.g., 4, 5, 6, 7, 8) - doubled duration
+    table.insert(sequence, { text = tostring(cumulative), duration = 0.1 })
   end
   
   -- Apply crit multiplier if any
@@ -408,8 +408,8 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
   if critCount > 0 then
     local critMultiplier = mult ^ critCount
     local afterCrit = cumulative * critMultiplier
-    -- Show multiplier step (e.g., "8x2") - mark as multiplier step
-    table.insert(sequence, { text = tostring(cumulative) .. "x" .. tostring(critMultiplier), duration = 0.08, isMultiplier = true })
+    -- Show multiplier step (e.g., "8x2") - mark as multiplier step, doubled duration
+    table.insert(sequence, { text = tostring(cumulative) .. "x" .. tostring(critMultiplier), duration = 0.24, isMultiplier = true })
     cumulative = afterCrit
   end
   
@@ -417,8 +417,8 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
   if multiplierCount > 0 then
     local dmgMult = (config.score and config.score.damageMultiplier) or 4
     local afterMult = cumulative * dmgMult
-    -- Show multiplier step (e.g., "16x4") - mark as multiplier step
-    table.insert(sequence, { text = tostring(cumulative) .. "x" .. tostring(dmgMult), duration = 0.08, isMultiplier = true })
+    -- Show multiplier step (e.g., "16x4") - mark as multiplier step, doubled duration
+    table.insert(sequence, { text = tostring(cumulative) .. "x" .. tostring(dmgMult), duration = 0.24, isMultiplier = true })
     cumulative = afterMult
   end
   
