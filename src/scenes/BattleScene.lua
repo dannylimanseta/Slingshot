@@ -145,9 +145,11 @@ function BattleScene:load(bounds, battleProfile)
     end
   end
   
-  -- Sync PlayerState with BattleScene's initial HP
+  -- Initialize BattleScene's HP from PlayerState (preserve HP between battles)
   local playerState = PlayerState.getInstance()
-  playerState:setHealth(self.playerHP)
+  self.playerHP = playerState:getHealth()
+  self.displayPlayerHP = self.playerHP
+  -- Ensure max health is set correctly
   playerState:setMaxHealth(config.battle.playerMaxHP)
   
   -- Load player sprite
