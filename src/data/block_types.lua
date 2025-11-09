@@ -34,11 +34,11 @@ block_types.types = {
     description = "Critical hit block (2x damage multiplier)"
   },
   {
-    key = "soul",
-    displayName = "4x Crit",
+    key = "multiplier",
+    displayName = "Multiplier",
     spritePath = "block_crit_2",
     hotkey = 4,
-    description = "Soul block (4x damage multiplier)"
+    description = "Applies damage multiplier (xN from config)"
   },
   {
     key = "aoe",

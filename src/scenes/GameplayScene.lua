@@ -36,7 +36,7 @@ function GameplayScene.new()
     cursorY = 0,
     popups = {},
     critThisTurn = 0, -- count of crit blocks hit this turn
-    soulThisTurn = 0, -- count of soul blocks hit this turn
+    multiplierThisTurn = 0, -- count of multiplier blocks hit this turn
     aoeThisTurn = false, -- true if any AOE blocks were hit this turn
     _prevCanShoot = true,
     turnManager = nil, -- reference to TurnManager (set by SplitScene)
@@ -785,7 +785,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       self.armorThisTurn = 0
       self.healThisTurn = 0
       self.critThisTurn = 0
-      self.soulThisTurn = 0
+      self.multiplierThisTurn = 0
       self.aoeThisTurn = false
       self.blocksHitThisTurn = 0
       -- Reset combo when new shot starts
@@ -1060,9 +1060,9 @@ function GameplayScene:beginContact(fixA, fixB, contact)
     local hitReward = perHit
     if block.kind == "crit" then
       self.critThisTurn = (self.critThisTurn or 0) + 1
-    elseif block.kind == "soul" then
-      -- Soul block gives x4 multiplier (count as soul block)
-      self.soulThisTurn = (self.soulThisTurn or 0) + 1
+    elseif block.kind == "multiplier" then
+      -- Multiplier block marks this turn for damage multiplier
+      self.multiplierThisTurn = (self.multiplierThisTurn or 0) + 1
     elseif block.kind == "aoe" then
       -- AOE block gives +3 bonus damage and marks attack as AOE
       local aoeReward = 3

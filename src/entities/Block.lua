@@ -2,7 +2,7 @@ local theme = require("theme")
 local config = require("config")
 
 -- Shared sprites for blocks (loaded once)
-local SPRITES = { attack = nil, armor = nil, crit = nil, soul = nil, aoe = nil, potion = nil }
+local SPRITES = { attack = nil, armor = nil, crit = nil, multiplier = nil, aoe = nil, potion = nil }
 local ICON_ATTACK = nil
 local ICON_ARMOR = nil
 local ICON_HEAL = nil
@@ -22,7 +22,7 @@ do
   end
   if imgs.block_crit_2 then
     local ok, img = pcall(love.graphics.newImage, imgs.block_crit_2)
-    if ok then SPRITES.soul = img end
+    if ok then SPRITES.multiplier = img end
   end
   if imgs.block_aoe then
     local ok, img = pcall(love.graphics.newImage, imgs.block_aoe)
@@ -280,8 +280,8 @@ function Block:draw()
     sprite = SPRITES.armor
   elseif self.kind == "crit" then
     sprite = SPRITES.crit or SPRITES.attack
-  elseif self.kind == "soul" then
-    sprite = SPRITES.soul or SPRITES.attack
+  elseif self.kind == "multiplier" then
+    sprite = SPRITES.multiplier or SPRITES.attack
   elseif self.kind == "aoe" then
     sprite = SPRITES.aoe or SPRITES.attack
   elseif self.kind == "potion" then
@@ -410,8 +410,9 @@ function Block:draw()
   elseif self.kind == "crit" then
     valueText = "x2"
     iconToUse = ICON_ATTACK
-  elseif self.kind == "soul" then
-    valueText = "x4"
+  elseif self.kind == "multiplier" then
+    local dmgMult = (config.score and config.score.damageMultiplier) or 4
+    valueText = "x" .. tostring(dmgMult)
     iconToUse = ICON_ATTACK
   elseif self.kind == "armor" then
     -- Armor value from config by HP (fallback to +3)

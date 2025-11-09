@@ -28,18 +28,19 @@ love "/path/to/Slingshot"
   3. When ball reaches max bounces OR falls out the bottom, the turn ends
   4. Turn score and armor are applied to the enemy
   5. After a delay, enemy attacks the player
-  6. Destroyed blocks respawn equal to the number destroyed last turn
+  6. Block respawn: if ≤2 blocks were destroyed, respawn exactly 1; if >2, respawn 1–2 randomly
   7. Next turn begins
 
 ## Scoring (Damage)
-- **Base score on shot**: +3 points (configurable via `config.score.baseSeed`)
-- **Per-hit reward**: +1 point for every block hit
-- **Crit blocks**: Award x2 points (shows "x2" popup)
-- Final turn score = base + all hit rewards (with crit multipliers)
-- Enemy takes damage equal to final turn score (1:1 ratio)
+- **Base score on shot**: +3 points (`config.score.baseSeed`)
+- **Per-hit reward**: +1 point for every block hit (`config.score.rewardPerHit`)
+- **Crit blocks**: x2 damage multiplier per crit hit (`config.score.critMultiplier`)
+- **Multiplier blocks**: if any hit this turn, apply a one-time damage multiplier (`config.score.damageMultiplier`, default x4)
+- Final turn score = base + per-hit rewards, then apply crit and (optionally) multiplier
+- Enemy takes damage equal to final turn score (1:1)
 
 ## Block Types
-Blocks spawn with 1 HP and are destroyed in one hit. There are three types:
+Blocks spawn with 1 HP and are destroyed in one hit:
 
 1. **Damage Blocks** (Attack blocks)
    - Standard orange/red blocks
@@ -48,8 +49,7 @@ Blocks spawn with 1 HP and are destroyed in one hit. There are three types:
 2. **Armor Blocks** (Defend blocks)
    - Blue blocks with shield icon
    - Grant temporary armor instead of score:
-     - Blocks spawn at 1 HP → +3 ARM
-     - Additional armor values: 2 HP → +2 ARM, 3 HP → +1 ARM (for future HP scaling)
+     - 1 HP → +3 ARM, 2 HP → +2 ARM, 3 HP → +1 ARM (from `config.armor.rewardByHp`)
    - Armor reduces incoming enemy damage for that turn only
    - Visual indicator appears next to player HP bar
    - Glowing border around HP bar when armor is active
@@ -60,6 +60,18 @@ Blocks spawn with 1 HP and are destroyed in one hit. There are three types:
    - Spawn in upper portion of playfield
    - Award x2 points per hit (shows "x2" popup)
    - Use crit sprite if available, otherwise fallback to attack sprite
+
+4. **Multiplier Blocks**
+   - Rare spawns
+   - If hit this turn, apply a one-time damage multiplier to the turn (`config.score.damageMultiplier`)
+   - Label shows the current multiplier (e.g., x4)
+
+5. **AOE Blocks**
+   - Adds +3 bonus damage on hit and flags the turn as AOE, causing the final damage to hit all enemies
+   - Bonus configurable via code (can be moved to config)
+
+6. **Potion Blocks**
+   - Heals the player (`config.heal.potionHeal`, default 8 HP)
 
 ## Ball Mechanics
 - Ball speeds up slightly on each bounce (+1% per bounce)
@@ -93,11 +105,13 @@ Blocks spawn with 1 HP and are destroyed in one hit. There are three types:
   - Win/lose states: enemy HP ≤ 0 (win), player HP ≤ 0 (lose)
 
 ## Block Respawn System
-- After enemy turn ends, blocks respawn equal to the number destroyed in the last player turn
+- After enemy turn ends:
+  - If ≤2 blocks were destroyed in the last turn, respawn exactly 1
+  - If >2 were destroyed, respawn 1–2 (random)
 - New blocks spawn with animation (soft bounce-in from below)
 - Uses spatial hash for efficient overlap checking
 - Blocks maintain minimum gap spacing
-- Crit blocks only spawn in upper portion of playfield
+- Crit/multiplier blocks only spawn in upper portion of playfield
 
 ## Visual Effects
 - **Ball**: Trail with shader-based soft edges, glow with pulse effect
@@ -131,11 +145,14 @@ All tunables live in `src/config.lua`:
 
 ### Score
 - `score.baseSeed`, `rewardPerHit`, `tickerSpeed`, `critMultiplier`
-- `score.rewardByHp` (maps block HP to score reward - currently unused, reserved for future HP scaling)
+- `score.damageMultiplier` (applied once per turn if any multiplier block is hit)
 - `score.blockPopupLifetime`, `blockPopupFadeStart`, `blockPopupFadeMultiplier`, `blockPopupBounceHeight`
 
 ### Armor
 - `armor.rewardByHp` (maps HP to armor reward)
+
+### Heal
+- `heal.potionHeal` (player heal amount for potion blocks)
 
 ### Battle
 - `battle.playerMaxHP`, `enemyMaxHP`
@@ -150,12 +167,15 @@ All tunables live in `src/config.lua`:
 - `battle.shakeMagnitude`, `shakeDuration`
 - `battle.idleBobScaleY`, `idleBobSpeed`
 
+### Transitions
+- `transition.duration` (default 2.0s), `transition.fadeType` (0 = vertical, used for bottom→top), `transition.gridWidth`, `transition.gridHeight`
+
 ### Shooter
 - `shooter.speed`, `radius`, `spawnYFromBottom`
 - `shooter.aimGuide.*` (enabled, length, dotSpacing, dotRadius, fade, alphaStart, alphaEnd, fadeSpeed)
 
 ### Assets
-- `assets.images.*` (background, player, enemy, block_attack, block_defend, block_crit, icon_armor, icon_attack)
+- `assets.images.*` (background, player, enemy, block_attack, block_defend, block_crit, block_crit_2, block_aoe, block_heal, icons)
 - `assets.fonts.*` (ui)
 
 ## Project Structure

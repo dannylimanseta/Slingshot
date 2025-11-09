@@ -559,8 +559,9 @@ function FormationEditorScene:drawBlock(x, y, kind, size, hp)
   elseif kind == "crit" then
     valueText = "x2"
     iconToUse = ICON_ATTACK
-  elseif kind == "soul" then
-    valueText = "x4"
+  elseif kind == "multiplier" then
+    local dmgMult = (config.score and config.score.damageMultiplier) or 4
+    valueText = "x" .. tostring(dmgMult)
     iconToUse = ICON_ATTACK
   elseif kind == "armor" then
     -- Flat armor value

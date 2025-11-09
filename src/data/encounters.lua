@@ -332,7 +332,7 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "soul",
+                              kind = "multiplier",
                               x = 0.498,
                               y = 0.3
                             },
@@ -434,7 +434,7 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "soul",
+                              kind = "multiplier",
                               x = 0.309,
                               y = 0.3
                             },
@@ -500,7 +500,7 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "soul",
+                              kind = "multiplier",
                               x = 0.693,
                               y = 0.3
                             },
@@ -706,7 +706,7 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "soul",
+                              kind = "multiplier",
                               x = 0.691,
                               y = 0.3
                             },
@@ -917,7 +917,7 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "soul",
+                              kind = "multiplier",
                               x = 0.5,
                               y = 0.37
                             }
@@ -1082,7 +1082,7 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "soul",
+                              kind = "multiplier",
                               x = 0.5,
                               y = 0.37
                             },

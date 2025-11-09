@@ -7,8 +7,8 @@ BlockManager.__index = BlockManager
 function BlockManager.new()
   return setmetatable({ 
     blocks = {},
-    soulBlockSpawned = false, -- Track if soul block has been spawned this battle
-    firstClusterCenter = nil, -- Store center of first large cluster for soul block placement
+    soulBlockSpawned = false, -- Track if multiplier block has been spawned this battle (legacy name)
+    firstClusterCenter = nil, -- Store center of first large cluster for multiplier block placement
     predefinedFormation = nil, -- Store predefined formation slots {x, y, kind, hp} where x,y are normalized
     playfieldWidth = nil, -- Store playfield dimensions used for formation
     playfieldHeight = nil,
@@ -351,7 +351,7 @@ function BlockManager:loadPredefinedFormation(world, width, height, predefined)
     return delay
   end
   
-  -- Track center for soul block placement (use first block's position if no soul block defined)
+  -- Track center for multiplier block placement (use first block's position if no multiplier block defined)
   local centerX, centerY = nil, nil
   local soulBlockIndex = nil
   
@@ -397,8 +397,8 @@ function BlockManager:loadPredefinedFormation(world, width, height, predefined)
       local kind = blockDef.kind or "damage"
       local hp = blockDef.hp or 1
       
-      -- Track soul block for center calculation
-      if kind == "soul" then
+      -- Track multiplier block for center calculation
+      if kind == "multiplier" then
         soulBlockIndex = i
         centerX = worldX
         centerY = worldY
@@ -415,15 +415,15 @@ function BlockManager:loadPredefinedFormation(world, width, height, predefined)
     end
   end
   
-  -- Only auto-spawn soul block for random formations, not user-defined formations
+  -- Only auto-spawn multiplier block for random formations, not user-defined formations
   -- User-defined formations should respect exactly what the user placed
   if not soulBlockIndex and centerX and centerY then
     -- Check if this is a user-defined formation (has predefined blocks)
-    -- If user explicitly created a formation without a soul block, respect that choice
+    -- If user explicitly created a formation without a multiplier block, respect that choice
     -- Only auto-spawn for random formations (handled in randomize function)
     self.soulBlockSpawned = false -- Don't auto-spawn, respect user's formation
   else
-    self.soulBlockSpawned = true -- Already has soul block
+    self.soulBlockSpawned = true -- Already has multiplier block
   end
 end
 
@@ -526,9 +526,9 @@ function BlockManager:randomize(world, width, height, overrideConfig)
     end
   end
   
-  -- Spawn soul block in innermost spot of largest cluster (only once per battle)
+  -- Spawn multiplier block in innermost spot of largest cluster (only once per battle)
   if not self.soulBlockSpawned then
-    local soulBlock = self:spawnSoulBlock(world)
+    local soulBlock = self:spawnMultiplierBlock(world)
     if soulBlock then
       self.soulBlockSpawned = true
     end
@@ -1067,9 +1067,9 @@ local function checkOverlap(cx, cy, existingBlocks, pad, visSize)
   return false, nil
 end
 
--- Spawn a soul block at the center of the largest cluster
--- Returns the soul block if placed, nil otherwise
-function BlockManager:spawnSoulBlock(world)
+-- Spawn a multiplier block at the center of the largest cluster
+-- Returns the block if placed, nil otherwise
+function BlockManager:spawnMultiplierBlock(world)
   local alive = self:aliveBlocks()
   if #alive == 0 then return nil end
   
@@ -1162,7 +1162,7 @@ function BlockManager:spawnSoulBlock(world)
     end
     
     if closestBlock then
-      -- Replace the closest block with soul block at its position
+      -- Replace the closest block with multiplier block at its position
       local oldIndex = nil
       for i, b in ipairs(self.blocks) do
         if b == closestBlock then
@@ -1172,7 +1172,7 @@ function BlockManager:spawnSoulBlock(world)
       end
       
       closestBlock:destroy()
-      local soulBlock = Block.new(world, closestBlock.cx, closestBlock.cy, 1, "soul", { animateSpawn = true, spawnDelay = 0 })
+      local soulBlock = Block.new(world, closestBlock.cx, closestBlock.cy, 1, "multiplier", { animateSpawn = true, spawnDelay = 0 })
       
       if oldIndex then
         self.blocks[oldIndex] = soulBlock
@@ -1184,8 +1184,8 @@ function BlockManager:spawnSoulBlock(world)
     end
   end
   
-  -- Center position is clear, place soul block there
-  local soulBlock = Block.new(world, centerX, centerY, 1, "soul", { animateSpawn = true, spawnDelay = 0 })
+  -- Center position is clear, place multiplier block there
+  local soulBlock = Block.new(world, centerX, centerY, 1, "multiplier", { animateSpawn = true, spawnDelay = 0 })
   table.insert(self.blocks, soulBlock)
   
   return soulBlock

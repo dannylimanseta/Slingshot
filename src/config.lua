@@ -169,9 +169,10 @@ config.score = {
   baseSeed = 3,
   rewardByHp = { [5] = 1, [4] = 2, [3] = 3, [2] = 4, [1] = 5 },
   rewardPerHit = 1,
-  soulReward = 25, -- bonus damage when soul block is hit
   tickerSpeed = 10, -- points per second smoothing toward current score (base speed)
   critMultiplier = 2,
+  -- Apply once if a soul block was hit this turn
+  damageMultiplier = 4,
   blockPopupLifetime = 0.8,
   blockPopupFadeMultiplier = 0.5, -- 50% faster fade within fade window (1.0 = baseline)
   blockPopupFadeStart = 0.7, -- start fading at 70% of lifetime (last 30%)

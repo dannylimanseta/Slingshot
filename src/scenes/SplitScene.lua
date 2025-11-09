@@ -274,17 +274,17 @@ function SplitScene:endPlayerTurnWithTurnManager()
   local turnScore = self.left and self.left.score or 0
   local mult = (config.score and config.score.critMultiplier) or 2
   local critCount = (self.left and self.left.critThisTurn) or 0
-  local soulCount = (self.left and self.left.soulThisTurn) or 0
+  local multiplierCount = (self.left and self.left.multiplierThisTurn) or 0
   
   -- Apply crit multiplier (2x per crit)
   if critCount > 0 then
     turnScore = turnScore * (mult ^ critCount)
   end
   
-  -- Apply soul multiplier (4x per soul block)
-  if soulCount > 0 then
-    local soulMult = 4
-    turnScore = turnScore * (soulMult ^ soulCount)
+  -- Apply simple damage multiplier once if any multiplier block was hit
+  if multiplierCount > 0 then
+    local dmgMult = (config.score and config.score.damageMultiplier) or 4
+    turnScore = turnScore * dmgMult
   end
   
   local armor = self.left and self.left.armorThisTurn or 0
