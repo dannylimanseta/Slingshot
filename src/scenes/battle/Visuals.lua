@@ -781,8 +781,6 @@ function Visuals.draw(scene, bounds)
       local currentStep = p.sequence[sequenceIndex]
       if currentStep then
         local displayText = currentStep.text or ""
-        -- Use wider width to accommodate larger numbers (e.g., "44!", "128x4", etc.)
-        local textWidth = math.max(120, theme.fonts.large:getWidth(displayText) + 20) -- Dynamic width with padding
         
         -- Use DCC275 color (220, 194, 117) for multiplier steps, otherwise use default white
         local stepR, stepG, stepB = r1, g1, b1
@@ -818,17 +816,125 @@ function Visuals.draw(scene, bounds)
         local finalStep = p.sequence[#p.sequence]
         local hasExclamation = finalStep and finalStep.text and string.find(finalStep.text, "!") ~= nil
         
-        if isFinalStep and hasExclamation and p.shakeTime then
-          -- Draw with rotation around center point
-          love.graphics.push()
-          love.graphics.translate(centerX + shakeX, centerY + shakeY)
-          love.graphics.rotate(rotation)
-          love.graphics.translate(-textWidth * 0.5, 0)
-          theme.printfWithOutline(displayText, 0, 0, textWidth, "center", stepR, stepG, stepB, alpha, 2)
-          love.graphics.pop()
+        -- Handle multiplier text with sequential character bounces
+        if currentStep.isMultiplier and p.charBounceTimers then
+          -- Parse multiplier text (e.g., "5x2" into "5", "x", "2")
+          local multiplierText = displayText
+          local firstNum, xChar, secondNum = multiplierText:match("^(%d+)(x)(%d+)$")
+          
+          if firstNum and xChar and secondNum then
+            -- Initialize multiplier target if not set
+            if not p.multiplierTarget then
+              p.multiplierTarget = tonumber(secondNum)
+            end
+            
+            -- Calculate character bounce offsets
+            -- Use longer duration for multiplier animation to ensure it completes
+            local charBounceDuration = 0.4 -- Longer duration to ensure animation completes
+            local charBounceHeight = 25
+            local charOffsets = {}
+            
+            for i = 1, 3 do
+              local charTimer = p.charBounceTimers[i] or 0
+              local charProgress = math.min(1, charTimer / charBounceDuration)
+              if charProgress > 0 then
+                local c1, c3 = 1.70158, 2.70158
+                local u = (charProgress - 1)
+                local bounce = 1 + c3 * (u * u * u) + c1 * (u * u)
+                charOffsets[i] = (1 - bounce) * charBounceHeight
+              else
+                charOffsets[i] = 0
+              end
+            end
+            
+            -- Show final multiplier number directly (no animation)
+            local displaySecondNum = tostring(p.multiplierTarget)
+            
+            -- Get font for measuring
+            local font = theme.fonts.large
+            love.graphics.setFont(font)
+            
+            -- Calculate positions for each character
+            -- Use target multiplier for width calculation to prevent layout shift
+            local targetSecondNum = tostring(p.multiplierTarget)
+            local firstNumW = font:getWidth(firstNum)
+            local xCharW = font:getWidth(xChar)
+            local secondNumW = font:getWidth(targetSecondNum) -- Use target width for stable layout
+            local totalWidth = firstNumW + xCharW + secondNumW
+            
+            local startX = centerX - totalWidth * 0.5
+            local firstNumX = startX + firstNumW * 0.5
+            local xCharX = startX + firstNumW + xCharW * 0.5
+            local secondNumX = startX + firstNumW + xCharW + secondNumW * 0.5
+            
+            -- Draw each character with its own bounce offset
+            local baseY = centerY + shakeY
+            
+            -- Draw first number
+            love.graphics.push()
+            if isFinalStep and hasExclamation and p.shakeTime then
+              love.graphics.translate(firstNumX + shakeX, baseY)
+              love.graphics.rotate(rotation)
+              love.graphics.translate(-firstNumW * 0.5, charOffsets[1])
+            else
+              love.graphics.translate(firstNumX + shakeX, baseY + charOffsets[1])
+            end
+            theme.printfWithOutline(firstNum, -firstNumW * 0.5, 0, firstNumW, "center", stepR, stepG, stepB, alpha, 2)
+            love.graphics.pop()
+            
+            -- Draw "x" character
+            love.graphics.push()
+            if isFinalStep and hasExclamation and p.shakeTime then
+              love.graphics.translate(xCharX + shakeX, baseY)
+              love.graphics.rotate(rotation)
+              love.graphics.translate(-xCharW * 0.5, charOffsets[2])
+            else
+              love.graphics.translate(xCharX + shakeX, baseY + charOffsets[2])
+            end
+            theme.printfWithOutline(xChar, -xCharW * 0.5, 0, xCharW, "center", stepR, stepG, stepB, alpha, 2)
+            love.graphics.pop()
+            
+            -- Draw second number (animated)
+            love.graphics.push()
+            if isFinalStep and hasExclamation and p.shakeTime then
+              love.graphics.translate(secondNumX + shakeX, baseY)
+              love.graphics.rotate(rotation)
+              love.graphics.translate(-secondNumW * 0.5, charOffsets[3])
+            else
+              love.graphics.translate(secondNumX + shakeX, baseY + charOffsets[3])
+            end
+            theme.printfWithOutline(displaySecondNum, -secondNumW * 0.5, 0, secondNumW, "center", stepR, stepG, stepB, alpha, 2)
+            love.graphics.pop()
+          else
+            -- Fallback: draw normally if parsing fails
+            local textWidth = math.max(120, theme.fonts.large:getWidth(displayText) + 20)
+            if isFinalStep and hasExclamation and p.shakeTime then
+              love.graphics.push()
+              love.graphics.translate(centerX + shakeX, centerY + shakeY)
+              love.graphics.rotate(rotation)
+              love.graphics.translate(-textWidth * 0.5, 0)
+              theme.printfWithOutline(displayText, 0, 0, textWidth, "center", stepR, stepG, stepB, alpha, 2)
+              love.graphics.pop()
+            else
+              theme.printfWithOutline(displayText, centerX - textWidth * 0.5 + shakeX, centerY + shakeY, textWidth, "center", stepR, stepG, stepB, alpha, 2)
+            end
+          end
         else
-          -- Draw without rotation, just apply shake
-          theme.printfWithOutline(displayText, centerX - textWidth * 0.5 + shakeX, centerY + shakeY, textWidth, "center", stepR, stepG, stepB, alpha, 2)
+          -- Non-multiplier text: draw normally
+          local textWidth = math.max(120, theme.fonts.large:getWidth(displayText) + 20) -- Dynamic width with padding
+          
+          if isFinalStep and hasExclamation and p.shakeTime then
+            -- Draw with rotation around center point
+            love.graphics.push()
+            love.graphics.translate(centerX + shakeX, centerY + shakeY)
+            love.graphics.rotate(rotation)
+            love.graphics.translate(-textWidth * 0.5, 0)
+            theme.printfWithOutline(displayText, 0, 0, textWidth, "center", stepR, stepG, stepB, alpha, 2)
+            love.graphics.pop()
+          else
+            -- Draw without rotation, just apply shake
+            theme.printfWithOutline(displayText, centerX - textWidth * 0.5 + shakeX, centerY + shakeY, textWidth, "center", stepR, stepG, stepB, alpha, 2)
+          end
         end
       end
     else

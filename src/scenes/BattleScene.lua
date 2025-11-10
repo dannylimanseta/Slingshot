@@ -467,8 +467,8 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
   if critCount > 0 then
     local critMultiplier = mult ^ critCount
     local afterCrit = cumulative * critMultiplier
-    -- Show multiplier step (e.g., "8x2") - mark as multiplier step, doubled duration
-    table.insert(sequence, { text = tostring(cumulative) .. "x" .. tostring(critMultiplier), duration = 0.24, isMultiplier = true })
+    -- Show multiplier step (e.g., "8x2") - mark as multiplier step, longer duration for visibility
+    table.insert(sequence, { text = tostring(cumulative) .. "x" .. tostring(critMultiplier), duration = 0.4, isMultiplier = true })
     cumulative = afterCrit
   end
   
@@ -476,8 +476,8 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
   if multiplierCount > 0 then
     local dmgMult = (config.score and config.score.powerCritMultiplier) or 4
     local afterMult = cumulative * dmgMult
-    -- Show multiplier step (e.g., "16x4") - mark as multiplier step, doubled duration
-    table.insert(sequence, { text = tostring(cumulative) .. "x" .. tostring(dmgMult), duration = 0.24, isMultiplier = true })
+    -- Show multiplier step (e.g., "16x4") - mark as multiplier step, longer duration for visibility
+    table.insert(sequence, { text = tostring(cumulative) .. "x" .. tostring(dmgMult), duration = 0.4, isMultiplier = true })
     cumulative = afterMult
   end
   
@@ -755,12 +755,35 @@ function BattleScene:update(dt, bounds)
         end
       end
       
-      -- Update bounce timer (for bounce animation on step changes)
-      -- Initialize bounce timer if not set (for first step)
-      if p.bounceTimer == nil then
-        p.bounceTimer = 0
-      end
-      p.bounceTimer = p.bounceTimer + dt
+        -- Update bounce timer (for bounce animation on step changes)
+        -- Initialize bounce timer if not set (for first step)
+        if p.bounceTimer == nil then
+          p.bounceTimer = 0
+        end
+        p.bounceTimer = p.bounceTimer + dt
+        
+        -- Initialize and update character bounce timers for multiplier steps
+        if currentStep and currentStep.isMultiplier then
+          -- Initialize character bounce timers when multiplier step first appears
+          if not p.charBounceTimers then
+            p.charBounceTimers = { 0, 0, 0 } -- Initialize timers for each character part
+            p.multiplierTarget = nil -- Will be set when parsing multiplier text
+          end
+          
+          -- Update character bounce timers with sequential delays
+          local charBounceDelay = 0.08 -- Delay between each character bounce
+          -- Use a separate timer for multiplier animation that doesn't reset
+          if not p.multiplierStartTime then
+            p.multiplierStartTime = p.sequenceTimer or 0
+          end
+          local multiplierElapsed = (p.sequenceTimer or 0) - p.multiplierStartTime
+          
+          for i = 1, #p.charBounceTimers do
+            if multiplierElapsed >= (i - 1) * charBounceDelay then
+              p.charBounceTimers[i] = (p.charBounceTimers[i] or 0) + dt
+            end
+          end
+        end
       
       -- Check if we're on the final step with exclamation mark - add shake effect
       local isFinalStep = (p.sequenceIndex == #p.sequence)
