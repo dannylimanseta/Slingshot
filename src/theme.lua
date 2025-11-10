@@ -149,23 +149,31 @@ do
   local supersamplingFactor = getSupersamplingFactor()
   -- Increased base font size from 20 to 24 for better readability in UI elements
   local baseSize = 24
-  local base, large, popup, jackpot
+  local tiny, small, base, large, popup, jackpot
   if fontPath then
+    local ok00, f00 = pcall(love.graphics.newFont, fontPath, 10 * supersamplingFactor)
+    local ok0, f0 = pcall(love.graphics.newFont, fontPath, 16 * supersamplingFactor)
     local ok1, f1 = pcall(love.graphics.newFont, fontPath, baseSize * supersamplingFactor)
     local ok2, f2 = pcall(love.graphics.newFont, fontPath, 67 * supersamplingFactor)
     local ok3, f3 = pcall(love.graphics.newFont, fontPath, 40 * supersamplingFactor)
     local ok4, f4 = pcall(love.graphics.newFont, fontPath, 80 * supersamplingFactor)
+    if ok00 then tiny = wrapFont(f00, supersamplingFactor) end
+    if ok0 then small = wrapFont(f0, supersamplingFactor) end
     if ok1 then base = wrapFont(f1, supersamplingFactor) end
     if ok2 then large = wrapFont(f2, supersamplingFactor) end
     if ok3 then popup = wrapFont(f3, supersamplingFactor) end
     if ok4 then jackpot = wrapFont(f4, supersamplingFactor) end
   end
+  if not tiny then tiny = wrapFont(love.graphics.newFont(10 * supersamplingFactor), supersamplingFactor) end
+  if not small then small = wrapFont(love.graphics.newFont(16 * supersamplingFactor), supersamplingFactor) end
   if not base then base = wrapFont(love.graphics.newFont(baseSize * supersamplingFactor), supersamplingFactor) end
   if not large then large = wrapFont(love.graphics.newFont(67 * supersamplingFactor), supersamplingFactor) end
   if not popup then popup = wrapFont(love.graphics.newFont(40 * supersamplingFactor), supersamplingFactor) end
   if not jackpot then jackpot = wrapFont(love.graphics.newFont(100 * supersamplingFactor), supersamplingFactor) end
   
   theme.fonts = {
+    tiny = tiny,
+    small = small,
     base = base,
     large = large,
     popup = popup,

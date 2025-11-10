@@ -270,9 +270,7 @@ function Visuals.draw(scene, bounds)
         local currentHP = enemy.displayHP or enemy.hp
         Bar:draw(enemyBarX, barY, enemyBarW, barH, currentHP, maxHP, barColor, barAlpha)
 
-        local enemyLabel = (enemy and enemy.name) or (i == 1 and "Enemy" or ("Enemy " .. i))
-        love.graphics.setColor(theme.colors.uiText[1], theme.colors.uiText[2], theme.colors.uiText[3], theme.colors.uiText[4] * barAlpha)
-        drawCenteredText(enemyLabel, enemyBarX, barY + barH + 6, enemyBarW)
+        -- Enemy name will be drawn after fog shader to appear above it
         love.graphics.pop()
         love.graphics.setColor(1, 1, 1, 1)
       end
@@ -345,6 +343,37 @@ function Visuals.draw(scene, bounds)
     love.graphics.rectangle("fill", 0, 0, w, h)
     love.graphics.setShader()
     love.graphics.pop()
+  end
+
+  -- Draw enemy names after fog shader (so they appear above it)
+  love.graphics.setFont(theme.fonts.base) -- Use smaller font for enemy names
+  for i, pos in ipairs(enemyPositions) do
+    local enemy = pos.enemy
+    if enemy.hp > 0 or enemy.disintegrating or enemy.pendingDisintegration then
+      local enemyBarW = pos.width * 0.7 -- 70% of sprite width
+      local enemyBarX = pos.curX - enemyBarW * 0.5
+      
+      local barAlpha = 1.0
+      if enemy.disintegrating then
+        local cfg = config.battle.disintegration or {}
+        local duration = cfg.duration or 1.5
+        local progress = math.min(1, (enemy.disintegrationTime or 0) / duration)
+        barAlpha = math.max(0, 1.0 - (progress / 0.7))
+      end
+
+      if barAlpha > 0 then
+        local enemyLabel = (enemy and enemy.name) or (i == 1 and "Enemy" or ("Enemy " .. i))
+        love.graphics.setColor(theme.colors.uiText[1], theme.colors.uiText[2], theme.colors.uiText[3], theme.colors.uiText[4] * barAlpha)
+        -- Use smaller scale for enemy names (0.7x)
+        love.graphics.push()
+        love.graphics.translate(enemyBarX + enemyBarW * 0.5, barY + barH + 6)
+        love.graphics.scale(0.7, 0.7)
+        love.graphics.translate(-enemyBarW * 0.5, 0)
+        theme.printfWithOutline(enemyLabel, 0, 0, enemyBarW, "center", theme.colors.uiText[1], theme.colors.uiText[2], theme.colors.uiText[3], theme.colors.uiText[4] * barAlpha, 2)
+        love.graphics.pop()
+        love.graphics.setColor(1, 1, 1, 1)
+      end
+    end
   end
 
   -- Player sprite or fallback

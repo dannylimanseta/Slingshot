@@ -403,16 +403,19 @@ function Block:draw()
   
   -- Draw value text label on blocks (attack or armor)
   local valueText = nil
+  local cornerLabel = nil
   local iconToUse = nil
   if self.kind == "damage" or self.kind == "attack" then
     valueText = "+1"
     iconToUse = ICON_ATTACK
   elseif self.kind == "crit" then
     valueText = "x2"
+    cornerLabel = "x2"
     iconToUse = ICON_ATTACK
   elseif self.kind == "multiplier" then
     local dmgMult = (config.score and config.score.powerCritMultiplier) or 4
     valueText = "x" .. tostring(dmgMult)
+    cornerLabel = valueText
     iconToUse = ICON_ATTACK
   elseif self.kind == "armor" then
     -- Armor value from config by HP (fallback to +3)
@@ -435,7 +438,7 @@ function Block:draw()
     local baseTextHeight = baseFont:getHeight()
     local textScale = 0.7
     local textHeight = baseTextHeight * textScale
-    local iconSize = textHeight * 0.9
+    local iconSize = textHeight * 0.9 * 0.85 * 0.85
     local iconW, iconH = iconToUse:getDimensions()
     local iconScale = iconSize / math.max(iconW, iconH)
     -- Center icon horizontally; keep slight vertical lift (armor a touch higher)
@@ -454,6 +457,35 @@ function Block:draw()
     love.graphics.draw(iconToUse, iconX, iconY, 0, iconScale, iconScale, 0, 0)
     love.graphics.setShader()
     love.graphics.pop()
+  end
+  
+  -- Draw small top-right corner label for crit/multiplier (e.g., x2, x4)
+  if cornerLabel then
+    local font = (theme.fonts and (theme.fonts.tiny or theme.fonts.small)) or theme.fonts.base or love.graphics.getFont()
+    love.graphics.setFont(font)
+    local textW = font:getWidth(cornerLabel)
+    local textH = font:getHeight()
+    local marginX = 6
+    local marginY = 2
+    local drawX, drawY
+    if sprite then
+      -- Use sprite bounds for positioning
+      local iw, ih = sprite:getWidth(), sprite:getHeight()
+      local s = self.size / math.max(1, math.max(iw, ih))
+      local mul = (config.blocks and config.blocks.spriteScale) or 1
+      s = s * mul
+      local dx = (self.cx + xOffset) - iw * s * 0.5
+      local dy = (self.cy + yOffset) - ih * s * 0.5
+      drawX = dx + iw * s - textW - marginX
+      drawY = dy + marginY
+    else
+      -- Use rectangle AABB
+      drawX = (x + xOffset) + w - textW - marginX
+      drawY = (y + yOffset) + marginY
+    end
+    drawX = drawX + 2
+    love.graphics.setColor(0, 0, 0, 0.5 * alpha)
+    love.graphics.print(cornerLabel, math.floor(drawX + 0.5), math.floor(drawY + 0.5))
   end
   
   -- Reset color for other draw calls

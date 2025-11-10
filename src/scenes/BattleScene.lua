@@ -668,7 +668,7 @@ function BattleScene:update(dt, bounds)
       end
     end
   end
-
+  
   -- Update enemy disintegration effects
   for _, enemy in ipairs(self.enemies or {}) do
     if enemy.disintegrating then
@@ -755,12 +755,12 @@ function BattleScene:update(dt, bounds)
         end
       end
       
-        -- Update bounce timer (for bounce animation on step changes)
-        -- Initialize bounce timer if not set (for first step)
-        if p.bounceTimer == nil then
-          p.bounceTimer = 0
-        end
-        p.bounceTimer = p.bounceTimer + dt
+      -- Update bounce timer (for bounce animation on step changes)
+      -- Initialize bounce timer if not set (for first step)
+      if p.bounceTimer == nil then
+        p.bounceTimer = 0
+      end
+      p.bounceTimer = p.bounceTimer + dt
         
         -- Initialize and update character bounce timers for multiplier steps
         if currentStep and currentStep.isMultiplier then
@@ -1348,7 +1348,7 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
           shouldShockwave = true
         else
           -- Fallback: Check if enemy_1 (crawler) should do shockwave (30% chance)
-          local isEnemy1 = enemy.spritePath == "enemy_1.png"
+        local isEnemy1 = enemy.spritePath == "enemy_1.png"
           shouldShockwave = isEnemy1 and (love.math.random() < 0.3)
         end
         

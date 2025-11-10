@@ -578,7 +578,7 @@ function FormationEditorScene:drawBlock(x, y, kind, size, hp)
     local baseTextHeight = baseFont:getHeight()
     local textScale = 0.7
     local textHeight = baseTextHeight * textScale
-    local iconSize = textHeight * 0.9
+    local iconSize = textHeight * 0.9 * 0.85 * 0.85
     local iconW, iconH = iconToUse:getDimensions()
     local iconScale = iconSize / math.max(iconW, iconH)
     local iconXOffset = (kind == "armor") and 2 or ((kind == "potion") and 2 or 0)
@@ -590,6 +590,45 @@ function FormationEditorScene:drawBlock(x, y, kind, size, hp)
     love.graphics.setColor(0, 0, 0, 0.5)
     love.graphics.draw(iconToUse, iconX, iconY, 0, iconScale, iconScale, 0, 0)
     love.graphics.pop()
+  end
+  
+  -- Draw small top-right corner label for crit/multiplier in editor preview
+  local cornerLabel = nil
+  if kind == "crit" then
+    cornerLabel = "x2"
+  elseif kind == "multiplier" then
+    local dmgMult = (config.score and config.score.powerCritMultiplier) or 4
+    cornerLabel = "x" .. tostring(dmgMult)
+  end
+  if cornerLabel then
+    local font = (theme.fonts and (theme.fonts.tiny or theme.fonts.small)) or theme.fonts.base or love.graphics.getFont()
+    love.graphics.setFont(font)
+    local textW = font:getWidth(cornerLabel)
+    local marginX = 6
+    local marginY = 2
+    local sprite = SPRITES[kind] or SPRITES["damage"]
+    if sprite then
+      local iw, ih = sprite:getWidth(), sprite:getHeight()
+      local baseSize = config.blocks.baseSize
+      local s = baseSize / math.max(1, math.max(iw, ih))
+      local mul = (config.blocks and config.blocks.spriteScale) or 1
+      s = s * mul
+      local dx = x - iw * s * 0.5
+      local dy = y - ih * s * 0.5
+      local drawX = dx + iw * s - textW - marginX
+      local drawY = dy + marginY
+      drawX = drawX + 2
+      love.graphics.setColor(0, 0, 0, 0.5)
+      love.graphics.print(cornerLabel, math.floor(drawX + 0.5), math.floor(drawY + 0.5))
+    else
+      local halfSize = size * 0.5
+      local drawX = (x + halfSize) - textW - marginX
+      local drawY = (y - halfSize) + marginY
+      drawX = drawX + 2
+      love.graphics.setColor(0, 0, 0, 0.5)
+      love.graphics.print(cornerLabel, math.floor(drawX + 0.5), math.floor(drawY + 0.5))
+    end
+    love.graphics.setColor(1, 1, 1, 1)
   end
 end
 
