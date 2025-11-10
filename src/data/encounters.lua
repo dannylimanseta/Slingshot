@@ -1189,7 +1189,6 @@ local ENCOUNTERS = {
   {
       id = "ENCOUNTER_STAGMAW_DOUBLE_FAWN",
       difficulty = 2,
-      elite = true,
       centerWidthFactor = 0.43,
       enemies = {
             "fawn",
@@ -1237,25 +1236,7 @@ local ENCOUNTERS = {
                     {
                               hp = 1,
                               kind = "damage",
-                              x = 0.279,
-                              y = 0.406
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
                               x = 0.342,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.405,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.595,
                               y = 0.477
                             },
                     {
@@ -1299,12 +1280,6 @@ local ENCOUNTERS = {
                               kind = "damage",
                               x = 0.847,
                               y = 0.262
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.721,
-                              y = 0.406
                             },
                     {
                               hp = 1,
@@ -1370,12 +1345,6 @@ local ENCOUNTERS = {
                               hp = 1,
                               kind = "armor",
                               x = 0.595,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
-                              kind = "armor",
-                              x = 0.595,
                               y = 0.549
                             },
                     {
@@ -1395,12 +1364,6 @@ local ENCOUNTERS = {
                               kind = "armor",
                               x = 0.405,
                               y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "armor",
-                              x = 0.405,
-                              y = 0.621
                             },
                     {
                               hp = 1,
@@ -1497,10 +1460,107 @@ local ENCOUNTERS = {
                               kind = "multiplier",
                               x = 0.595,
                               y = 0.119
+                            },
+                    {
+                              hp = 1,
+                              kind = "aoe",
+                              x = 0.405,
+                              y = 0.477
+                            },
+                    {
+                              hp = 1,
+                              kind = "aoe",
+                              x = 0.595,
+                              y = 0.477
+                            },
+                    {
+                              hp = 1,
+                              kind = "aoe",
+                              x = 0.721,
+                              y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "aoe",
+                              x = 0.279,
+                              y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.658,
+                              y = 0.621
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.595,
+                              y = 0.692
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.342,
+                              y = 0.621
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.405,
+                              y = 0.692
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.468,
+                              y = 0.764
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.532,
+                              y = 0.764
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.595,
+                              y = 0.764
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.405,
+                              y = 0.764
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.468,
+                              y = 0.836
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.532,
+                              y = 0.836
+                            },
+                    {
+                              hp = 1,
+                              kind = "crit",
+                              x = 0.595,
+                              y = 0.621
+                            },
+                    {
+                              hp = 1,
+                              kind = "crit",
+                              x = 0.405,
+                              y = 0.621
                             }
                   },
             type = "predefined"
-          }
+          },
+      elite = true
     }
 }
 
