@@ -509,6 +509,40 @@ function Visuals.draw(scene, bounds)
           brightnessMultiplier = 1 + math.sin(enemy.pulseTime or 0) * variation
         end
         
+        -- Draw glow behind selected enemy (before any transformations)
+        local enemyY = pos.curY or pos.y -- Use curY if available (for jump animation)
+        if scene.selectedEnemyIndex == i and scene.glowSelectedImg then
+          local glowAlpha = 1.0
+          if enemy.disintegrating then
+            local cfg = config.battle.disintegration or {}
+            local duration = cfg.duration or 1.5
+            local progress = math.min(1, (enemy.disintegrationTime or 0) / duration)
+            glowAlpha = math.max(0, 1.0 - (progress / 0.7))
+          end
+          
+          if glowAlpha > 0 then
+            local glowImg = scene.glowSelectedImg
+            local glowW, glowH = glowImg:getWidth(), glowImg:getHeight()
+            -- Use constant scale for consistent positioning across all enemies
+            local constantGlowWidth = 100 -- Fixed width in pixels
+            local glowScale = (constantGlowWidth / glowW) * 1.5 -- 1.5x size increase
+            
+            -- Bobbing animation: same as selected indicator
+            local bobSpeed = 1.0 -- Speed of bobbing (slowed down by 50%)
+            local bobAmplitude = 1 -- Amplitude in pixels (reduced for subtler movement)
+            local bobOffset = math.sin((scene.idleT or 0) * bobSpeed * 2 * math.pi) * bobAmplitude
+            
+            love.graphics.push("all")
+            love.graphics.setBlendMode("add")
+            love.graphics.setColor(1, 1, 1, glowAlpha * 0.6) -- Reduced opacity to 0.6
+            -- Position glow from bottom-center pivot to match enemy sprite pivot (iw * 0.5, ih)
+            -- Shift down by 12px and apply bobbing animation
+            -- Increase width and height by 20%
+            love.graphics.draw(glowImg, pos.curX, enemyY + 19 + bobOffset, 0, glowScale * 1.2, glowScale * 1.2, glowW * 0.5, glowH)
+            love.graphics.pop()
+          end
+        end
+        
         -- Calculate backward skew when hit (shear backwards)
         local skewX = 0
         if enemy.flash and enemy.flash > 0 and not enemy.disintegrating then
@@ -521,13 +555,11 @@ function Visuals.draw(scene, bounds)
         love.graphics.push()
         -- Apply skew around the sprite's bottom-center pivot point
         if skewX ~= 0 then
-          local enemyY = pos.curY or pos.y
           love.graphics.translate(pos.curX, enemyY)
           love.graphics.shear(skewX, 0)
           love.graphics.translate(-pos.curX, -enemyY)
         end
         
-        local enemyY = pos.curY or pos.y -- Use curY if available (for jump animation)
         if enemy.flash and enemy.flash > 0 and not enemy.disintegrating and scene.whiteSilhouetteShader then
           -- Solid white silhouette (override base sprite)
           love.graphics.setShader(scene.whiteSilhouetteShader)
@@ -710,7 +742,9 @@ function Visuals.draw(scene, bounds)
         if barAlpha > 0 then
           local indicatorImg = scene.selectedIndicatorImg
           local indicatorW, indicatorH = indicatorImg:getWidth(), indicatorImg:getHeight()
-          local indicatorScale = (enemyBarW * 0.9) / indicatorW -- Scale to 90% of HP bar width
+          -- Use constant width instead of scaling based on enemy sprite size
+          local constantIndicatorWidth = 120 -- Fixed width in pixels (2x size)
+          local indicatorScale = constantIndicatorWidth / indicatorW
           
           -- Bobbing animation: slight up and down movement
           local bobSpeed = 1.0 -- Speed of bobbing (slowed down by 50%)

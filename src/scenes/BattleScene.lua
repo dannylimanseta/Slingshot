@@ -154,6 +154,7 @@ function BattleScene.new()
     -- Enemy selection
     selectedEnemyIndex = 1, -- Index of currently selected enemy (1 = leftmost)
     selectedIndicatorImg = nil, -- Image for selection indicator
+    glowSelectedImg = nil, -- Image for glow effect behind selected character
     -- Particle system
     particles = ParticleManager.new(),
   }, BattleScene)
@@ -285,6 +286,15 @@ function BattleScene:load(bounds, battleProfile)
     self.selectedIndicatorImg = img
   else
     self.selectedIndicatorImg = nil
+  end
+  
+  -- Load glow image for selected character
+  local glowPath = "assets/images/fx/glow_selected.png"
+  local okGlow, glowImg = pcall(love.graphics.newImage, glowPath)
+  if okGlow then
+    self.glowSelectedImg = glowImg
+  else
+    self.glowSelectedImg = nil
   end
   
   -- Load splatter images for hit effects (pool for randomization)
