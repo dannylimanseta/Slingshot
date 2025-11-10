@@ -573,7 +573,7 @@ function Visuals.draw(scene, bounds)
       
       if intentIcon then
         local iconW, iconH = intentIcon:getWidth(), intentIcon:getHeight()
-        local iconScale = 0.4 -- Scale factor for intent icons
+        local iconScale = 0.34 -- Scale factor for intent icons (reduced by 15% from 0.4)
         local enemyY = pos.curY or pos.y -- This is the BOTTOM of the sprite (pivot point)
         
         -- Calculate enemy sprite height accounting for scaling and bobbing animation
@@ -649,7 +649,7 @@ function Visuals.draw(scene, bounds)
           local textX = iconRightEdge + gapWidth
           -- Align text center with icon center (love.graphics.print uses baseline, so adjust)
           local iconCenterY = iconY + bobOffset -- Icon center Y
-          local textY = iconCenterY + textH * -0.3 -- Adjust for text baseline to center with icon
+          local textY = iconCenterY + textH * -0.28 -- Adjust for text baseline to center with icon
           
           -- Draw text in white with fade
           love.graphics.setColor(1, 1, 1, alpha)
