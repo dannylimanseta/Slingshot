@@ -1188,7 +1188,8 @@ local ENCOUNTERS = {
     },
   {
       id = "ENCOUNTER_STAGMAW_DOUBLE_FAWN",
-      difficulty = 3,
+      difficulty = 2,
+      elite = true,
       centerWidthFactor = 0.43,
       enemies = {
             "fawn",

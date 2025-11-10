@@ -52,10 +52,21 @@ function MapManager:loadSprites()
       love.graphics.newImage("assets/images/map/stone_2.png"),
       love.graphics.newImage("assets/images/map/stone_3.png"),
     },
-    enemy = love.graphics.newImage("assets/images/map/enemy_1.png"),
+    enemy = {
+      love.graphics.newImage("assets/images/map/enemy_1.png"), -- Regular enemy (70%)
+    },
     rest = love.graphics.newImage("assets/images/map/rest_1.png"),
     event = love.graphics.newImage("assets/images/map/event_1.png"),
   }
+
+  -- Load elite enemy sprite with error handling
+  local okElite, eliteSprite = pcall(love.graphics.newImage, "assets/images/map/enemy_elite_1.png")
+  if okElite and eliteSprite then
+    self.sprites.enemy[2] = eliteSprite -- Elite enemy (30%)
+  else
+    -- Fallback to regular enemy sprite if elite sprite doesn't exist
+    self.sprites.enemy[2] = self.sprites.enemy[1]
+  end
 
   local ok, merchantSprite = pcall(love.graphics.newImage, "assets/images/map/merchant_1.png")
   if ok and merchantSprite then
@@ -865,7 +876,12 @@ function MapManager:_placeEnemies(pathTiles, pathSet, groupCfg, occupied)
         local tile = self:getTile(candidate.x, candidate.y)
         if tile then
           tile.type = MapManager.TileType.ENEMY
-          tile.spriteVariant = nil
+          -- Randomly assign sprite variant: 30% elite (variant 2), 70% regular (variant 1)
+          if love.math.random() < 0.3 then
+            tile.spriteVariant = 2 -- Elite enemy
+          else
+            tile.spriteVariant = 1 -- Regular enemy
+          end
           tile.decoration = nil
           occupied[candidate.key] = true
           candidate.used = true
@@ -1051,7 +1067,18 @@ function MapManager:completeMovement()
 
     local tile = self:getTile(self.playerGridX, self.playerGridY)
     if tile and tile.type == MapManager.TileType.ENEMY then
-      local encounterId = EncounterManager.pickRandomEncounterId()
+      -- Check if this is an elite enemy node (spriteVariant == 2)
+      local isElite = tile.spriteVariant == 2
+      
+      -- Filter encounters: if elite node, only pick elite encounters
+      local filterFn = nil
+      if isElite then
+        filterFn = function(enc)
+          return enc.elite == true
+        end
+      end
+      
+      local encounterId = EncounterManager.pickRandomEncounterId(filterFn)
       if encounterId then
         EncounterManager.setEncounterById(encounterId)
       else

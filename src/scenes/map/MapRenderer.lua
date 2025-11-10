@@ -128,7 +128,9 @@ function MapRenderer:draw(scene)
           end
 
           if tile.type == MapManager.TileType.ENEMY then
-            local sprite = sprites.enemy
+            -- Get sprite variant (1 = regular, 2 = elite, default to 1)
+            local spriteVariant = tile.spriteVariant or 1
+            local sprite = sprites.enemy[spriteVariant] or sprites.enemy[1]
             if sprite then
               addToQueue(worldY, worldX, function()
                 love.graphics.setColor(1, 1, 1, 1)
