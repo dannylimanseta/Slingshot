@@ -40,7 +40,53 @@ local function createEnemyFromConfig(enemyConfig, index)
     spritePath = enemyConfig.sprite, -- Store path for loading
     name = enemyConfig.name, -- Display name (optional)
     index = index, -- Position in array (for reference)
+    intent = nil, -- Enemy intent for next turn: { type = "attack"|"armor"|"skill", ... }
   }
+end
+
+-- Calculate enemy intents for the upcoming turn
+-- This determines what each enemy will do on their next turn
+function BattleScene:calculateEnemyIntents()
+  for i, enemy in ipairs(self.enemies or {}) do
+    if enemy.hp > 0 and not enemy.disintegrating then
+      -- Determine intent based on enemy type and behavior
+      -- For now, all enemies attack by default, except enemy_1 (crawler) has a chance to shockwave
+      local isEnemy1 = enemy.spritePath == "enemy_1.png"
+      local shouldShockwave = isEnemy1 and (love.math.random() < 0.3)
+      
+      if shouldShockwave then
+        -- Shockwave attack (still counts as attack type)
+        enemy.intent = {
+          type = "attack",
+          attackType = "shockwave",
+          damage = 6, -- Fixed shockwave damage
+        }
+      else
+        -- Normal attack
+        enemy.intent = {
+          type = "attack",
+          attackType = "normal",
+          damageMin = enemy.damageMin,
+          damageMax = enemy.damageMax,
+        }
+      end
+      
+      -- Initialize fade timer for intent (starts at 0, fades in)
+      enemy.intentFadeTime = 0
+      
+      -- TODO: Add support for armor-gaining moves and skill/buff moves
+      -- Example for future:
+      -- if enemy.spritePath == "enemy_2.png" and turnNumber % 3 == 0 then
+      --   enemy.intent = { type = "armor", amount = 5 }
+      -- elseif enemy.spritePath == "enemy_3.png" and turnNumber % 2 == 0 then
+      --   enemy.intent = { type = "skill", effect = "buff_strength" }
+      -- end
+    else
+      -- Dead or disintegrating enemies have no intent
+      enemy.intent = nil
+      enemy.intentFadeTime = nil
+    end
+  end
 end
 
 function BattleScene.new()
@@ -181,6 +227,19 @@ function BattleScene:load(bounds, battleProfile)
     local ok, img = pcall(love.graphics.newImage, iconHealPath)
     if ok then self.iconPotion = img end
   end
+  
+  -- Load intent icons
+  local iconAttackPath = "assets/images/icon_attack.png"
+  local okAttack, attackImg = pcall(love.graphics.newImage, iconAttackPath)
+  if okAttack then self.iconIntentAttack = attackImg end
+  
+  local iconArmorIntentPath = "assets/images/icon_armor.png"
+  local okArmorIntent, armorIntentImg = pcall(love.graphics.newImage, iconArmorIntentPath)
+  if okArmorIntent then self.iconIntentArmor = armorIntentImg end
+  
+  local iconSkillPath = "assets/images/icon_skill.png"
+  local okSkill, skillImg = pcall(love.graphics.newImage, iconSkillPath)
+  if okSkill then self.iconIntentSkill = skillImg end
   
   -- Load impact animation (optional)
   do
@@ -581,6 +640,35 @@ function BattleScene:update(dt, bounds)
     end
   end
   
+  -- Update intent fade animations
+  local turnManager = self.turnManager
+  local isPlayerTurn = turnManager and (
+    turnManager:getState() == TurnManager.States.PLAYER_TURN_START or
+    turnManager:getState() == TurnManager.States.PLAYER_TURN_ACTIVE
+  )
+  
+  local fadeInDuration = 0.3 -- 0.3 seconds to fade in
+  local fadeOutDuration = 0.2 -- 0.2 seconds to fade out
+  
+  for _, enemy in ipairs(self.enemies or {}) do
+    if enemy.intentFadeTime ~= nil then
+      if isPlayerTurn then
+        -- Fade in during player turn
+        if enemy.intentFadeTime < fadeInDuration then
+          enemy.intentFadeTime = math.min(fadeInDuration, enemy.intentFadeTime + dt)
+        else
+          enemy.intentFadeTime = fadeInDuration -- Keep at max during player turn
+        end
+      else
+        -- Fade out when not in player turn
+        enemy.intentFadeTime = math.max(0, enemy.intentFadeTime - dt * (fadeInDuration / fadeOutDuration))
+        if enemy.intentFadeTime <= 0 then
+          enemy.intentFadeTime = nil
+        end
+      end
+    end
+  end
+
   -- Update enemy disintegration effects
   for _, enemy in ipairs(self.enemies or {}) do
     if enemy.disintegrating then
@@ -847,7 +935,17 @@ function BattleScene:update(dt, bounds)
         -- Perform attack for this enemy
         local enemy = self.enemies[delayData.index]
         if enemy and enemy.hp > 0 then
-          local dmg = love.math.random(enemy.damageMin, enemy.damageMax)
+          -- Use stored intent if available, otherwise fall back to default damage
+          local intent = enemy.intent
+          local dmg
+          if intent and intent.type == "attack" and intent.damageMin and intent.damageMax then
+            -- Use intent damage range (but still randomize the actual damage)
+            dmg = love.math.random(intent.damageMin, intent.damageMax)
+          else
+            -- Fallback to enemy's default damage range
+            dmg = love.math.random(enemy.damageMin, enemy.damageMax)
+          end
+          
           local blocked = math.min(self.playerArmor or 0, dmg)
           local net = dmg - blocked
           self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
@@ -1219,16 +1317,32 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
     if enemy.hp > 0 and enemy.displayHP > 0.1 then
       -- First enemy attacks immediately (handled below), others are delayed by 0.3s intervals
       if i == 1 then
-        -- Check if enemy_1 (crawler) should do shockwave (30% chance)
-        local isEnemy1 = enemy.spritePath == "enemy_1.png"
-        local shouldShockwave = isEnemy1 and (love.math.random() < 0.3)
+        -- Use stored intent if available, otherwise fall back to old logic
+        local intent = enemy.intent
+        local shouldShockwave = false
+        
+        if intent and intent.type == "attack" and intent.attackType == "shockwave" then
+          shouldShockwave = true
+        else
+          -- Fallback: Check if enemy_1 (crawler) should do shockwave (30% chance)
+          local isEnemy1 = enemy.spritePath == "enemy_1.png"
+          shouldShockwave = isEnemy1 and (love.math.random() < 0.3)
+        end
         
         if shouldShockwave then
           -- Perform shockwave attack
           self:performEnemyShockwave(enemy)
         else
           -- Perform normal attack
-          local dmg = love.math.random(enemy.damageMin, enemy.damageMax)
+          local dmg
+          if intent and intent.type == "attack" and intent.damageMin and intent.damageMax then
+            -- Use intent damage range (but still randomize the actual damage)
+            dmg = love.math.random(intent.damageMin, intent.damageMax)
+          else
+            -- Fallback to enemy's default damage range
+            dmg = love.math.random(enemy.damageMin, enemy.damageMax)
+          end
+          
           local blocked = math.min(self.playerArmor or 0, dmg)
           local net = dmg - blocked
           self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
@@ -1473,6 +1587,10 @@ function BattleScene:setTurnManager(turnManager)
         self.playerArmor = 0
         self.pendingArmor = 0
         self.armorPopupShown = false
+      elseif newState == TurnManager.States.PLAYER_TURN_START then
+        -- Calculate enemy intents at the start of player turn
+        -- This shows what enemies will do on their next turn
+        self:calculateEnemyIntents()
       end
     end)
   end

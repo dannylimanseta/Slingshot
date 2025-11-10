@@ -2,6 +2,7 @@ local config = require("config")
 local theme = require("theme")
 local Bar = require("ui.Bar")
 local ImpactSystem = require("scenes.battle.ImpactSystem")
+local TurnManager = require("core.TurnManager")
 
 local Visuals = {}
 
@@ -546,6 +547,116 @@ function Visuals.draw(scene, bounds)
         local enemyY = pos.curY or pos.y
         love.graphics.circle("fill", pos.curX, enemyY - r, r)
         love.graphics.setColor(1, 1, 1, 1)
+      end
+    end
+  end
+
+  -- Draw enemy intents (above enemy sprites, with fade animation)
+  local turnManager = scene.turnManager
+  local isPlayerTurn = turnManager and (
+    turnManager:getState() == TurnManager.States.PLAYER_TURN_START or
+    turnManager:getState() == TurnManager.States.PLAYER_TURN_ACTIVE
+  )
+  
+  -- Draw intents if they exist and have fade time (allows fade out after player turn)
+  for i, pos in ipairs(enemyPositions) do
+    local enemy = pos.enemy
+    if enemy and enemy.intent and enemy.intentFadeTime and enemy.intentFadeTime > 0 and enemy.hp > 0 and not enemy.disintegrating then
+      local intentIcon = nil
+      if enemy.intent.type == "attack" then
+        intentIcon = scene.iconIntentAttack
+      elseif enemy.intent.type == "armor" then
+        intentIcon = scene.iconIntentArmor
+      elseif enemy.intent.type == "skill" then
+        intentIcon = scene.iconIntentSkill
+      end
+      
+      if intentIcon then
+        local iconW, iconH = intentIcon:getWidth(), intentIcon:getHeight()
+        local iconScale = 0.4 -- Scale factor for intent icons
+        local enemyY = pos.curY or pos.y -- This is the BOTTOM of the sprite (pivot point)
+        
+        -- Calculate enemy sprite height accounting for scaling and bobbing animation
+        local enemyHeight
+        if enemy.img then
+          local spriteHeight = enemy.img:getHeight()
+          local baseScale = pos.scale
+          -- Account for maximum bobbing animation height (bob can increase scale)
+          local bobA = (config.battle and config.battle.idleBobScaleY) or 0
+          local maxBobScale = 1 + bobA -- Maximum bob scale factor
+          local maxScaleY = baseScale * maxBobScale
+          enemyHeight = spriteHeight * maxScaleY
+        else
+          enemyHeight = r * 2
+        end
+        
+        -- Position icon above enemy sprite
+        -- enemyY is the bottom of the sprite, so top is enemyY - enemyHeight
+        local enemyTop = enemyY - enemyHeight -- Top edge of enemy sprite (at max bob height)
+        local iconY = enemyTop - iconH * iconScale * 0.5 - 20 -- 20px gap above enemy top
+        
+        -- Calculate fade alpha (0 to 1)
+        local fadeInDuration = 0.3
+        local alpha = math.min(1, enemy.intentFadeTime / fadeInDuration)
+        
+        -- Bobbing animation for intent icons
+        local bobSpeed = 1.2
+        local bobAmplitude = 2
+        local phaseOffset = (i - 1) * math.pi * 0.3
+        local bobOffset = math.sin((scene.idleT or 0) * bobSpeed * 2 * math.pi + phaseOffset) * bobAmplitude
+        
+        -- Calculate text dimensions first (needed for centering)
+        local valueText = nil
+        if enemy.intent.type == "attack" and enemy.intent.damage then
+          -- Show fixed damage (e.g., shockwave)
+          valueText = tostring(enemy.intent.damage)
+        elseif enemy.intent.type == "attack" and enemy.intent.damageMin and enemy.intent.damageMax then
+          -- Show damage range for normal attacks
+          valueText = enemy.intent.damageMin == enemy.intent.damageMax and 
+            tostring(enemy.intent.damageMin) or 
+            (tostring(enemy.intent.damageMin) .. "-" .. tostring(enemy.intent.damageMax))
+        elseif enemy.intent.type == "armor" and enemy.intent.amount then
+          valueText = tostring(enemy.intent.amount)
+        elseif enemy.intent.type == "skill" and enemy.intent.effect then
+          -- Could show skill name or effect, for now skip
+        end
+        
+        -- Calculate total width of icon + gap + text for centering
+        local textW = 0
+        local textH = 0
+        if valueText then
+          local font = love.graphics.getFont()
+          textW = font:getWidth(valueText)
+          textH = font:getHeight()
+        end
+        
+        local iconWidth = iconW * iconScale
+        local gapWidth = valueText and 6 or 0 -- 6px gap between icon and text
+        local totalWidth = iconWidth + gapWidth + textW
+        
+        -- Center the icon+text combination relative to enemy sprite
+        -- Enemy center is at pos.curX, so offset icon left by half the total width
+        local iconX = pos.curX - totalWidth * 0.5 + iconWidth * 0.5
+        
+        -- Draw icon with fade
+        love.graphics.setColor(1, 1, 1, alpha)
+        love.graphics.draw(intentIcon, iconX, iconY + bobOffset, 0, iconScale, iconScale, iconW * 0.5, iconH * 0.5)
+        
+        -- Draw text if available
+        if valueText then
+          -- Position text to the right of icon
+          local iconRightEdge = iconX + iconWidth * 0.5
+          local textX = iconRightEdge + gapWidth
+          -- Align text center with icon center (love.graphics.print uses baseline, so adjust)
+          local iconCenterY = iconY + bobOffset -- Icon center Y
+          local textY = iconCenterY + textH * -0.3 -- Adjust for text baseline to center with icon
+          
+          -- Draw text in white with fade
+          love.graphics.setColor(1, 1, 1, alpha)
+          love.graphics.print(valueText, textX, textY)
+        end
+        
+        love.graphics.setColor(1, 1, 1, 1) -- Reset color
       end
     end
   end
