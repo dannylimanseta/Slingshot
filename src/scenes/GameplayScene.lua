@@ -665,6 +665,11 @@ function GameplayScene:draw(bounds)
           text = text:sub(1, 1):upper() .. text:sub(2):lower()
         end
       end
+      
+      -- Add "(calcified)" suffix if block is calcified
+      if self.hoveredBlock.calcified then
+        text = text .. " (calcified)"
+      end
       -- Calculate text size at 65% scale (reduced from 75%)
       local baseTextW = font:getWidth(text)
       local baseTextH = font:getHeight()
@@ -1200,6 +1205,89 @@ function GameplayScene:triggerBlockShakeAndDrop()
     block.dropRotationSpeed = (love.math.random() * 2 - 1) * 3 -- Random rotation speed (-3 to 3 rad/s)
     -- Clear onDestroyed callback to prevent particle explosions - blocks should just drop and fade
     block.onDestroyed = nil
+  end
+end
+
+-- Get positions of random blocks for calcify animation (returns array of {x, y, block})
+function GameplayScene:getCalcifyBlockPositions(count)
+  if not self.blocks or not self.blocks.blocks then return {} end
+  
+  count = count or 3
+  
+  -- Get all alive, non-calcified blocks
+  local eligibleBlocks = {}
+  for _, block in ipairs(self.blocks.blocks) do
+    if block and block.alive and not block.calcified then
+      table.insert(eligibleBlocks, block)
+    end
+  end
+  
+  if #eligibleBlocks == 0 then return {} end
+  
+  -- Select random blocks (up to count)
+  local toSelect = math.min(count, #eligibleBlocks)
+  local indices = {}
+  for i = 1, #eligibleBlocks do
+    table.insert(indices, i)
+  end
+  
+  -- Fisher-Yates shuffle
+  for i = #indices, 1, -1 do
+    local j = love.math.random(i)
+    indices[i], indices[j] = indices[j], indices[i]
+  end
+  
+  -- Return positions of selected blocks
+  local positions = {}
+  for i = 1, toSelect do
+    local block = eligibleBlocks[indices[i]]
+    if block then
+      table.insert(positions, {
+        x = block.cx,
+        y = block.cy,
+        block = block, -- Store reference to block for later calcification
+      })
+    end
+  end
+  
+  return positions
+end
+
+-- Calcify random blocks (for Stagmaw skill)
+function GameplayScene:calcifyBlocks(count)
+  if not self.blocks or not self.blocks.blocks then return end
+  
+  count = count or 3
+  
+  -- Get all alive, non-calcified blocks
+  local eligibleBlocks = {}
+  for _, block in ipairs(self.blocks.blocks) do
+    if block and block.alive and not block.calcified then
+      table.insert(eligibleBlocks, block)
+    end
+  end
+  
+  if #eligibleBlocks == 0 then return end
+  
+  -- Select random blocks (up to count)
+  local toCalcify = math.min(count, #eligibleBlocks)
+  local indices = {}
+  for i = 1, #eligibleBlocks do
+    table.insert(indices, i)
+  end
+  
+  -- Fisher-Yates shuffle
+  for i = #indices, 1, -1 do
+    local j = love.math.random(i)
+    indices[i], indices[j] = indices[j], indices[i]
+  end
+  
+  -- Calcify selected blocks (permanently for the battle)
+  for i = 1, toCalcify do
+    local block = eligibleBlocks[indices[i]]
+    if block and block.calcify then
+      block:calcify(nil) -- Calcify permanently (nil = infinite turns)
+    end
   end
 end
 

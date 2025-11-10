@@ -81,6 +81,22 @@ do
   if ok then shadowRemovalShader = shader end
 end
 
+-- Shader to desaturate blocks (for calcify effect)
+local desaturateShader = nil
+do
+  local shaderCode = [[
+    vec4 effect(vec4 color, Image texture, vec2 texture_coords, vec2 screen_coords) {
+      vec4 texcolor = Texel(texture, texture_coords) * color;
+      // Convert to grayscale using standard RGB weights
+      float gray = dot(texcolor.rgb, vec3(0.299, 0.587, 0.114));
+      // Output grayscale with original alpha
+      return vec4(gray, gray, gray, texcolor.a);
+    }
+  ]]
+  local ok, shader = pcall(love.graphics.newShader, shaderCode)
+  if ok then desaturateShader = shader end
+end
+
 local Block = {}
 Block.__index = Block
 
@@ -113,6 +129,13 @@ function Block.new(world, cx, cy, hp, kind, opts)
     pulseTime = love.math.random() * (2 * math.pi), -- random phase offset for different timings
     -- shader timing offset so iridescence isn't synchronized across blocks
     shaderTimeOffset = love.math.random() * 10.0,
+    -- calcify state (indestructible for 1 turn)
+    calcified = false,
+    calcifiedTurnsRemaining = 0,
+    -- bounce animation (for particle hit effect)
+    bounceTime = 0,
+    bounceDuration = 0.3,
+    bounceScale = 1.0,
   }, Block)
 
   -- Static body at origin; use shape offsets for placement
@@ -142,11 +165,19 @@ end
 
 function Block:hit()
   if not self.alive or self.hitThisFrame then return end
+  -- Calcified blocks cannot be destroyed
+  if self.calcified then return end
   self.hitThisFrame = true -- Mark as hit to prevent duplicate processing
   self.hp = 0
   self.flashTime = config.blocks.flashDuration
   -- Delay destruction until after flash is visible
   self.pendingDestroyDelay = config.blocks.flashDuration
+end
+
+-- Trigger bounce animation (for particle hit effect)
+function Block:triggerBounce()
+  if not self.alive then return end
+  self.bounceTime = self.bounceDuration
 end
 
 function Block:update(dt)
@@ -231,6 +262,26 @@ function Block:update(dt)
     local speed = pulseConfig.speed or 1.2
     self.pulseTime = (self.pulseTime or 0) + dt * speed * 2 * math.pi
   end
+  
+  -- Update bounce animation
+  if self.bounceTime > 0 then
+    self.bounceTime = math.max(0, self.bounceTime - dt)
+    local t = 1 - (self.bounceTime / self.bounceDuration)
+    -- Ease out bounce effect (scale up then back down)
+    local bounceScale = 1.0
+    if t < 0.5 then
+      -- Scale up in first half
+      local t2 = t * 2
+      bounceScale = 1.0 + (0.15 * (1 - t2 * t2)) -- Scale up to 1.15, then ease out
+    else
+      -- Scale back down in second half
+      local t2 = (t - 0.5) * 2
+      bounceScale = 1.15 - (0.15 * t2 * t2) -- Scale down from 1.15 to 1.0
+    end
+    self.bounceScale = bounceScale
+  else
+    self.bounceScale = 1.0
+  end
 end
 
 function Block:draw()
@@ -296,56 +347,109 @@ function Block:draw()
     local iw, ih = sprite:getWidth(), sprite:getHeight()
     local s = self.size / math.max(1, math.max(iw, ih))
     local mul = (config.blocks and config.blocks.spriteScale) or 1
-    s = s * mul
+    s = s * mul * (self.bounceScale or 1.0) -- Apply bounce scale
     local rotation = self.dropRotation or 0
     local centerX = self.cx + xOffset
     local centerY = self.cy + yOffset
     local dx = centerX - iw * s * 0.5
     local dy = centerY - ih * s * 0.5
-    love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
-    -- Apply iridescent shader for 2x (crit) and 4x (multiplier) blocks
-    local isIridescent = (self.kind == "crit" or self.kind == "multiplier")
-    local prevShader = nil
-    if isIridescent then
-      local S = IridescentShader and IridescentShader.getShader and IridescentShader.getShader()
-      if S then
-        prevShader = love.graphics.getShader()
-        S:send("u_time", love.timer.getTime())
-        S:send("u_timeOffset", self.shaderTimeOffset or 0.0)
-        -- Even fainter mix so base color shows more
-        local intensity = (self.kind == "multiplier") and 0.50 or 0.42
-        S:send("u_intensity", intensity)
-        -- Much fewer, softer bands
-        S:send("u_scale", 2.0)
-        S:send("u_angle", 0.6)
-        -- Increase perpendicular wobble substantially
-        local variation = (self.kind == "multiplier") and 0.85 or 0.7
-        S:send("u_variation", variation)
-        -- Organic warping noise and shininess
-        -- Stronger, higher-frequency organic noise
-        S:send("u_noiseScale", 5.5)
-        S:send("u_noiseAmp", 1.2)
-        -- Reduce shine further
-        local shine = (self.kind == "multiplier") and 0.22 or 0.14
-        S:send("u_shineStrength", shine)
-        -- Favor patchy look over stripes
-        local patchiness = (self.kind == "multiplier") and 0.8 or 0.75
-        S:send("u_patchiness", patchiness)
-        love.graphics.setShader(S)
+    
+    -- Calcify visual effect: desaturated white tint with blend mode
+    local prevBlendMode = love.graphics.getBlendMode()
+    
+    if self.calcified then
+      -- For calcified blocks: draw full grayscale desaturation, then white tint
+      -- Skip normal colored draw - go straight to desaturated version
+      local prevCalcifyShader = love.graphics.getShader()
+      if desaturateShader then
+        love.graphics.setShader(desaturateShader)
       end
-    end
-    if rotation ~= 0 then
-      love.graphics.push()
-      love.graphics.translate(centerX, centerY)
-      love.graphics.rotate(rotation)
-      love.graphics.translate(-centerX, -centerY)
-      love.graphics.draw(sprite, dx, dy, 0, s, s)
-      love.graphics.pop()
+      love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
+      if rotation ~= 0 then
+        love.graphics.push()
+        love.graphics.translate(centerX, centerY)
+        love.graphics.rotate(rotation)
+        love.graphics.translate(-centerX, -centerY)
+        love.graphics.draw(sprite, dx, dy, 0, s, s)
+        love.graphics.pop()
+      else
+        love.graphics.draw(sprite, dx, dy, 0, s, s)
+      end
+      -- Keep shader active for white tint overlay to ensure it's also grayscale
+      -- Then: add white tint overlay (still using desaturate shader to prevent color bleed)
+      love.graphics.setBlendMode("add")
+      love.graphics.setColor(0.8, 0.8, 0.8, alpha * 1.0) -- Strong white tint overlay
+      if rotation ~= 0 then
+        love.graphics.push()
+        love.graphics.translate(centerX, centerY)
+        love.graphics.rotate(rotation)
+        love.graphics.translate(-centerX, -centerY)
+        love.graphics.draw(sprite, dx, dy, 0, s, s)
+        love.graphics.pop()
+      else
+        love.graphics.draw(sprite, dx, dy, 0, s, s)
+      end
+      -- Second white tint pass for even more whiteness
+      love.graphics.setColor(0.6, 0.6, 0.6, alpha * 0.7) -- Additional white tint overlay
+      if rotation ~= 0 then
+        love.graphics.push()
+        love.graphics.translate(centerX, centerY)
+        love.graphics.rotate(rotation)
+        love.graphics.translate(-centerX, -centerY)
+        love.graphics.draw(sprite, dx, dy, 0, s, s)
+        love.graphics.pop()
+      else
+        love.graphics.draw(sprite, dx, dy, 0, s, s)
+      end
+      love.graphics.setShader(prevCalcifyShader)
+      love.graphics.setBlendMode(prevBlendMode)
     else
-      love.graphics.draw(sprite, dx, dy, 0, s, s)
-    end
-    if isIridescent then
-      love.graphics.setShader(prevShader)
+      -- Normal blocks: draw with color and optional iridescent shader
+      love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
+      -- Apply iridescent shader for 2x (crit) and 4x (multiplier) blocks
+      local isIridescent = (self.kind == "crit" or self.kind == "multiplier")
+      local prevShader = nil
+      if isIridescent then
+        local S = IridescentShader and IridescentShader.getShader and IridescentShader.getShader()
+        if S then
+          prevShader = love.graphics.getShader()
+          S:send("u_time", love.timer.getTime())
+          S:send("u_timeOffset", self.shaderTimeOffset or 0.0)
+          -- Even fainter mix so base color shows more
+          local intensity = (self.kind == "multiplier") and 0.50 or 0.42
+          S:send("u_intensity", intensity)
+          -- Much fewer, softer bands
+          S:send("u_scale", 2.0)
+          S:send("u_angle", 0.6)
+          -- Increase perpendicular wobble substantially
+          local variation = (self.kind == "multiplier") and 0.85 or 0.7
+          S:send("u_variation", variation)
+          -- Organic warping noise and shininess
+          -- Stronger, higher-frequency organic noise
+          S:send("u_noiseScale", 5.5)
+          S:send("u_noiseAmp", 1.2)
+          -- Reduce shine further
+          local shine = (self.kind == "multiplier") and 0.22 or 0.14
+          S:send("u_shineStrength", shine)
+          -- Favor patchy look over stripes
+          local patchiness = (self.kind == "multiplier") and 0.8 or 0.75
+          S:send("u_patchiness", patchiness)
+          love.graphics.setShader(S)
+        end
+      end
+      if rotation ~= 0 then
+        love.graphics.push()
+        love.graphics.translate(centerX, centerY)
+        love.graphics.rotate(rotation)
+        love.graphics.translate(-centerX, -centerY)
+        love.graphics.draw(sprite, dx, dy, 0, s, s)
+        love.graphics.pop()
+      else
+        love.graphics.draw(sprite, dx, dy, 0, s, s)
+      end
+      if isIridescent then
+        love.graphics.setShader(prevShader)
+      end
     end
     -- Hit flash: additive white overlay passes similar to battle sprites
     if self.flashTime > 0 then
@@ -539,6 +643,31 @@ function Block:rebuildFixture()
   self.fixture:setFriction(0)
   self.fixture:setRestitution(1)
   self.fixture:setUserData({ type = "block", ref = self })
+end
+
+-- Calcify this block (make it indestructible for specified number of turns, or permanently if turns is nil)
+function Block:calcify(turns)
+  if not self.alive then return end
+  self.calcified = true
+  -- If turns is nil, set to a very large number to make it permanent for the battle
+  self.calcifiedTurnsRemaining = turns or math.huge
+end
+
+-- Remove calcify effect (called at end of turn)
+function Block:uncalcify()
+  self.calcified = false
+  self.calcifiedTurnsRemaining = 0
+end
+
+-- Decrement calcify turns (called at end of enemy turn)
+function Block:decrementCalcifyTurns()
+  -- Only decrement if turns remaining is not infinite (math.huge)
+  if self.calcified and self.calcifiedTurnsRemaining and self.calcifiedTurnsRemaining ~= math.huge and self.calcifiedTurnsRemaining > 0 then
+    self.calcifiedTurnsRemaining = self.calcifiedTurnsRemaining - 1
+    if self.calcifiedTurnsRemaining <= 0 then
+      self:uncalcify()
+    end
+  end
 end
 
 function Block:destroy()

@@ -201,6 +201,18 @@ function SplitScene:setupTurnManagerEvents()
       if self.left then
         self.left.canShoot = false
       end
+    elseif newState == TurnManager.States.ENEMY_TURN_START then
+      -- Decrement calcify turns at the end of the player's turn
+      -- (transitioning from PLAYER_TURN_RESOLVING)
+      if previousState == TurnManager.States.PLAYER_TURN_RESOLVING then
+        if self.left and self.left.blocks and self.left.blocks.blocks then
+          for _, block in ipairs(self.left.blocks.blocks) do
+            if block and block.decrementCalcifyTurns then
+              block:decrementCalcifyTurns()
+            end
+          end
+        end
+      end
     end
   end)
   
@@ -274,6 +286,38 @@ function SplitScene:setupTurnManagerEvents()
   self.turnManager:on("enemy_shockwave_blocks", function()
     if self.left and self.left.triggerBlockShakeAndDrop then
       self.left:triggerBlockShakeAndDrop()
+    end
+  end)
+  
+  -- Enemy calcify blocks event (immediate calcify, no animation)
+  self.turnManager:on("enemy_calcify_blocks", function(data)
+    if self.left and self.left.calcifyBlocks then
+      self.left:calcifyBlocks(data.count or 3)
+    end
+  end)
+  
+  -- Enemy calcify request blocks event (for particle animation)
+  self.turnManager:on("enemy_calcify_request_blocks", function(data)
+    if self.left and self.left.getCalcifyBlockPositions then
+      local blockPositions = self.left:getCalcifyBlockPositions(data.count or 3)
+      if blockPositions and #blockPositions > 0 then
+        -- Convert block positions from GameplayScene local coordinates to screen coordinates
+        local w = (config.video and config.video.virtualWidth) or 1280
+        local h = (config.video and config.video.virtualHeight) or 720
+        local centerRect = self.layoutManager:getCenterRect(w, h)
+        local centerX = centerRect.x - 100 -- Shift breakout canvas 100px to the left (matching draw)
+        
+        -- Convert each block position to screen coordinates
+        for _, blockPos in ipairs(blockPositions) do
+          blockPos.x = blockPos.x + centerX -- Convert from local to screen X
+          -- Y doesn't need conversion as it's the same
+        end
+        
+        -- Send block positions back to BattleScene
+        if self.right and self.right.startCalcifyAnimation then
+          self.right:startCalcifyAnimation(data.enemyX, data.enemyY, blockPositions)
+        end
+      end
     end
   end)
 end
@@ -473,6 +517,11 @@ function SplitScene:draw()
   withScissor({ x = centerX, y = 0, w = centerW, h = h }, function()
     if self.left and self.left.draw then self.left:draw({ x = 0, y = 0, w = centerW, h = h }) end
   end)
+  
+  -- Draw calcify particles after blocks (highest z-order for particles)
+  if self.right and self.right._drawCalcifyParticles then
+    self.right:_drawCalcifyParticles()
+  end
 
   -- Draw edge glow effects when ball hits edges (after gameplay scene, outside scissor so they're not clipped)
   -- Push state to save scissor, then clear it

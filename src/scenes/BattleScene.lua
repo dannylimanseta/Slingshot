@@ -13,6 +13,7 @@ local TopBar = require("ui.TopBar")
 local PlayerState = require("core.PlayerState")
 local battle_profiles = require("data.battle_profiles")
 local ParticleManager = require("managers.ParticleManager")
+local Trail = require("utils.trail")
 
 local BattleScene = {}
 BattleScene.__index = BattleScene
@@ -50,11 +51,23 @@ function BattleScene:calculateEnemyIntents()
   for i, enemy in ipairs(self.enemies or {}) do
     if enemy.hp > 0 and not enemy.disintegrating then
       -- Determine intent based on enemy type and behavior
-      -- For now, all enemies attack by default, except enemy_1 (crawler) has a chance to shockwave
       local isEnemy1 = enemy.spritePath == "enemy_1.png"
+      local isStagmaw = enemy.spritePath == "fx/enemy_4.png" or 
+                        enemy.name == "Stagmaw" or 
+                        (enemy.spritePath and enemy.spritePath:find("enemy_4"))
+      
+      -- Stagmaw has 30% chance to use calcify skill
+      local shouldCalcify = isStagmaw and (love.math.random() < 0.3)
       local shouldShockwave = isEnemy1 and (love.math.random() < 0.3)
       
-      if shouldShockwave then
+      if shouldCalcify then
+        -- Calcify skill: calcify 3 random blocks for 1 turn
+        enemy.intent = {
+          type = "skill",
+          skillType = "calcify",
+          blockCount = 3,
+        }
+      elseif shouldShockwave then
         -- Shockwave attack (still counts as attack type)
         enemy.intent = {
           type = "attack",
@@ -108,6 +121,7 @@ function BattleScene.new()
     _pendingPlayerAttackDamage = nil, -- { damage, armor, wasJackpot, impactBlockCount, impactIsCrit } - stored when turn ends, applied after delay
     _pendingImpactParams = nil, -- { blockCount, isCrit } - stored by playImpact, merged into pending damage
     _shockwaveSequence = nil, -- Timer for sequencing shockwave animation phases
+    _calcifySequence = nil, -- Timer for calcify particle animation sequence
     playerImg = nil,
     playerScaleMul = 1,
     playerLungeTime = 0,
@@ -953,64 +967,73 @@ function BattleScene:update(dt, bounds)
 
   -- Update shockwave sequence
   self:_updateShockwaveSequence(dt)
+  
+  -- Update calcify particle animation
+  self:_updateCalcifySequence(dt)
 
   -- Handle staggered enemy attack delays
-  -- Don't process staggered attacks while shockwave sequence is active
+  -- Don't process staggered attacks while shockwave or calcify sequence is active
   local shockwaveActive = self._shockwaveSequence ~= nil
+  local calcifyActive = self._calcifySequence ~= nil
   local aliveAttackDelays = {}
   for _, delayData in ipairs(self._enemyAttackDelays or {}) do
-    if shockwaveActive then
-      -- Shockwave is active, don't count down - just keep the delay data
+    if shockwaveActive or calcifyActive then
+      -- Shockwave or calcify is active, don't count down - just keep the delay data
       table.insert(aliveAttackDelays, delayData)
     else
       delayData.delay = delayData.delay - dt
       if delayData.delay <= 0 then
-        -- Perform attack for this enemy
+        -- Perform action for this enemy
         local enemy = self.enemies[delayData.index]
         if enemy and enemy.hp > 0 then
           -- Use stored intent if available, otherwise fall back to default damage
           local intent = enemy.intent
-          local dmg
-          if intent and intent.type == "attack" and intent.damageMin and intent.damageMax then
-            -- Use intent damage range (but still randomize the actual damage)
-            dmg = love.math.random(intent.damageMin, intent.damageMax)
+          if intent and intent.type == "skill" and intent.skillType == "calcify" then
+            -- Execute calcify for delayed enemies too
+            self:performEnemyCalcify(enemy, intent.blockCount or 3)
           else
-            -- Fallback to enemy's default damage range
-            dmg = love.math.random(enemy.damageMin, enemy.damageMax)
-          end
-          
-          local blocked = math.min(self.playerArmor or 0, dmg)
-          local net = dmg - blocked
-          self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
-          self.playerHP = math.max(0, self.playerHP - net)
-          
-          if net <= 0 then
-            self.armorIconFlashTimer = 0.5
-            table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
-          else
-            self.playerFlash = config.battle.hitFlashDuration
-            self.playerKnockbackTime = 1e-6
-            table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
-            pushLog(self, "Enemy " .. delayData.index .. " dealt " .. net)
-            -- Emit hit burst particles from player center
-            if self.particles then
-              local px, py = self:getPlayerCenterPivot(self._lastBounds)
-              if px and py then
-                self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
+            local dmg
+            if intent and intent.type == "attack" and intent.damageMin and intent.damageMax then
+              -- Use intent damage range (but still randomize the actual damage)
+              dmg = love.math.random(intent.damageMin, intent.damageMax)
+            else
+              -- Fallback to enemy's default damage range
+              dmg = love.math.random(enemy.damageMin, enemy.damageMax)
+            end
+            
+            local blocked = math.min(self.playerArmor or 0, dmg)
+            local net = dmg - blocked
+            self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
+            self.playerHP = math.max(0, self.playerHP - net)
+            
+            if net <= 0 then
+              self.armorIconFlashTimer = 0.5
+              table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+            else
+              self.playerFlash = config.battle.hitFlashDuration
+              self.playerKnockbackTime = 1e-6
+              table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
+              pushLog(self, "Enemy " .. delayData.index .. " dealt " .. net)
+              -- Emit hit burst particles from player center
+              if self.particles then
+                local px, py = self:getPlayerCenterPivot(self._lastBounds)
+                if px and py then
+                  self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
+                end
+              end
+              if self.onPlayerDamage then
+                self.onPlayerDamage()
               end
             end
-            if self.onPlayerDamage then
-              self.onPlayerDamage()
-            end
-          end
-          enemy.lungeTime = 1e-6
-          self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
-          
-          if self.playerHP <= 0 then
-            self.state = "lose"
-            pushLog(self, "You were defeated!")
-            if self.turnManager then
-              self.turnManager:transitionTo(TurnManager.States.DEFEAT)
+            enemy.lungeTime = 1e-6
+            self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+            
+            if self.playerHP <= 0 then
+              self.state = "lose"
+              pushLog(self, "You were defeated!")
+              if self.turnManager then
+                self.turnManager:transitionTo(TurnManager.States.DEFEAT)
+              end
             end
           end
         end
@@ -1319,6 +1342,8 @@ function BattleScene:draw(bounds)
   if self.topBar and not self.disableTopBar then
     self.topBar:draw()
   end
+  
+  -- Note: Calcify particles are drawn in SplitScene after blocks for proper z-ordering
 end
 
 -- (Jackpot API removed)
@@ -1353,16 +1378,22 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
         -- Use stored intent if available, otherwise fall back to old logic
         local intent = enemy.intent
         local shouldShockwave = false
+        local shouldCalcify = false
         
-        if intent and intent.type == "attack" and intent.attackType == "shockwave" then
+        if intent and intent.type == "skill" and intent.skillType == "calcify" then
+          shouldCalcify = true
+        elseif intent and intent.type == "attack" and intent.attackType == "shockwave" then
           shouldShockwave = true
         else
           -- Fallback: Check if enemy_1 (crawler) should do shockwave (30% chance)
-        local isEnemy1 = enemy.spritePath == "enemy_1.png"
+          local isEnemy1 = enemy.spritePath == "enemy_1.png"
           shouldShockwave = isEnemy1 and (love.math.random() < 0.3)
         end
         
-        if shouldShockwave then
+        if shouldCalcify then
+          -- Perform calcify skill
+          self:performEnemyCalcify(enemy, intent.blockCount or 3)
+        elseif shouldShockwave then
           -- Perform shockwave attack
           self:performEnemyShockwave(enemy)
         else
@@ -1429,6 +1460,238 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
   -- Clear pending armor state for next turn
   self.pendingArmor = 0
   self.armorPopupShown = false
+end
+
+-- Perform enemy calcify skill (Stagmaw special ability)
+function BattleScene:performEnemyCalcify(enemy, blockCount)
+  blockCount = blockCount or 3
+  
+  -- Find enemy index
+  local enemyIndex = nil
+  for i, e in ipairs(self.enemies or {}) do
+    if e == enemy then
+      enemyIndex = i
+      break
+    end
+  end
+  
+  if not enemyIndex then enemyIndex = 1 end
+  
+  -- Get enemy position for particle start
+  local enemyX, enemyY = self:getEnemyCenterPivot(enemyIndex, self._lastBounds)
+  
+  if not enemyX or not enemyY then
+    -- Fallback: emit event immediately if we can't get enemy position
+    if self.turnManager then
+      self.turnManager:emit("enemy_calcify_blocks", { count = blockCount })
+    end
+    pushLog(self, "Stagmaw calcified " .. blockCount .. " blocks!")
+    return
+  end
+  
+  -- Initialize calcify particle animation sequence
+  self._calcifySequence = {
+    timer = 0,
+    phase = "selecting", -- selecting -> animating -> complete
+    enemy = enemy,
+    enemyX = enemyX,
+    enemyY = enemyY,
+    blockCount = blockCount,
+    particles = {}, -- Array of { x, y, targetX, targetY, trail, progress, speed, ... }
+    selectedBlocks = nil, -- Will be set when blocks are selected
+  }
+  
+  -- Request block positions from GameplayScene (via SplitScene)
+  -- This will be handled by the event system
+  if self.turnManager then
+    self.turnManager:emit("enemy_calcify_request_blocks", { 
+      count = blockCount,
+      enemyX = enemyX,
+      enemyY = enemyY,
+    })
+  end
+  
+  pushLog(self, "Stagmaw is calcifying " .. blockCount .. " blocks!")
+end
+
+-- Start calcify particle animation (called from SplitScene when block positions are ready)
+function BattleScene:startCalcifyAnimation(enemyX, enemyY, blockPositions)
+  if not self._calcifySequence then return end
+  
+  local seq = self._calcifySequence
+  seq.selectedBlocks = blockPositions
+  seq.phase = "animating"
+  seq.timer = 0
+  
+  -- Create particles for each target block
+  for i, blockPos in ipairs(blockPositions) do
+    -- Calculate bezier curve control points for smooth curvy path with more swerve
+    local dx = blockPos.x - enemyX
+    local dy = blockPos.y - enemyY
+    local dist = math.sqrt(dx * dx + dy * dy)
+    
+    -- Control point offset for curve (perpendicular to direction, with more randomness)
+    local perpX = -dy / math.max(0.001, dist)
+    local perpY = dx / math.max(0.001, dist)
+    local curveAmount = dist * 0.5 -- Increased from 0.3 to 0.5 for more swerve
+    local randomOffset1 = (love.math.random() - 0.5) * 1.2 -- More variation for first control point
+    local randomOffset2 = (love.math.random() - 0.5) * 1.2 -- More variation for second control point
+    
+    -- Add some additional perpendicular offset for more dramatic swerve
+    local swerveAmount = dist * 0.25
+    local swerveDir = love.math.random() > 0.5 and 1 or -1
+    
+    -- First control point - earlier in path, more dramatic curve
+    local cp1x = enemyX + dx * 0.25 + perpX * curveAmount * (1 + randomOffset1) * swerveDir
+    local cp1y = enemyY + dy * 0.25 + perpY * curveAmount * (1 + randomOffset1) * swerveDir
+    
+    -- Second control point - later in path, curves back more
+    local cp2x = enemyX + dx * 0.75 + perpX * curveAmount * (1 - randomOffset2) * -swerveDir + perpX * swerveAmount * 0.3
+    local cp2y = enemyY + dy * 0.75 + perpY * curveAmount * (1 - randomOffset2) * -swerveDir + perpY * swerveAmount * 0.3
+    
+    -- Create trail for this particle
+    local trail = Trail.new({
+      enabled = true,
+      width = 24, -- Increased from 12
+      taperPower = 1.2,
+      softness = 0.3,
+      colorStart = { 1, 1, 1, 0.9 }, -- White at head
+      colorEnd = { 0.9, 0.9, 0.95, 0.4 }, -- Slightly blue-white at tail
+      additive = true,
+      sampleInterval = 0.01,
+      maxPoints = 40,
+    })
+    
+    -- Create particle
+    local particle = {
+      x = enemyX,
+      y = enemyY,
+      startX = enemyX,
+      startY = enemyY,
+      targetX = blockPos.x,
+      targetY = blockPos.y,
+      block = blockPos.block, -- Reference to block for calcification
+      cp1x = cp1x,
+      cp1y = cp1y,
+      cp2x = cp2x,
+      cp2y = cp2y,
+      trail = trail,
+      progress = 0,
+      speed = 0.96, -- Progress per second (0 to 1) - increased by 20% from 0.8
+      hit = false,
+    }
+    
+    table.insert(seq.particles, particle)
+  end
+end
+
+-- Update calcify particle animation sequence
+function BattleScene:_updateCalcifySequence(dt)
+  if not self._calcifySequence then return end
+  
+  local seq = self._calcifySequence
+  
+  if seq.phase == "selecting" then
+    -- Wait for block positions to be provided
+    -- This phase is handled by the event system
+    return
+  elseif seq.phase == "animating" then
+    seq.timer = seq.timer + dt
+    
+    -- Update each particle
+    local allHit = true
+    for _, particle in ipairs(seq.particles) do
+      if not particle.hit then
+        allHit = false
+        -- Update progress along bezier curve
+        particle.progress = math.min(1.0, particle.progress + particle.speed * dt)
+        
+        -- Calculate position on bezier curve
+        local t = particle.progress
+        local mt = 1 - t
+        local mt2 = mt * mt
+        local mt3 = mt2 * mt
+        local t2 = t * t
+        local t3 = t2 * t
+        
+        -- Cubic bezier: (1-t)^3*P0 + 3*(1-t)^2*t*P1 + 3*(1-t)*t^2*P2 + t^3*P3
+        particle.x = mt3 * particle.startX + 3 * mt2 * t * particle.cp1x + 3 * mt * t2 * particle.cp2x + t3 * particle.targetX
+        particle.y = mt3 * particle.startY + 3 * mt2 * t * particle.cp1y + 3 * mt * t2 * particle.cp2y + t3 * particle.targetY
+        
+        -- Update trail
+        if particle.trail then
+          particle.trail:update(dt, particle.x, particle.y)
+        end
+        
+        -- Check if particle reached target
+        local dx = particle.x - particle.targetX
+        local dy = particle.y - particle.targetY
+        local dist = math.sqrt(dx * dx + dy * dy)
+        
+        if dist < 10 or particle.progress >= 1.0 then
+          -- Particle hit target - calcify the block and trigger bounce
+          particle.hit = true
+          if particle.block then
+            if particle.block.calcify then
+              particle.block:calcify(nil) -- Calcify permanently
+            end
+            if particle.block.triggerBounce then
+              particle.block:triggerBounce() -- Trigger bounce animation
+            end
+          end
+        end
+      else
+        -- Particle already hit, fade out trail
+        if particle.trail then
+          particle.trail:update(dt, particle.x, particle.y)
+        end
+      end
+    end
+    
+    -- Check if all particles have hit their targets
+    if allHit then
+      -- Wait a bit for trails to fade, then complete
+      if seq.timer >= 1.5 then
+        seq.phase = "complete"
+        self._calcifySequence = nil
+      end
+    end
+  end
+end
+
+-- Draw calcify particles (called from draw function)
+function BattleScene:_drawCalcifyParticles()
+  if not self._calcifySequence or not self._calcifySequence.particles then return end
+  
+  for _, particle in ipairs(self._calcifySequence.particles) do
+    -- Draw trail
+    if particle.trail then
+      particle.trail:draw()
+    end
+    
+    -- Draw particle with glow effect
+    if not particle.hit then
+      love.graphics.setBlendMode("add")
+      
+      -- Outer glow layers (larger, more transparent)
+      love.graphics.setColor(1, 1, 1, 0.15)
+      love.graphics.circle("fill", particle.x, particle.y, 16)
+      love.graphics.setColor(1, 1, 1, 0.25)
+      love.graphics.circle("fill", particle.x, particle.y, 12)
+      love.graphics.setColor(1, 1, 1, 0.4)
+      love.graphics.circle("fill", particle.x, particle.y, 9)
+      
+      -- Middle glow
+      love.graphics.setColor(1, 1, 1, 0.6)
+      love.graphics.circle("fill", particle.x, particle.y, 7)
+      
+      -- Core particle (larger than before)
+      love.graphics.setColor(1, 1, 1, 0.95)
+      love.graphics.circle("fill", particle.x, particle.y, 5)
+      
+      love.graphics.setBlendMode("alpha")
+    end
+  end
 end
 
 -- Perform enemy shockwave attack (enemy_1 special ability)
