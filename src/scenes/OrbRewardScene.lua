@@ -62,10 +62,12 @@ function OrbRewardScene:load()
   self._fadeTimer = 0
   -- Circle pulse on scene entry (drives shader u_transitionProgress)
   self._enterPulseTimer = 0
-  self._enterPulseDuration = (config.transition and config.transition.duration) or 0.6
-  self._enterPulsePhase = "rising"
+  self._enterPulseDuration = ((config.transition and config.transition.duration) or 0.6) * 0.2
+  self._enterPulsePhase = "rising" -- Start entry transition
   self._enterFalloffTimer = 0
-  self._enterFalloffDuration = 0.4
+  self._enterFalloffDuration = 0.2 -- 2x faster (was 0.4)
+  self._entryTransitionComplete = false -- Track when entry transition finishes
+  self._exitTransitionStarted = false -- Flag to track when exit shader transition should start
   local decorPath = "assets/images/decor_1.png"
   local okDecor, imgDecor = pcall(love.graphics.newImage, decorPath)
   if okDecor then self.decorImage = imgDecor end
@@ -153,6 +155,12 @@ function OrbRewardScene:update(dt)
 	if self.selectedIndex and self.pendingChoice then
 		self.selectionTimer = self.selectionTimer + dt
 		if self.selectionTimer >= (self.selectionDuration or 0.4) then
+			-- Selection animation complete, start exit shader transition
+			if not self._exitTransitionStarted then
+				self._exitTransitionStarted = true
+				self._enterPulsePhase = "rising"
+				self._enterPulseTimer = 0
+			end
 			-- Do not reset selection state here; keep it so draw
 			-- remains in the faded/offset state during transition.
 			self.choice = self.pendingChoice
@@ -179,23 +187,52 @@ function OrbRewardScene:update(dt)
     self.shader:send("u_resolution", { vw * supersamplingFactor, vh * supersamplingFactor })
     local p = 0
     local function easeOutCubic(t) return 1 - math.pow(1 - t, 3) end
-    if self._enterPulsePhase == "rising" then
-      self._enterPulseTimer = self._enterPulseTimer + dt
-      local t = math.min(1, self._enterPulseTimer / self._enterPulseDuration)
-      p = easeOutCubic(t)
-      if t >= 1 then
-        self._enterPulsePhase = "falloff"
-        self._enterFalloffTimer = 0
+    
+    -- Handle entry transition (runs on scene load)
+    if not self._entryTransitionComplete and not self._exitTransitionStarted then
+      if self._enterPulsePhase == "rising" then
+        self._enterPulseTimer = self._enterPulseTimer + dt
+        local t = math.min(1, self._enterPulseTimer / self._enterPulseDuration)
+        p = easeOutCubic(t)
+        if t >= 1 then
+          self._enterPulsePhase = "falloff"
+          self._enterFalloffTimer = 0
+        end
+      elseif self._enterPulsePhase == "falloff" then
+        self._enterFalloffTimer = self._enterFalloffTimer + dt
+        local tf = math.min(1, self._enterFalloffTimer / self._enterFalloffDuration)
+        p = 1 - easeOutCubic(tf)
+        if tf >= 1 then
+          self._enterPulsePhase = "idle"
+          self._entryTransitionComplete = true
+          p = 0
+        end
+      else
+        p = 0
       end
-    elseif self._enterPulsePhase == "falloff" then
-      self._enterFalloffTimer = self._enterFalloffTimer + dt
-      local tf = math.min(1, self._enterFalloffTimer / self._enterFalloffDuration)
-      p = 1 - easeOutCubic(tf)
-      if tf >= 1 then
-        self._enterPulsePhase = "idle"
+    -- Handle exit transition (runs after selection animation completes)
+    elseif self._exitTransitionStarted then
+      if self._enterPulsePhase == "rising" then
+        self._enterPulseTimer = self._enterPulseTimer + dt
+        local t = math.min(1, self._enterPulseTimer / self._enterPulseDuration)
+        p = easeOutCubic(t)
+        if t >= 1 then
+          self._enterPulsePhase = "falloff"
+          self._enterFalloffTimer = 0
+        end
+      elseif self._enterPulsePhase == "falloff" then
+        self._enterFalloffTimer = self._enterFalloffTimer + dt
+        local tf = math.min(1, self._enterFalloffTimer / self._enterFalloffDuration)
+        p = 1 - easeOutCubic(tf)
+        if tf >= 1 then
+          self._enterPulsePhase = "idle"
+          p = 0
+        end
+      else
         p = 0
       end
     else
+      -- Idle state (entry complete, exit not started yet)
       p = 0
     end
     self.shader:send("u_transitionProgress", p)
@@ -323,9 +360,16 @@ function OrbRewardScene:draw()
     local header = (opt.kind == "upgrade") and "UPGRADE" or "NEW ORB!"
     -- Make "NEW ORB!" white as well
 		local headerCol = (opt.kind == "upgrade") and {1,1,1,0.8 * a} or {1,1,1,0.9 * a}
-		-- If another option is selected and animating, dim non-selected headers slightly
-		if self.selectedIndex and self.pendingChoice and self.selectedIndex ~= i then
-			headerCol[4] = headerCol[4] * 0.5
+		-- Apply selection animation fade
+		if self.selectedIndex and self.pendingChoice then
+			if self.selectedIndex == i then
+				-- Fade selected header as it moves up
+				local t = math.min(1, (self.selectionTimer or 0) / (self.selectionDuration or 0.4))
+				headerCol[4] = headerCol[4] * (1.0 - t)
+			else
+				-- Fade non-selected headers to fully transparent
+				headerCol[4] = 0.0
+			end
 		end
     love.graphics.setColor(headerCol[1], headerCol[2], headerCol[3], headerCol[4])
     love.graphics.print(header, x, y - 44)
@@ -348,16 +392,28 @@ function OrbRewardScene:draw()
       local totalW = lw + spacing + (iw * scale) + spacing + rw
       local startX = x + cardW - totalW
       local baselineY = y - 44
-      love.graphics.setColor(1, 1, 1, a)
+      -- Apply selection animation fade to level labels
+      local levelAlpha = a
+      if self.selectedIndex and self.pendingChoice then
+        if self.selectedIndex == i then
+          -- Fade selected level labels as it moves up
+          local t = math.min(1, (self.selectionTimer or 0) / (self.selectionDuration or 0.4))
+          levelAlpha = a * (1.0 - t)
+        else
+          -- Fade non-selected level labels to fully transparent
+          levelAlpha = 0.0
+        end
+      end
+      love.graphics.setColor(1, 1, 1, levelAlpha)
       love.graphics.print(leftText, startX, baselineY)
       if self.arrowIcon then
         local ax = startX + lw + spacing
         local ay = baselineY + (font:getAscent() - ih * scale) * 0.5 + 2
-        love.graphics.setColor(1, 1, 1, a)
+        love.graphics.setColor(1, 1, 1, levelAlpha)
         love.graphics.draw(self.arrowIcon, ax, ay, 0, scale, scale)
       end
       local rx = startX + lw + spacing + (iw * scale) + spacing
-      love.graphics.setColor(1, 1, 1, a)
+      love.graphics.setColor(1, 1, 1, levelAlpha)
       love.graphics.print(rightText, rx, baselineY)
     end
 
@@ -375,7 +431,8 @@ function OrbRewardScene:draw()
 			local t = math.min(1, (self.selectionTimer or 0) / (self.selectionDuration or 0.4))
 			-- Ease-out cubic for upward motion
 			local function easeOutCubic(u) return 1 - math.pow(1 - u, 3) end
-			local moveUp = 18 * easeOutCubic(t)
+			-- Increased upward movement: moves up more as it fades (t increases, alphaMul decreases)
+			local moveUp = 150 * easeOutCubic(t) -- Increased from 18 to 50 pixels
 			-- Small initial bounce on scale (peaks at start, eases to 0)
 			local bounceWindow = math.min(1, t / 0.15)
 			local bounceEase = 1 - (1 - bounceWindow) * (1 - bounceWindow)
@@ -383,8 +440,8 @@ function OrbRewardScene:draw()
 			yOffset = -moveUp
 			alphaMul = (1.0 - t)
 		elseif self.selectedIndex and self.pendingChoice and self.selectedIndex ~= i then
-			-- Dim non-selected options during animation
-			alphaMul = 0.4
+			-- Fade non-selected options to fully transparent during animation
+			alphaMul = 0.0
 		end
     love.graphics.push()
     local cx = x + cardW * 0.5

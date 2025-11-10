@@ -4,6 +4,7 @@ local battle_profiles = require("data.battle_profiles")
 local block_types = require("data.block_types")
 local TopBar = require("ui.TopBar")
 local EncounterManager = require("core.EncounterManager")
+local IridescentShader = require("utils.IridescentShader")
 
 -- Shared sprites for blocks (dynamically loaded from block_types registry)
 local SPRITES = {}
@@ -534,7 +535,31 @@ function FormationEditorScene:drawBlock(x, y, kind, size, hp)
     local dx = x - iw * s * 0.5
     local dy = y - ih * s * 0.5
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(sprite, dx, dy, 0, s, s)
+    if kind == "crit" or kind == "multiplier" then
+      local S = IridescentShader and IridescentShader.getShader and IridescentShader.getShader()
+      if S then
+        S:send("u_time", love.timer.getTime())
+        -- Derive a stable per-block offset from its position so previews desync
+        local timeOffset = (math.abs(x * 0.137 + y * 0.271) % 1.0) * 10.0
+        S:send("u_timeOffset", timeOffset)
+        local intensity = (kind == "multiplier") and 0.50 or 0.42
+        S:send("u_intensity", intensity)
+        S:send("u_scale", 2.0)
+        S:send("u_angle", 0.6)
+        S:send("u_variation", (kind == "multiplier") and 0.85 or 0.7)
+        S:send("u_noiseScale", 5.5)
+        S:send("u_noiseAmp", 1.2)
+        S:send("u_shineStrength", (kind == "multiplier") and 0.22 or 0.14)
+        S:send("u_patchiness", (kind == "multiplier") and 0.8 or 0.75)
+        love.graphics.setShader(S)
+        love.graphics.draw(sprite, dx, dy, 0, s, s)
+        love.graphics.setShader()
+      else
+        love.graphics.draw(sprite, dx, dy, 0, s, s)
+      end
+    else
+      love.graphics.draw(sprite, dx, dy, 0, s, s)
+    end
   else
     -- Fallback to colored rectangle
     local halfSize = size * 0.5
