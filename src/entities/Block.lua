@@ -405,50 +405,50 @@ function Block:draw()
       love.graphics.setBlendMode(prevBlendMode)
     else
       -- Normal blocks: draw with color and optional iridescent shader
-      love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
-      -- Apply iridescent shader for 2x (crit) and 4x (multiplier) blocks
-      local isIridescent = (self.kind == "crit" or self.kind == "multiplier")
-      local prevShader = nil
-      if isIridescent then
-        local S = IridescentShader and IridescentShader.getShader and IridescentShader.getShader()
-        if S then
-          prevShader = love.graphics.getShader()
-          S:send("u_time", love.timer.getTime())
-          S:send("u_timeOffset", self.shaderTimeOffset or 0.0)
-          -- Even fainter mix so base color shows more
-          local intensity = (self.kind == "multiplier") and 0.50 or 0.42
-          S:send("u_intensity", intensity)
-          -- Much fewer, softer bands
-          S:send("u_scale", 2.0)
-          S:send("u_angle", 0.6)
-          -- Increase perpendicular wobble substantially
-          local variation = (self.kind == "multiplier") and 0.85 or 0.7
-          S:send("u_variation", variation)
-          -- Organic warping noise and shininess
-          -- Stronger, higher-frequency organic noise
-          S:send("u_noiseScale", 5.5)
-          S:send("u_noiseAmp", 1.2)
-          -- Reduce shine further
-          local shine = (self.kind == "multiplier") and 0.22 or 0.14
-          S:send("u_shineStrength", shine)
-          -- Favor patchy look over stripes
-          local patchiness = (self.kind == "multiplier") and 0.8 or 0.75
-          S:send("u_patchiness", patchiness)
-          love.graphics.setShader(S)
-        end
+    love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
+    -- Apply iridescent shader for 2x (crit) and 4x (multiplier) blocks
+    local isIridescent = (self.kind == "crit" or self.kind == "multiplier")
+    local prevShader = nil
+    if isIridescent then
+      local S = IridescentShader and IridescentShader.getShader and IridescentShader.getShader()
+      if S then
+        prevShader = love.graphics.getShader()
+        S:send("u_time", love.timer.getTime())
+        S:send("u_timeOffset", self.shaderTimeOffset or 0.0)
+        -- Even fainter mix so base color shows more
+        local intensity = (self.kind == "multiplier") and 0.50 or 0.42
+        S:send("u_intensity", intensity)
+        -- Much fewer, softer bands
+        S:send("u_scale", 2.0)
+        S:send("u_angle", 0.6)
+        -- Increase perpendicular wobble substantially
+        local variation = (self.kind == "multiplier") and 0.85 or 0.7
+        S:send("u_variation", variation)
+        -- Organic warping noise and shininess
+        -- Stronger, higher-frequency organic noise
+        S:send("u_noiseScale", 5.5)
+        S:send("u_noiseAmp", 1.2)
+        -- Reduce shine further
+        local shine = (self.kind == "multiplier") and 0.22 or 0.14
+        S:send("u_shineStrength", shine)
+        -- Favor patchy look over stripes
+        local patchiness = (self.kind == "multiplier") and 0.8 or 0.75
+        S:send("u_patchiness", patchiness)
+        love.graphics.setShader(S)
       end
-      if rotation ~= 0 then
-        love.graphics.push()
-        love.graphics.translate(centerX, centerY)
-        love.graphics.rotate(rotation)
-        love.graphics.translate(-centerX, -centerY)
-        love.graphics.draw(sprite, dx, dy, 0, s, s)
-        love.graphics.pop()
-      else
-        love.graphics.draw(sprite, dx, dy, 0, s, s)
-      end
-      if isIridescent then
-        love.graphics.setShader(prevShader)
+    end
+    if rotation ~= 0 then
+      love.graphics.push()
+      love.graphics.translate(centerX, centerY)
+      love.graphics.rotate(rotation)
+      love.graphics.translate(-centerX, -centerY)
+      love.graphics.draw(sprite, dx, dy, 0, s, s)
+      love.graphics.pop()
+    else
+      love.graphics.draw(sprite, dx, dy, 0, s, s)
+    end
+    if isIridescent then
+      love.graphics.setShader(prevShader)
       end
     end
     -- Hit flash: additive white overlay passes similar to battle sprites

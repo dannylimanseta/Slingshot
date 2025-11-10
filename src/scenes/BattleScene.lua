@@ -761,21 +761,47 @@ function BattleScene:update(dt, bounds)
   -- Popups
   local alive = {}
   for _, p in ipairs(self.popups) do
-    -- Always decrement popup timer to allow normal fade
-    p.t = p.t - dt
-    
-    -- Update animated damage sequence
+    -- Update animated damage sequence first
+    local sequenceCompleted = false
     if p.kind == "animated_damage" and p.sequence and #p.sequence > 0 then
-      local prevSequenceIndex = p.sequenceIndex or 1
+      -- Initialize sequence index if not set
+      if not p.sequenceIndex then
+        p.sequenceIndex = 1
+        p.sequenceTimer = 0
+      end
+      
+      local prevSequenceIndex = p.sequenceIndex
       p.sequenceTimer = (p.sequenceTimer or 0) + dt
       local currentStep = p.sequence[p.sequenceIndex]
+      
       if currentStep and p.sequenceTimer >= currentStep.duration then
-        -- Move to next step in sequence
-        p.sequenceTimer = 0
-        p.sequenceIndex = math.min(p.sequenceIndex + 1, #p.sequence)
-        -- Reset bounce timer when step changes
-        if p.sequenceIndex ~= prevSequenceIndex then
+        -- Move to next step in sequence (only reset timer when advancing)
+        if p.sequenceIndex < #p.sequence then
+          p.sequenceTimer = 0
+          p.sequenceIndex = p.sequenceIndex + 1
+          -- Reset bounce timer when step changes
           p.bounceTimer = 0
+        end
+        -- If on final step, do not reset timer here; let completion check handle finish
+      end
+      
+      -- Check if sequence has completed (on final step and its duration has elapsed)
+      if p.sequenceIndex == #p.sequence then
+        local finalStep = p.sequence[p.sequenceIndex]
+        if finalStep and p.sequenceTimer >= finalStep.duration then
+          sequenceCompleted = true
+          -- Mark sequence as completed (only once)
+          if not p.sequenceFinished then
+            p.sequenceFinished = true
+            -- Longer linger for the final value
+            local lastStep = p.sequence[#p.sequence]
+            local hasExclamation = lastStep and lastStep.text and string.find(lastStep.text, "!") ~= nil
+            local lingerTime = hasExclamation and 0.9 or 0.45
+            local disintegrationDisplayTime = 0.25
+            -- Set popup timer to linger window and capture originalLifetime so fade uses this window
+            p.t = lingerTime + disintegrationDisplayTime
+            p.originalLifetime = p.t
+          end
         end
       end
       
@@ -786,28 +812,28 @@ function BattleScene:update(dt, bounds)
       end
       p.bounceTimer = p.bounceTimer + dt
         
-        -- Initialize and update character bounce timers for multiplier steps
-        if currentStep and currentStep.isMultiplier then
-          -- Initialize character bounce timers when multiplier step first appears
-          if not p.charBounceTimers then
-            p.charBounceTimers = { 0, 0, 0 } -- Initialize timers for each character part
-            p.multiplierTarget = nil -- Will be set when parsing multiplier text
-          end
-          
-          -- Update character bounce timers with sequential delays
-          local charBounceDelay = 0.08 -- Delay between each character bounce
-          -- Use a separate timer for multiplier animation that doesn't reset
-          if not p.multiplierStartTime then
-            p.multiplierStartTime = p.sequenceTimer or 0
-          end
-          local multiplierElapsed = (p.sequenceTimer or 0) - p.multiplierStartTime
-          
-          for i = 1, #p.charBounceTimers do
-            if multiplierElapsed >= (i - 1) * charBounceDelay then
-              p.charBounceTimers[i] = (p.charBounceTimers[i] or 0) + dt
-            end
+      -- Initialize and update character bounce timers for multiplier steps
+      if currentStep and currentStep.isMultiplier then
+        -- Initialize character bounce timers when multiplier step first appears
+        if not p.charBounceTimers then
+          p.charBounceTimers = { 0, 0, 0 } -- Initialize timers for each character part
+          p.multiplierTarget = nil -- Will be set when parsing multiplier text
+        end
+        
+        -- Update character bounce timers with sequential delays
+        local charBounceDelay = 0.08 -- Delay between each character bounce
+        -- Use a separate timer for multiplier animation that doesn't reset
+        if not p.multiplierStartTime then
+          p.multiplierStartTime = p.sequenceTimer or 0
+        end
+        local multiplierElapsed = (p.sequenceTimer or 0) - p.multiplierStartTime
+        
+        for i = 1, #p.charBounceTimers do
+          if multiplierElapsed >= (i - 1) * charBounceDelay then
+            p.charBounceTimers[i] = (p.charBounceTimers[i] or 0) + dt
           end
         end
+      end
       
       -- Check if we're on the final step with exclamation mark - add shake effect
       local isFinalStep = (p.sequenceIndex == #p.sequence)
@@ -859,6 +885,12 @@ function BattleScene:update(dt, bounds)
         p.shakeRotation = 0
         p.shakeTime = nil
       end
+    end
+    
+    -- Only decrement popup timer if sequence has completed (or if not an animated damage popup)
+    local isAnimatedDamage = (p.kind == "animated_damage" and p.sequence)
+    if not isAnimatedDamage or sequenceCompleted or (p.sequenceFinished == true) then
+      p.t = p.t - dt
     end
     
     -- Keep popup alive if it has time left
