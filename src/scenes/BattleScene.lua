@@ -514,7 +514,7 @@ function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE, blockHitSequence, 
     }
     self._pendingImpactParams = nil -- Clear after merging
     -- Trigger player attack sequence after delay
-    self._playerAttackDelayTimer = (config.battle and config.battle.playerAttackDelay) or 1.0
+    self._playerAttackDelayTimer = (config.battle and config.battle.playerAttackDelay) or 0.5
     
     -- Queue incoming armor for TurnManager to handle (this happens immediately, visual effects are delayed)
     self.pendingArmor = armor or 0
@@ -2002,7 +2002,7 @@ function BattleScene:playImpact(blockCount, isCrit)
   
   -- Set delay timer if not already set (onPlayerTurnEnd will also set it, but this ensures it's set even if onPlayerTurnEnd isn't called)
   if not self._playerAttackDelayTimer then
-    self._playerAttackDelayTimer = (config.battle and config.battle.playerAttackDelay) or 1.0
+    self._playerAttackDelayTimer = (config.battle and config.battle.playerAttackDelay) or 0.5
   end
   self.impactEffectsPlayed = true
 end
