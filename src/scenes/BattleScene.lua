@@ -654,13 +654,25 @@ function BattleScene:update(dt, bounds)
     
     -- Update animated damage sequence
     if p.kind == "animated_damage" and p.sequence and #p.sequence > 0 then
+      local prevSequenceIndex = p.sequenceIndex or 1
       p.sequenceTimer = (p.sequenceTimer or 0) + dt
       local currentStep = p.sequence[p.sequenceIndex]
       if currentStep and p.sequenceTimer >= currentStep.duration then
         -- Move to next step in sequence
         p.sequenceTimer = 0
         p.sequenceIndex = math.min(p.sequenceIndex + 1, #p.sequence)
+        -- Reset bounce timer when step changes
+        if p.sequenceIndex ~= prevSequenceIndex then
+          p.bounceTimer = 0
+        end
       end
+      
+      -- Update bounce timer (for bounce animation on step changes)
+      -- Initialize bounce timer if not set (for first step)
+      if p.bounceTimer == nil then
+        p.bounceTimer = 0
+      end
+      p.bounceTimer = p.bounceTimer + dt
       
       -- Check if we're on the final step with exclamation mark - add shake effect
       local isFinalStep = (p.sequenceIndex == #p.sequence)
@@ -936,6 +948,7 @@ function BattleScene:update(dt, bounds)
                 sequence = damageSequence,
                 sequenceIndex = 1,
                 sequenceTimer = 0,
+                bounceTimer = 0, -- Initialize bounce timer for bounce animation on step changes
                 t = totalPopupLifetime, -- Long enough to cover animation + disintegration
                 originalLifetime = totalPopupLifetime, -- Store original lifetime for progress calculation
                 who = "enemy", 
@@ -1030,6 +1043,7 @@ function BattleScene:update(dt, bounds)
               sequence = damageSequence,
               sequenceIndex = 1,
               sequenceTimer = 0,
+              bounceTimer = 0, -- Initialize bounce timer for bounce animation on step changes
               t = totalPopupLifetime, -- Long enough to cover animation + disintegration
               originalLifetime = totalPopupLifetime, -- Store original lifetime for progress calculation
               who = "enemy", 

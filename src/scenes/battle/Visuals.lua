@@ -684,7 +684,23 @@ function Visuals.draw(scene, bounds)
         local shakeY = p.shakeOffsetY or 0
         local rotation = p.shakeRotation or 0
         local centerX = x
-        local centerY = y - 40
+        
+        -- Calculate bounce offset for step changes (ease-out-back curve)
+        local bounceOffset = 0
+        if p.bounceTimer then
+          local bounceDuration = 0.3 -- Duration of bounce animation in seconds
+          local bounceProgress = math.min(1, p.bounceTimer / bounceDuration)
+          if bounceProgress > 0 then
+            -- Ease-out-back curve (same as block popups)
+            local c1, c3 = 1.70158, 2.70158
+            local u = (bounceProgress - 1)
+            local bounce = 1 + c3 * (u * u * u) + c1 * (u * u)
+            local bounceHeight = 25 -- Height of bounce in pixels
+            bounceOffset = (1 - bounce) * bounceHeight -- Negative offset (upward)
+          end
+        end
+        
+        local centerY = y - 40 + bounceOffset
         
         -- Check if we're on the final step with exclamation to apply rotation
         local isFinalStep = (sequenceIndex == #p.sequence)
