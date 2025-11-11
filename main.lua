@@ -4,6 +4,7 @@ package.path = package.path .. ";src/?.lua;src/?/init.lua;src/?/?.lua"
 local config = require("config")
 local SceneManager = require("core.SceneManager")
 local SceneTransitionHandler = require("core.SceneTransitionHandler")
+local InputManager = require("managers.InputManager")
 
 local sceneManager
 local transitionHandler
@@ -35,6 +36,18 @@ local function setCursorForScene(scene)
     -- SplitScene has 'left' (GameplayScene) and 'right' (BattleScene) properties
     if scene.left or scene.right then
       isBattleScene = true
+    end
+  end
+  
+  -- Set InputManager context based on scene
+  if isBattleScene then
+    InputManager.setContext("battle")
+  else
+    -- Heuristic: MapScene has a MapManager; otherwise fall back to UI context
+    if scene.mapManager then
+      InputManager.setContext("map")
+    else
+      InputManager.setContext("ui")
     end
   end
   
@@ -130,6 +143,10 @@ function love.load()
 end
 
 function love.update(deltaTime)
+  -- Update input manager first (for edge detection)
+  if InputManager and InputManager.update then
+    InputManager.update(deltaTime)
+  end
   -- Sync mouse pressed state (handles edge cases like mouse pressed on startup)
   local isMouseDown = love.mouse.isDown(1)
   if isMouseDown ~= mousePressed then
@@ -209,6 +226,9 @@ function love.resize(width, height)
 end
 
 function love.keypressed(key, scancode, isRepeat)
+  if InputManager and InputManager.onKeyPressed then
+    InputManager.onKeyPressed(key, scancode, isRepeat)
+  end
   if sceneManager then 
     local result = sceneManager:keypressed(key, scancode, isRepeat)
     -- Handle all scene transitions through the centralized handler
@@ -219,6 +239,9 @@ function love.keypressed(key, scancode, isRepeat)
 end
 
 function love.keyreleased(key, scancode)
+  if InputManager and InputManager.onKeyReleased then
+    InputManager.onKeyReleased(key, scancode)
+  end
   if sceneManager then sceneManager:keyreleased(key, scancode) end
 end
 
@@ -232,6 +255,9 @@ function love.mousepressed(x, y, button, isTouch, presses)
   -- Convert screen coordinates to virtual coordinates (reverse of draw scaling)
   local vx = (x - offsetX) / scaleFactor
   local vy = (y - offsetY) / scaleFactor
+  if InputManager and InputManager.onMousePressed then
+    InputManager.onMousePressed(vx, vy, button, isTouch, presses)
+  end
   if sceneManager then
     local result = sceneManager:mousepressed(vx, vy, button, isTouch, presses)
     -- Handle all scene transitions through the centralized handler
@@ -251,6 +277,9 @@ function love.mousereleased(x, y, button, isTouch, presses)
   -- Convert screen coordinates to virtual coordinates (reverse of draw scaling)
   local vx = (x - offsetX) / scaleFactor
   local vy = (y - offsetY) / scaleFactor
+  if InputManager and InputManager.onMouseReleased then
+    InputManager.onMouseReleased(vx, vy, button, isTouch, presses)
+  end
   if sceneManager then sceneManager:mousereleased(vx, vy, button, isTouch, presses) end
 end
 
@@ -260,11 +289,36 @@ function love.mousemoved(x, y, dx, dy, isTouch)
   local vy = (y - offsetY) / scaleFactor
   local vdx = dx / scaleFactor
   local vdy = dy / scaleFactor
+  if InputManager and InputManager.onMouseMoved then
+    InputManager.onMouseMoved(vx, vy, vdx, vdy, isTouch)
+  end
   if sceneManager then sceneManager:mousemoved(vx, vy, vdx, vdy, isTouch) end
 end
 
 function love.wheelmoved(dx, dy)
+  if InputManager and InputManager.onWheelMoved then
+    InputManager.onWheelMoved(dx, dy)
+  end
   if sceneManager then sceneManager:wheelmoved(dx, dy) end
+end
+
+-- Gamepad support: forward to InputManager (scenes do not consume these directly yet)
+function love.gamepadpressed(joystick, button)
+  if InputManager and InputManager.onGamepadPressed then
+    InputManager.onGamepadPressed(joystick, button)
+  end
+end
+
+function love.gamepadreleased(joystick, button)
+  if InputManager and InputManager.onGamepadReleased then
+    InputManager.onGamepadReleased(joystick, button)
+  end
+end
+
+function love.gamepadaxis(joystick, axis, value)
+  if InputManager and InputManager.onGamepadAxis then
+    InputManager.onGamepadAxis(joystick, axis, value)
+  end
 end
 
 
