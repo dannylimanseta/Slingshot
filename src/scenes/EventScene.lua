@@ -553,10 +553,10 @@ function EventScene:_drawChoiceText(button, alpha, hoverScale)
   
   -- Patterns to match (order matters - more specific first)
   local patterns = {
-    { pattern = "Upgrade (%d+) random orbs by 1 level%.", color = { 0.3, 1, 0.3 } },  -- green for orb upgrades
-    { pattern = "Lose (%d+)%% Max HP%.", color = { 1, 0.3, 0.3 } },  -- red for percentage HP loss
-    { pattern = "Lose (%d+) HP%.", color = { 1, 0.3, 0.3 } },  -- red for HP loss
-    { pattern = "Gain (%d+) Gold%.", color = { 0.3, 1, 0.3 } },  -- green for gold gain
+    { pattern = "Upgrade (%d+) random orbs by 1 level%.", color = { 195/255, 235/255, 139/255 } },  -- green (#C3EB8B) for orb upgrades
+    { pattern = "Lose (%d+)%% Max HP%.", color = { 224/255, 112/255, 126/255 } },  -- red (#E0707E) for percentage HP loss
+    { pattern = "Lose (%d+) HP%.", color = { 224/255, 112/255, 126/255 } },  -- red (#E0707E) for HP loss
+    { pattern = "Gain (%d+) Gold%.", color = { 195/255, 235/255, 139/255 } },  -- green (#C3EB8B) for gold gain
   }
   
   local lastPos = 1
