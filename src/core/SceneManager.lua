@@ -151,7 +151,9 @@ function SceneManager:draw()
     -- fadeTimer should go from very negative (all previous scene) to very positive (all current scene)
     -- For horizontal fade: wider range makes transition slower and more visible
     -- Using -2.0 to 2.0 range (total 4.0) instead of -1.5 to 1.5 (total 3.0) for slower transition
-    local progress = self.transitionTimer / self.transitionDuration
+    local rawProgress = self.transitionTimer / self.transitionDuration
+    -- Apply ease-in-ease-out (smoothstep) for smoother transition
+    local progress = rawProgress * rawProgress * (3.0 - 2.0 * rawProgress)
     local fadeTimer = progress * 4.0 - 2.0
     
     -- Set shader uniforms

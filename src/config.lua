@@ -17,7 +17,7 @@ config.video = {
 
 -- Scene transition settings (used by SceneManager)
 config.transition = {
-  duration = 2.0, -- seconds for transition animation (50% faster than 3.0)
+  duration = 1.2, -- seconds for transition animation (faster, snappy transitions)
   gridWidth = 28, -- grid cells horizontally
   gridHeight = 15, -- grid cells vertically
   fadeType = 0, -- 0 = vertical (bottom-to-top), 1 = horizontal, 2 = center
