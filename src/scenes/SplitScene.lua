@@ -11,6 +11,7 @@ local LayoutManager = require("managers.LayoutManager")
 local battle_profiles = require("data.battle_profiles")
 local TopBar = require("ui.TopBar")
 local InputManager = require("managers.InputManager")
+local OrbsUI = require("ui.OrbsUI")
 
 -- Utility: radial gradient image for glow (alpha falls off toward edge)
 -- Shared with Ball entity for consistency
@@ -69,6 +70,10 @@ function SplitScene.new()
     _defeatDetected = false,
     _returnToMapTimer = 0,
     topBar = TopBar.new(),
+    orbsUI = OrbsUI.new(), -- UI for viewing equipped orbs
+    _orbsUIOpen = false, -- track if orbs UI is open
+    _mouseX = 0,
+    _mouseY = 0,
   }, SplitScene)
 end
 
@@ -709,6 +714,11 @@ function SplitScene:draw()
   if self.topBar then
     self.topBar:draw()
   end
+  
+  -- Draw orbs UI overlay if open
+  if self.orbsUI and self._orbsUIOpen then
+    self.orbsUI:draw()
+  end
 end
 
 local function pointInBounds(x, y, b)
@@ -716,6 +726,34 @@ local function pointInBounds(x, y, b)
 end
 
 function SplitScene:mousepressed(x, y, button)
+  -- Store mouse position for OrbsUI
+  self._mouseX = x
+  self._mouseY = y
+  
+  -- Check if orbs UI is open - handle close button click
+  if self._orbsUIOpen and self.orbsUI then
+    if self.orbsUI:mousepressed(x, y, button) then
+      -- Close button was clicked
+      self._orbsUIOpen = false
+      self.orbsUI:setVisible(false)
+      return
+    end
+    -- Don't process other clicks when UI is open (allow scrolling)
+    return
+  end
+  
+  -- Check if clicking on orbs icon in top bar
+  if self.topBar and self.topBar.orbsIconBounds then
+    local bounds = self.topBar.orbsIconBounds
+    if x >= bounds.x and x <= bounds.x + bounds.w and y >= bounds.y and y <= bounds.y + bounds.h then
+      self._orbsUIOpen = true
+      if self.orbsUI then
+        self.orbsUI:setVisible(true)
+      end
+      return
+    end
+  end
+  
   local w = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
   local h = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
   local centerRect = self.layoutManager:getCenterRect(w, h)
@@ -743,6 +781,10 @@ function SplitScene:mousereleased(x, y, button)
 end
 
 function SplitScene:mousemoved(x, y, dx, dy)
+  -- Store mouse position for OrbsUI
+  self._mouseX = x
+  self._mouseY = y
+  
   local w = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
   local h = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
   local centerRect = self.layoutManager:getCenterRect(w, h)
@@ -752,6 +794,14 @@ function SplitScene:mousemoved(x, y, dx, dy)
     self.left:mousemoved(x - centerBounds.x, y - centerBounds.y, dx, dy, centerBounds)
   elseif self.right and self.right.mousemoved then
     self.right:mousemoved(x, y, dx, dy, { x = 0, y = 0, w = w, h = h, center = centerRect.center })
+  end
+end
+
+function SplitScene:wheelmoved(x, y)
+  -- Handle scrolling for OrbsUI
+  if self._orbsUIOpen and self.orbsUI then
+    self.orbsUI:scroll(y)
+    return
   end
 end
 
@@ -821,6 +871,11 @@ function SplitScene:update(dt)
   -- Call sub-updates (battle gets full context + where center is)
   if self.left and self.left.update then self.left:update(dt, { x = 0, y = 0, w = centerRect.w, h = h }) end
   if self.right and self.right.update then self.right:update(dt, { x = 0, y = 0, w = w, h = h, center = centerRect.center }) end
+  
+  -- Update OrbsUI
+  if self.orbsUI then
+    self.orbsUI:update(dt, self._mouseX, self._mouseY)
+  end
 
   -- Controller/Steam Deck support via InputManager (non-invasive)
   do

@@ -30,7 +30,7 @@ end
 
 -- Compute effective stats for a projectile at its current level.
 -- Accepts either a projectile table or an ID.
--- Returns a table with: baseDamage (number), maxBounces (number|nil), count (number|nil)
+-- Returns a table with: baseDamage (number), maxBounces (number|nil), count (number|nil), maxPierce (number|nil)
 function ProjectileManager.getEffective(projectileOrId)
   local p = projectileOrId
   if type(projectileOrId) == "string" then
@@ -43,6 +43,7 @@ function ProjectileManager.getEffective(projectileOrId)
     baseDamage = (levelData and levelData.baseDamage) or p.baseDamage or 0,
     maxBounces = levelData and levelData.maxBounces or nil,
     count = levelData and levelData.count or nil,
+    maxPierce = levelData and levelData.maxPierce or nil,
   }
 end
 

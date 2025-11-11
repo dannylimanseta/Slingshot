@@ -64,6 +64,10 @@ function Ball.new(world, x, y, dirX, dirY, opts)
   -- Determine maxBounces (can be overridden)
   local maxBounces = opts.maxBounces or config.ball.maxBounces
   
+  -- Determine if this is a pierce orb and maxPierce (can be overridden)
+  local pierce = opts.pierce or false
+  local maxPierce = opts.maxPierce or nil
+  
   -- Load ball sprite (can be overridden via opts.spritePath)
   local ballImg = nil
   local ballPath = opts.spritePath or ((config.assets and config.assets.images and config.assets.images.ball) or nil)
@@ -81,6 +85,9 @@ function Ball.new(world, x, y, dirX, dirY, opts)
     radius = radius,
     maxBounces = maxBounces, -- store maxBounces per ball instance
     bounces = 0,
+    pierce = pierce, -- whether this ball pierces through blocks
+    maxPierce = maxPierce, -- maximum number of blocks to pierce through
+    pierces = 0, -- current number of blocks pierced
     alive = true,
     score = 0,
     body = nil,
@@ -99,10 +106,16 @@ function Ball.new(world, x, y, dirX, dirY, opts)
   self.body:setLinearDamping(0)
   self.shape = love.physics.newCircleShape(self.radius)
   self.fixture = love.physics.newFixture(self.body, self.shape, 1)
-  self.fixture:setRestitution(1)
+  -- Pierce orbs have 0 restitution (no bounce), regular orbs have 1 (full bounce)
+  self.fixture:setRestitution(pierce and 0 or 1)
   self.fixture:setFriction(0)
   self.fixture:setUserData({ type = "ball", ref = self })
   self.body:setLinearVelocity(nx * currentSpeed, ny * currentSpeed)
+  
+  -- Store initial direction for pierce orbs to maintain straight path
+  if pierce then
+    self._initialDirection = { x = nx, y = ny }
+  end
 
   return self
 end
@@ -116,11 +129,21 @@ function Ball:update(dt, world)
     local dv = (self.targetSpeed - self.speed) * math.min(1, k * dt)
     self.speed = self.speed + dv
   end
+  
+  -- For pierce orbs, maintain the initial direction (straight path)
+  -- For regular orbs, normalize current velocity (allows bouncing)
   local vx, vy = self.body:getLinearVelocity()
-  local nx, ny = math2d.normalize(vx, vy)
-  if nx ~= nx or ny ~= ny or (nx == 0 and ny == 0) then
-    -- If direction invalid, nudge upwards
-    nx, ny = 0, -1
+  local nx, ny
+  if self.pierce and self._initialDirection then
+    -- Pierce orbs always go in their initial direction
+    nx, ny = self._initialDirection.x, self._initialDirection.y
+  else
+    -- Regular orbs normalize current velocity (allows bouncing)
+    nx, ny = math2d.normalize(vx, vy)
+    if nx ~= nx or ny ~= ny or (nx == 0 and ny == 0) then
+      -- If direction invalid, nudge upwards
+      nx, ny = 0, -1
+    end
   end
   self.body:setLinearVelocity(nx * self.speed, ny * self.speed)
 
@@ -242,6 +265,8 @@ end
 
 function Ball:onBounce()
   if not self.alive then return end
+  -- Pierce orbs don't bounce
+  if self.pierce then return end
   self.bounces = self.bounces + 1
   if config.ball.bounceSpeedScale and config.ball.bounceSpeedScale > 1 then
     self.targetSpeed = self.targetSpeed * config.ball.bounceSpeedScale
@@ -260,6 +285,17 @@ function Ball:onBounce()
     if self.trail and self.trail.addPoint then
       self.trail:addPoint(x, y)
     end
+  end
+end
+
+function Ball:onPierce()
+  if not self.alive then return end
+  if not self.pierce then return end
+  self.pierces = (self.pierces or 0) + 1
+  -- Check if we've pierced max blocks
+  if self.maxPierce and self.pierces >= self.maxPierce then
+    -- Destroy the ball after piercing max blocks
+    self:destroy()
   end
 end
 

@@ -71,6 +71,22 @@ projectiles.data = {
     icon = "assets/images/ball_3.png",
     description = "Two projectiles that mirror each other's trajectory."
   },
+  {
+    id = "pierce",
+    name = "Pierce",
+    rarity = projectiles.Rarity.UNCOMMON,
+    level = 1,
+    baseDamage = 3,
+    levels = {
+      [1] = { baseDamage = 3, maxPierce = 6 },
+      [2] = { baseDamage = 4, maxPierce = 6 },
+      [3] = { baseDamage = 5, maxPierce = 6 },
+      [4] = { baseDamage = 6, maxPierce = 6 },
+      [5] = { baseDamage = 8, maxPierce = 6 },
+    },
+    icon = "assets/images/orb_pierce.png",
+    description = "Doesn't bounce, pierces through up to 6 blocks."
+  },
 }
 
 -- Helper function to get projectile by ID

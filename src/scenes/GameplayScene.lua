@@ -65,7 +65,12 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
   local width = (bounds and bounds.w) or love.graphics.getWidth()
   local height = (bounds and bounds.h) or love.graphics.getHeight()
   self.world = love.physics.newWorld(0, 0, true)
-  self.world:setCallbacks(function(a, b, contact) self:beginContact(a, b, contact) end, nil, nil, nil)
+  self.world:setCallbacks(
+    function(a, b, contact) self:beginContact(a, b, contact) end,
+    function(a, b, contact) self:preSolve(a, b, contact) end,
+    nil,
+    nil
+  )
 
   -- Calculate grid bounds to match editor exactly
   local gridStartX, gridEndX = playfield.calculateGridBounds(width, height)
@@ -437,17 +442,21 @@ function GameplayScene:draw(bounds)
 
       local length = guide.length or 600
       local spacing = math.max(4, guide.dotSpacing or 16)
-      local r = math.max(1, guide.dotRadius or 2)
+      local baseR = math.max(1, guide.dotRadius or 2)
+      -- Pierce orbs have 2x thicker guide
+      local r = isPierce and (baseR * 2.0) or baseR
       local totalSteps = math.max(1, math.floor(length / spacing))
       local fade = guide.fade ~= false
       local aStart = (guide.alphaStart ~= nil) and guide.alphaStart or 1.0
       local aEnd = (guide.alphaEnd ~= nil) and guide.alphaEnd or 0.0
 
-      -- Check if current projectile is twin_strike
+      -- Check projectile type for special aim guide behavior
       local isTwinStrike = false
+      local isPierce = false
       if self.shooter and self.shooter.getCurrentProjectileId then
         local projectileId = self.shooter:getCurrentProjectileId()
         isTwinStrike = (projectileId == "twin_strike")
+        isPierce = (projectileId == "pierce")
       end
 
       -- Compute first bounce against blocks and top/left/right walls (ignore bottom sensor)
@@ -563,18 +572,14 @@ function GameplayScene:draw(bounds)
       local ox, oy = self.aimStartX, self.aimStartY
       local drawnSteps = 0
 
-        local hitT, hx, hy, nx, ny = firstBounce(ox, oy, dirX, dirY)
-      local leg1 = remaining
-      if hitT and hitT > 0 then leg1 = math.min(remaining, hitT) end
-
-      -- Draw first leg dotted
-      do
-        local steps = math.floor(leg1 / spacing)
+      if isPierce then
+        -- Pierce orbs: draw straight line only (no bounce prediction)
+        local steps = math.floor(remaining / spacing)
         for i = 1, steps do
           local t = i * spacing
-            local px = ox + dirX * t
-            local py = oy + dirY * t
-          local idx = drawnSteps + i
+          local px = ox + dirX * t
+          local py = oy + dirY * t
+          local idx = i
           local alpha = 1
           if fade then
             local frac = idx / totalSteps
@@ -584,31 +589,55 @@ function GameplayScene:draw(bounds)
           love.graphics.setColor(1, 1, 1, alpha)
           love.graphics.circle("fill", px, py, r)
         end
-        drawnSteps = drawnSteps + steps
-      end
-      remaining = math.max(0, remaining - leg1)
+      else
+        -- Regular orbs: draw with bounce prediction
+        local hitT, hx, hy, nx, ny = firstBounce(ox, oy, dirX, dirY)
+        local leg1 = remaining
+        if hitT and hitT > 0 then leg1 = math.min(remaining, hitT) end
 
-      -- Draw reflected second leg if we hit a wall and have remaining length
-      if hitT and remaining > 0 then
-          local rx, ry = dirX, dirY
-        -- Reflect direction across normal: r = v - 2*(v·n)*n
-        local dot = rx * nx + ry * ny
-        rx = rx - 2 * dot * nx
-        ry = ry - 2 * dot * ny
-        local steps = math.floor(remaining / spacing)
-        for i = 1, steps do
-          local t = i * spacing
-          local px = hx + rx * t
-          local py = hy + ry * t
-          local idx = drawnSteps + i
-          local alpha = 1
-          if fade then
-            local frac = idx / totalSteps
-            alpha = aStart + (aEnd - aStart) * math.min(1, math.max(0, frac))
+        -- Draw first leg dotted
+        do
+          local steps = math.floor(leg1 / spacing)
+          for i = 1, steps do
+            local t = i * spacing
+            local px = ox + dirX * t
+            local py = oy + dirY * t
+            local idx = drawnSteps + i
+            local alpha = 1
+            if fade then
+              local frac = idx / totalSteps
+              alpha = aStart + (aEnd - aStart) * math.min(1, math.max(0, frac))
+            end
+            alpha = alpha * (self.guideAlpha or 1)
+            love.graphics.setColor(1, 1, 1, alpha)
+            love.graphics.circle("fill", px, py, r)
           end
-          alpha = alpha * (self.guideAlpha or 1)
-          love.graphics.setColor(1, 1, 1, alpha)
-          love.graphics.circle("fill", px, py, r)
+          drawnSteps = drawnSteps + steps
+        end
+        remaining = math.max(0, remaining - leg1)
+
+        -- Draw reflected second leg if we hit a wall and have remaining length
+        if hitT and remaining > 0 then
+          local rx, ry = dirX, dirY
+          -- Reflect direction across normal: r = v - 2*(v·n)*n
+          local dot = rx * nx + ry * ny
+          rx = rx - 2 * dot * nx
+          ry = ry - 2 * dot * ny
+          local steps = math.floor(remaining / spacing)
+          for i = 1, steps do
+            local t = i * spacing
+            local px = hx + rx * t
+            local py = hy + ry * t
+            local idx = drawnSteps + i
+            local alpha = 1
+            if fade then
+              local frac = idx / totalSteps
+              alpha = aStart + (aEnd - aStart) * math.min(1, math.max(0, frac))
+            end
+            alpha = alpha * (self.guideAlpha or 1)
+            love.graphics.setColor(1, 1, 1, alpha)
+            love.graphics.circle("fill", px, py, r)
+          end
         end
       end
       end
@@ -934,6 +963,28 @@ function GameplayScene:mousereleased(x, y, button, bounds)
             self.baseDamageThisTurn = self.baseDamageThisTurn + baseDmg -- Track base damage for animation
           end
         end
+      elseif projectileId == "pierce" then
+        -- Pierce: single projectile that pierces through blocks
+        self.balls = {} -- Clear multiple balls
+        local maxPierce = (effective and effective.maxPierce) or 6
+        -- Pierce orbs are 2x larger
+        local pierceRadiusScale = 2.0
+        self.ball = Ball.new(self.world, self.aimStartX, self.aimStartY, ndx, ndy, {
+          pierce = true,
+          maxPierce = maxPierce,
+          radius = config.ball.radius * pierceRadiusScale,
+          spritePath = spritePath,
+          onLastBounce = function(ball)
+            -- Pierce orbs don't bounce, but this callback can be used for cleanup if needed
+            ball:destroy()
+          end
+        })
+        if self.ball then
+          local baseDmg = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
+          self.ball.score = baseDmg
+          self.score = self.score + self.ball.score
+          self.baseDamageThisTurn = self.baseDamageThisTurn + baseDmg -- Track base damage for animation
+        end
       else
         -- Single projectile (regular shot)
         self.balls = {} -- Clear multiple balls
@@ -1014,6 +1065,27 @@ function GameplayScene:updateWalls(newWidth, newHeight)
   end
 end
 
+function GameplayScene:preSolve(fixA, fixB, contact)
+  -- Disable collision response for pierce orbs hitting blocks (they pierce through)
+  -- With restitution=0 and direction maintained in update(), this ensures straight piercing
+  local a = fixA and fixA:getUserData() or nil
+  local b = fixB and fixB:getUserData() or nil
+  local function getBall(x)
+    return x and x.type == "ball" and x.ref or nil
+  end
+  local function getBlock(x)
+    return x and x.type == "block" and x.ref or nil
+  end
+  
+  local ball = getBall(a) or getBall(b)
+  local block = getBlock(a) or getBlock(b)
+  
+  -- If a pierce orb hits a block, disable collision response (no bounce, pierces through)
+  if ball and block and ball.pierce then
+    contact:setEnabled(false)
+  end
+end
+
 function GameplayScene:beginContact(fixA, fixB, contact)
   local a = fixA and fixA:getUserData() or nil
   local b = fixB and fixB:getUserData() or nil
@@ -1031,22 +1103,56 @@ function GameplayScene:beginContact(fixA, fixB, contact)
   local ball = getBall(a) or getBall(b)
   local block = getBlock(a) or getBlock(b)
   if ball and (aType == "wall" or bType == "wall") then
-    ball:onBounce()
-    -- Trigger edge glow effect for left/right walls
+    -- Handle wall bounces
     local wallData = (aType == "wall" and a) or (bType == "wall" and b)
-    if wallData and wallData.side and self.onEdgeHit then
-      -- Get bounce position from contact
-      local x, y = contact:getPositions()
-      local bounceY = y or -200 -- Use contact y-position or default
-      -- Call the callback to trigger glow effect with y-position
-      pcall(function() self.onEdgeHit(wallData.side, bounceY) end)
+    
+    if ball.pierce then
+      -- Pierce orbs: manually bounce off walls (since restitution is 0)
+      -- Reverse the direction component perpendicular to the wall
+      local vx, vy = ball.body:getLinearVelocity()
+      if wallData and wallData.side then
+        if wallData.side == "left" or wallData.side == "right" then
+          -- Bounce off left/right walls: reverse X direction
+          vx = -vx
+        end
+        -- Top wall: reverse Y direction (if needed)
+        if not wallData.side then
+          vy = -vy
+        end
+      end
+      -- Update initial direction for pierce orb to maintain new direction
+      local math2d = require("utils.math2d")
+      local nx, ny = math2d.normalize(vx, vy)
+      if nx and ny then
+        ball._initialDirection = { x = nx, y = ny }
+        ball.body:setLinearVelocity(nx * ball.speed, ny * ball.speed)
+      end
+      
+      -- Trigger edge glow effect for left/right walls
+      if wallData and wallData.side and self.onEdgeHit then
+        local x, y = contact:getPositions()
+        local bounceY = y or -200
+        pcall(function() self.onEdgeHit(wallData.side, bounceY) end)
+      end
+    else
+      -- Regular orbs: normal bounce (restitution handles it)
+      ball:onBounce()
+      -- Trigger edge glow effect for left/right walls
+      if wallData and wallData.side and self.onEdgeHit then
+        local x, y = contact:getPositions()
+        local bounceY = y or -200
+        pcall(function() self.onEdgeHit(wallData.side, bounceY) end)
+      end
     end
   end
   if ball and block then
     -- Early exit checks: block must be alive, not already hit, and not marked as hit this frame
     if not block.alive or block.hitThisFrame or self._blocksHitThisFrame[block] then
       -- Block already destroyed or already processed this frame, skip all processing
-      ball:onBounce()
+      -- Pierce orbs don't bounce, so skip bounce call for them
+      if not ball.pierce then
+        ball:onBounce()
+      end
       return
     end
     
@@ -1083,7 +1189,16 @@ function GameplayScene:beginContact(fixA, fixB, contact)
     local x, y = contact:getPositions()
     if x and y and self.particles then self.particles:emitSpark(x, y) end
     ball:onBlockHit() -- Trigger glow burst effect
-    ball:onBounce()
+    
+    -- Handle pierce vs bounce behavior
+    if ball.pierce then
+      -- Pierce orb: pierce through the block (no bounce)
+      -- Velocity will be restored in postSolve to maintain straight path
+      ball:onPierce()
+    else
+      -- Regular orb: bounce off the block
+      ball:onBounce()
+    end
     -- Award rewards: per-hit for all blocks. Crit sets a turn multiplier (2x total damage), Soul sets a turn multiplier (4x total damage)
     local perHit = (config.score and config.score.rewardPerHit) or 1
     local hitReward = perHit
