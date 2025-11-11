@@ -361,6 +361,19 @@ function MapController:update(deltaTime)
     end
   end
 
+  -- Tween darkening overlay when player runs out of turns
+  do
+    local darkeningConfig = config.map.noTurnsDarkening
+    if darkeningConfig and darkeningConfig.enabled and s.daySystem then
+      local targetAlpha = (not s.daySystem:canMove()) and (darkeningConfig.alpha or 0.6) or 0
+      local tweenSpeed = darkeningConfig.tweenSpeed or 4
+      local diff = targetAlpha - (s._darkeningAlpha or 0)
+      s._darkeningAlpha = (s._darkeningAlpha or 0) + diff * math.min(1, tweenSpeed * deltaTime)
+    else
+      s._darkeningAlpha = 0
+    end
+  end
+
   local isAnimating = s._endDayPressed and ((s._endDaySpinTime < s._endDaySpinDuration) or (s._endDayFadeOutTime < s._endDayFadeOutDuration))
   if (not s.daySystem:canMove()) or isAnimating then
     if isAnimating then

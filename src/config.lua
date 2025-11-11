@@ -410,6 +410,13 @@ config.map = {
     initialDelay = 0.35, -- seconds to wait before first auto-repeat
     interval = 0.12, -- seconds between subsequent auto-moves while holding
   },
+  -- Darkening effect when player runs out of turns
+  noTurnsDarkening = {
+    enabled = true, -- enable darkening when out of turns
+    alpha = 0.6, -- darkness overlay alpha (0.0 = no darkening, 1.0 = fully black)
+    color = {0, 0, 0}, -- RGB color for the darkening overlay (black)
+    tweenSpeed = 4, -- speed of the darkening transition (higher = faster)
+  },
   -- Map generation parameters
   generation = {
     width = 90, -- expanded grid width for longer routes

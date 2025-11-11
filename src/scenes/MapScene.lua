@@ -65,6 +65,7 @@ function MapScene.new()
     _holdElapsed = 0,
     _repeatElapsed = 0,
     _hasFiredInitialRepeat = false,
+    _darkeningAlpha = 0, -- tweened alpha for darkening overlay when out of turns
   }, MapScene)
   scene.controller = MapController.new(scene)
   scene.renderer = MapRenderer.new()

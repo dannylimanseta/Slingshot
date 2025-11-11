@@ -384,6 +384,16 @@ function MapRenderer:draw(scene)
 
   love.graphics.pop()
 
+  -- Draw darkening overlay when player runs out of turns (using tweened alpha)
+  local darkeningConfig = config.map.noTurnsDarkening
+  if darkeningConfig and darkeningConfig.enabled and scene._darkeningAlpha and scene._darkeningAlpha > 0 then
+    local vw = config.video.virtualWidth
+    local vh = config.video.virtualHeight
+    local color = darkeningConfig.color or {0, 0, 0}
+    love.graphics.setColor(color[1], color[2], color[3], scene._darkeningAlpha)
+    love.graphics.rectangle("fill", 0, 0, vw, vh)
+  end
+
   self:drawUI(scene)
   if scene.topBar then
     scene.topBar:draw()
