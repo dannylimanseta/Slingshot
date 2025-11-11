@@ -275,6 +275,12 @@ function MapController:update(deltaTime)
           local px4, py4 = s.mapManager:getPlayerWorldPosition(s.gridSize, s.offsetX, s.offsetY)
           s.playerWorldX = px4
           s.playerWorldY = py4
+        elseif result == "rest_visited" then
+          local px5, py5 = s.mapManager:getPlayerWorldPosition(s.gridSize, s.offsetX, s.offsetY)
+          s.playerWorldX = px5
+          s.playerWorldY = py5
+          -- Trigger rest site scene
+          return { type = "open_rest_site" }
         else
           -- Fallback check: in case result was dropped, directly inspect current tile for EVENT
           local tile = s.mapManager:getTile(s.mapManager.playerGridX, s.mapManager.playerGridY)

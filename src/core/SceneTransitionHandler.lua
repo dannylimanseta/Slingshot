@@ -8,6 +8,7 @@ local RewardsScene = require("scenes.RewardsScene")
 local OrbRewardScene = require("scenes.OrbRewardScene")
 local EncounterSelectScene = require("scenes.EncounterSelectScene")
 local EventScene = require("scenes.EventScene")
+local RestSiteScene = require("scenes.RestSiteScene")
 
 local SceneTransitionHandler = {}
 SceneTransitionHandler.__index = SceneTransitionHandler
@@ -53,6 +54,7 @@ function SceneTransitionHandler:handleReturnToMap(data)
   data = data or {}
   local victory = data.victory or false
   local goldReward = data.goldReward or 0
+  local skipTransition = data.skipTransition
   
   -- Ensure map scene exists
   if not self.mapScene then
@@ -67,13 +69,24 @@ function SceneTransitionHandler:handleReturnToMap(data)
     self.sceneManager:set(rewardsScene)
     self.setCursorForScene(rewardsScene)
   else
-    -- Defeat or returning from event: go straight back to map without transition
-    -- Skip transition to avoid calling load() which would recalculate player position
-    self.sceneManager:set(self.mapScene, true)
-    self.setCursorForScene(self.mapScene)
-    self.previousScene = nil
-    if self.mapScene then
-      self.mapScene._inputSuppressTimer = 0.2
+    -- If skipTransition is explicitly false, use transition; otherwise skip for events/defeat
+    -- Rest sites set skipTransition = false to enable transitions
+    if skipTransition == false then
+      -- Use transition (for rest sites)
+      self.sceneManager:set(self.mapScene, false)
+      self.setCursorForScene(self.mapScene)
+      self.previousScene = nil
+      if self.mapScene then
+        self.mapScene._inputSuppressTimer = 0.2
+      end
+    else
+      -- Skip transition (for events/defeat) to avoid calling load() which would recalculate player position
+      self.sceneManager:set(self.mapScene, true)
+      self.setCursorForScene(self.mapScene)
+      self.previousScene = nil
+      if self.mapScene then
+        self.mapScene._inputSuppressTimer = 0.2
+      end
     end
   end
 end
@@ -181,6 +194,14 @@ function SceneTransitionHandler:handleOpenEvent(data)
   self.setCursorForScene(eventScene)
 end
 
+-- Transition: Open rest site scene
+function SceneTransitionHandler:handleOpenRestSite()
+  self.previousScene = self.mapScene
+  local restSiteScene = RestSiteScene.new()
+  self.sceneManager:set(restSiteScene)
+  self.setCursorForScene(restSiteScene)
+end
+
 -- Main handler: processes transition results from scene updates/events
 function SceneTransitionHandler:handleTransition(result)
   if not result then return end
@@ -232,6 +253,8 @@ function SceneTransitionHandler:handleTransition(result)
       self:handleCancel()
     elseif transitionType == "open_event" then
       self:handleOpenEvent(result)
+    elseif transitionType == "open_rest_site" then
+      self:handleOpenRestSite()
     end
   end
 end

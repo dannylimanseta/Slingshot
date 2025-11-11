@@ -1101,6 +1101,11 @@ function MapManager:completeMovement()
       tile.type = MapManager.TileType.GROUND
       return false, "treasure_collected"
     end
+
+    if tile and tile.type == MapManager.TileType.REST then
+      tile.type = MapManager.TileType.GROUND
+      return false, "rest_visited"
+    end
   end
 
   return false
