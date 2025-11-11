@@ -29,6 +29,7 @@ function MapScene.new()
     offsetY = 0,
     _pendingBattleTransition = false,
     _battleTransitionDelay = nil,
+    _pendingEvent = false,
     playerSprite = nil,
     _initialized = false,
     _returnGridX = nil,

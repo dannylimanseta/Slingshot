@@ -250,6 +250,8 @@ function MapController:update(deltaTime)
           local px2, py2 = s.mapManager:getPlayerWorldPosition(s.gridSize, s.offsetX, s.offsetY)
           s.playerWorldX = px2
           s.playerWorldY = py2
+          -- Trigger event scene
+          s._pendingEvent = true
         elseif result == "merchant_visited" then
           local px3, py3 = s.mapManager:getPlayerWorldPosition(s.gridSize, s.offsetX, s.offsetY)
           s.playerWorldX = px3
@@ -277,6 +279,21 @@ function MapController:update(deltaTime)
   if s._clampCameraToMap then s:_clampCameraToMap(true) end
   if s._clampCameraToMap then s:_clampCameraToMap(false) end
 
+  -- Handle pending event FIRST (before battle transition, as they're mutually exclusive)
+  if s._pendingEvent then
+    -- Pick a random event (for now - can be enhanced to store eventId on tile)
+    local events = require("data.events")
+    local event = events.getRandom()
+    if event then
+      s._pendingEvent = false  -- Clear flag before returning
+      return { type = "open_event", eventId = event.id }
+    else
+      -- If no event found, log warning but still clear flag to prevent infinite loop
+      print("Warning: No events available when trying to trigger event scene")
+      s._pendingEvent = false
+    end
+  end
+  
   if s._battleTransitionDelay ~= nil then
     if s._battleTransitionDelay > 0 then
       s._battleTransitionDelay = s._battleTransitionDelay - deltaTime

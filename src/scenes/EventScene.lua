@@ -1,0 +1,722 @@
+local config = require("config")
+local theme = require("theme")
+local Button = require("ui.Button")
+local TopBar = require("ui.TopBar")
+local PlayerState = require("core.PlayerState")
+local events = require("data.events")
+
+local EventScene = {}
+EventScene.__index = EventScene
+
+function EventScene.new(eventId)
+  return setmetatable({
+    eventId = eventId,
+    event = nil,
+    eventImage = nil,
+    titleFont = nil,
+    textFont = nil,
+    choiceButtons = {},
+    topBar = TopBar.new(),
+    mouseX = 0,
+    mouseY = 0,
+    _fadeTimer = 0,
+    _fadeInDuration = 0.5,
+    _fadeStartDelay = 0.2,
+    _selectedChoice = nil,
+    _exitRequested = false,
+    _choiceMade = false,  -- Track if a choice has been made to disable buttons
+    -- Coin animation state
+    _coinAnimations = {},
+    goldIcon = nil,
+    _goldAmount = 0,
+    _goldAnimationStarted = false,
+    _goldAnimationComplete = false,
+    -- Gold counting animation state
+    _goldCounting = false,
+    _goldCountTime = 0,
+    _goldCountDuration = 0.6, -- seconds to count up
+    _goldDisplayStart = 0,
+    _goldDisplayTarget = 0,
+  }, EventScene)
+end
+
+function EventScene:load()
+  self._fadeTimer = 0
+  
+  -- Load event data
+  self.event = events.get(self.eventId)
+  if not self.event then
+    -- Fallback to placeholder event if not found
+    self.event = {
+      id = "unknown",
+      title = "Unknown Event",
+      image = "event_placeholder.png",
+      text = "An unknown event has occurred.",
+      choices = {
+        { text = "Continue", effects = {} }
+      }
+    }
+  end
+  
+  -- Load event image
+  local imagePath = "assets/images/events/" .. self.event.image
+  local ok, img = pcall(love.graphics.newImage, imagePath)
+  if ok then
+    self.eventImage = img
+  else
+    -- Try fallback placeholder
+    local fallbackPath = "assets/images/events/event_placeholder.png"
+    local ok2, img2 = pcall(love.graphics.newImage, fallbackPath)
+    if ok2 then
+      self.eventImage = img2
+    end
+  end
+  
+  -- Create fonts
+  -- Use semi-bold (Bold) for title since SemiBold variant not available
+  local boldFontPath = "assets/fonts/BarlowCondensed-Bold.ttf"
+  self.titleFont = theme.newFont(50, boldFontPath)
+  -- Use regular (non-bold) font for description
+  local regularFontPath = "assets/fonts/BarlowCondensed-Regular.ttf"
+  local baseSize = 20  -- Reduced from 24 to 20
+  self.textFont = theme.newFont(baseSize, regularFontPath)
+  
+  -- Load gold icon for coin animations
+  local goldIconPath = (config.assets and config.assets.images and config.assets.images.icon_gold) or nil
+  if goldIconPath then
+    local okGoldIcon, goldImg = pcall(love.graphics.newImage, goldIconPath)
+    if okGoldIcon then self.goldIcon = goldImg end
+  end
+  
+  -- Create choice buttons (styled like reward buttons)
+  self.choiceButtons = {}
+  for i, choice in ipairs(self.event.choices or {}) do
+    local button = Button.new({
+      label = choice.text,
+      font = self.textFont,
+      bgColor = { 0, 0, 0, 0.7 },  -- Same style as reward buttons
+      align = "left",
+      onClick = function()
+        -- Prevent multiple clicks
+        if self._choiceMade then
+          return
+        end
+        
+        self._choiceMade = true  -- Disable all buttons
+        self._selectedChoice = choice
+        self._clickedButtonIndex = i  -- Store which button was clicked for coin animation
+        -- Check if choice gives gold - if so, animate coins instead of immediately applying
+        if choice.effects and choice.effects.gold and choice.effects.gold > 0 then
+          -- Store gold amounts for counting animation
+          local PlayerState = require("core.PlayerState")
+          local playerState = PlayerState.getInstance()
+          self._goldDisplayStart = playerState:getGold()
+          self._goldAmount = choice.effects.gold
+          self._goldDisplayTarget = self._goldDisplayStart + self._goldAmount
+          self._goldAnimationStarted = true
+          -- Set initial override to start value
+          if self.topBar then
+            self.topBar.overrideGold = self._goldDisplayStart
+          end
+          -- Apply other effects immediately (like HP)
+          local otherEffects = {}
+          for k, v in pairs(choice.effects) do
+            if k ~= "gold" then
+              otherEffects[k] = v
+            end
+          end
+          if next(otherEffects) then
+            self:_applyChoiceEffects(otherEffects)
+          end
+        else
+          -- No gold, apply all effects immediately
+          self:_applyChoiceEffects(choice.effects or {})
+          self._exitRequested = true
+        end
+      end,
+    })
+    -- Initialize scale for hover effect
+    button._scale = 1.0
+    table.insert(self.choiceButtons, button)
+  end
+end
+
+function EventScene:_applyChoiceEffects(effects)
+  local playerState = PlayerState.getInstance()
+  
+  if effects.hp then
+    local currentHP = playerState:getHealth()
+    local newHP = math.max(0, math.min(currentHP + effects.hp, playerState:getMaxHealth()))
+    playerState:setHealth(newHP)
+  end
+  
+  if effects.gold then
+    playerState:addGold(effects.gold)
+  end
+  
+  -- Add more effect types here as needed
+end
+
+function EventScene:update(dt, mouseX, mouseY)
+  -- Get mouse position (from parameters or love.mouse if available)
+  if mouseX and mouseY then
+    self.mouseX = mouseX
+    self.mouseY = mouseY
+  else
+    -- Fallback: get from love.mouse (will be in screen coordinates, need to convert)
+    local mx, my = love.mouse.getPosition()
+    if mx and my then
+      -- Convert to virtual coordinates (same as main.lua does)
+      local vw = config.video.virtualWidth
+      local vh = config.video.virtualHeight
+      local winW, winH = love.graphics.getDimensions()
+      local scaleFactor = math.min(winW / vw, winH / vh)
+      local offsetX = math.floor((winW - vw * scaleFactor) * 0.5)
+      local offsetY = math.floor((winH - vh * scaleFactor) * 0.5)
+      self.mouseX = (mx - offsetX) / scaleFactor
+      self.mouseY = (my - offsetY) / scaleFactor
+    end
+  end
+  
+  -- Update fade timer
+  self._fadeTimer = self._fadeTimer + dt
+  
+  -- Calculate button layout first (needed for coin animation source position)
+  local vw = config.video.virtualWidth
+  local vh = config.video.virtualHeight
+  local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
+  local padding = 40
+  local leftPanelWidth = vw * 0.35
+  local rightPanelWidth = vw * 0.65 - padding * 2
+  local rightPanelX = leftPanelWidth + padding + 50
+  local buttonWidth = (rightPanelWidth - padding) * 0.9
+  local buttonHeight = 50
+  local buttonSpacing = 15
+  
+  -- Calculate starting Y position for buttons
+  local contentY = topBarHeight
+  local currentY = contentY + 15  -- Account for title shift
+  if self.titleFont and self.event.title then
+    currentY = currentY + self.titleFont:getHeight() + 30
+  end
+  if self.textFont and self.event.text then
+    local textWidth = (rightPanelWidth - padding) * 0.9
+    local lines = self:_wordWrap(self.event.text, textWidth, self.textFont)
+    for _, line in ipairs(lines) do
+      if line == "" then
+        currentY = currentY + self.textFont:getHeight() * 0.5
+      else
+        currentY = currentY + self.textFont:getHeight() + 8
+      end
+    end
+    currentY = currentY + 30
+  end
+  
+  -- Set button layouts (needed for coin animation)
+  for i, button in ipairs(self.choiceButtons) do
+    local buttonY = currentY + (i - 1) * (buttonHeight + buttonSpacing)
+    button:setLayout(rightPanelX, buttonY, buttonWidth, buttonHeight)
+    
+    -- Calculate hitRect for hover detection
+    if not button._hitRect then
+      button._hitRect = {}
+    end
+    local cx = button.x + button.w * 0.5
+    local cy = button.y + button.h * 0.5
+    local s = button._scale or 1.0
+    button._hitRect.x = math.floor(cx - button.w * s * 0.5)
+    button._hitRect.y = math.floor(cy - button.h * s * 0.5)
+    button._hitRect.w = math.floor(button.w * s)
+    button._hitRect.h = math.floor(button.h * s)
+  end
+  
+  -- Start coin animation if gold was gained (after layout is set)
+  if self._goldAnimationStarted and not self._goldAnimationComplete then
+    self:_startCoinAnimation(self._goldAmount, vw, vh)
+    self._goldAnimationStarted = false
+  end
+  
+  -- Update coin animations
+  self:_updateCoinAnimations(dt)
+  
+  -- Check if coin animation is complete
+  if not self._goldAnimationComplete and #self._coinAnimations == 0 and self._goldAmount > 0 then
+    self._goldAnimationComplete = true
+    -- Start gold counting animation
+    if not self._goldCounting then
+      self._goldCounting = true
+      self._goldCountTime = 0
+      -- Ensure override starts at start value
+      if self.topBar then
+        self.topBar.overrideGold = self._goldDisplayStart
+      end
+    end
+  end
+  
+  -- Animate gold number increase in top bar after coins finish
+  if self._goldCounting and self.topBar then
+    self._goldCountTime = self._goldCountTime + dt
+    local t = math.min(1, self._goldCountTime / self._goldCountDuration)
+    -- Ease-out
+    local eased = 1 - (1 - t) * (1 - t)
+    local value = math.floor(self._goldDisplayStart + (self._goldDisplayTarget - self._goldDisplayStart) * eased + 0.5)
+    self.topBar.overrideGold = value
+    if t >= 1 then
+      -- Counting done; apply gold and clear override to use real PlayerState gold
+      local playerState = PlayerState.getInstance()
+      playerState:addGold(self._goldAmount)
+      self._goldAmount = 0
+      self.topBar.overrideGold = nil
+      self._goldCounting = false
+      -- Exit after counting animation
+      self._exitRequested = true
+    end
+  end
+  
+  -- Update buttons (hover effects) - disable if choice already made
+  for i, button in ipairs(self.choiceButtons) do
+    -- Initialize scale if not set
+    if not button._scale then
+      button._scale = 1.0
+    end
+    
+    -- Update button (this will use hitRect to determine hover and update scale)
+    -- Disable hover if choice already made
+    if self._choiceMade then
+      -- Reset hover state and scale
+      button._hovered = false
+      button._scale = 1.0
+    else
+      button:update(dt, self.mouseX, self.mouseY)
+    end
+  end
+  
+  -- Check for exit (but wait for coin animations and counting to complete if gold was gained)
+  if self._exitRequested then
+    -- If gold counting is in progress, wait for it to complete
+    if self._goldCounting then
+      -- Still counting, don't exit yet
+      return nil
+    end
+    -- No gold or counting complete, safe to exit
+    return { type = "return_to_map" }
+  end
+  
+  return nil
+end
+
+function EventScene:draw()
+  local vw = config.video.virtualWidth
+  local vh = config.video.virtualHeight
+  
+  -- Calculate fade alpha
+  local fadeAlpha = 1.0
+  if self._fadeTimer < self._fadeStartDelay then
+    fadeAlpha = 0
+  elseif self._fadeTimer < self._fadeStartDelay + self._fadeInDuration then
+    local progress = (self._fadeTimer - self._fadeStartDelay) / self._fadeInDuration
+    fadeAlpha = progress
+  end
+  
+  -- Draw background
+  love.graphics.setColor(theme.colors.background[1], theme.colors.background[2], theme.colors.background[3], fadeAlpha)
+  love.graphics.rectangle("fill", 0, 0, vw, vh)
+  
+  -- Draw top bar
+  if self.topBar then
+    love.graphics.setColor(1, 1, 1, fadeAlpha)
+    self.topBar:draw()
+  end
+  
+  -- Calculate layout
+  local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
+  local padding = 40
+  local leftPanelWidth = vw * 0.35  -- 35% for image
+  local rightPanelWidth = vw * 0.65 - padding * 2  -- 65% for text/choices
+  local contentY = topBarHeight
+  local contentHeight = vh - topBarHeight  -- Full height from top bar to bottom
+  
+  -- Draw left panel (event image) - aligned left, fills height
+  love.graphics.setColor(1, 1, 1, fadeAlpha)
+  if self.eventImage then
+    local imgW, imgH = self.eventImage:getDimensions()
+    -- Scale to fill height (touching top and bottom edges)
+    local scale = contentHeight / imgH
+    local scaledW = imgW * scale
+    local scaledH = imgH * scale
+    local imgX = 0  -- Aligned to left edge
+    local imgY = contentY  -- Aligned to top (below top bar)
+    
+    love.graphics.draw(self.eventImage, imgX, imgY, 0, scale, scale)
+  end
+  
+  -- Draw right panel (title, text, choices)
+  local rightPanelX = leftPanelWidth + padding + 50  -- Shift right by 50px
+  local rightPanelY = contentY
+  local currentY = rightPanelY
+  
+  -- Draw title (without border/outline) - shifted down slightly
+  if self.titleFont and self.event.title then
+    love.graphics.setFont(self.titleFont)
+    love.graphics.setColor(1, 1, 1, fadeAlpha)
+    currentY = currentY + 15  -- Shift down by 15px
+    love.graphics.print(self.event.title, rightPanelX, currentY)
+    currentY = currentY + self.titleFont:getHeight() + 30
+  end
+  
+  -- Draw event text
+  if self.textFont and self.event.text then
+    love.graphics.setFont(self.textFont)
+    love.graphics.setColor(0.9, 0.9, 0.9, fadeAlpha)
+    
+    -- Word wrap text
+    local textX = rightPanelX
+    local textWidth = (rightPanelWidth - padding) * 0.9  -- Reduce width by 10%
+    local lines = self:_wordWrap(self.event.text, textWidth, self.textFont)
+    
+    for i, line in ipairs(lines) do
+      -- Handle empty lines (paragraph breaks)
+      if line == "" then
+        currentY = currentY + self.textFont:getHeight() * 0.5  -- Half line spacing for paragraph breaks
+      else
+        love.graphics.print(line, textX, currentY)
+        currentY = currentY + self.textFont:getHeight() + 8
+      end
+    end
+    
+    currentY = currentY + 30
+  end
+  
+  -- Draw choice buttons
+  local buttonSpacing = 15
+  local buttonWidth = (rightPanelWidth - padding) * 0.9  -- Reduce width by 10%
+  local buttonHeight = 50
+  
+  -- Calculate button start Y position (same calculation as in update)
+  local buttonStartY = currentY
+  
+  for i, button in ipairs(self.choiceButtons) do
+    -- Layout is already set in update(), set alpha (reduce if choice made)
+    local buttonAlpha = fadeAlpha
+    if self._choiceMade then
+      buttonAlpha = fadeAlpha * 0.5  -- Reduce opacity when disabled
+    end
+    button.alpha = buttonAlpha
+    
+    -- Draw button background with hover effect (scale is applied in button:draw())
+    -- We need to draw the background manually to preserve hover scale, then draw text separately
+    local cx = button.x + button.w * 0.5
+    local cy = button.y + button.h * 0.5
+    local hoverScale = button._scale or 1.0
+    if self._choiceMade then
+      hoverScale = 1.0  -- No hover scale when disabled
+    end
+    
+    -- Draw button background with hover scale
+    love.graphics.push()
+    love.graphics.translate(cx, cy)
+    love.graphics.scale(hoverScale, hoverScale)
+    
+    -- Background
+    local bg = button.bgColor or { 0, 0, 0, 0.7 }
+    love.graphics.setColor(bg[1], bg[2], bg[3], (bg[4] or 1) * fadeAlpha)
+    love.graphics.rectangle("fill", -button.w * 0.5, -button.h * 0.5, button.w, button.h, Button.defaults.cornerRadius, Button.defaults.cornerRadius)
+    
+    -- Border
+    local bc = Button.defaults.borderColor
+    love.graphics.setColor(bc[1], bc[2], bc[3], (bc[4] or 1) * fadeAlpha)
+    local oldLW = love.graphics.getLineWidth()
+    love.graphics.setLineWidth(Button.defaults.borderWidth)
+    love.graphics.rectangle("line", -button.w * 0.5, -button.h * 0.5, button.w, button.h, Button.defaults.cornerRadius, Button.defaults.cornerRadius)
+    love.graphics.setLineWidth(oldLW or 1)
+    
+    love.graphics.pop()
+    
+    -- Draw choice text with color parsing on top (at scaled position)
+    local textAlpha = fadeAlpha
+    if self._choiceMade then
+      textAlpha = fadeAlpha * 0.5  -- Reduce text opacity when disabled
+    end
+    self:_drawChoiceText(button, textAlpha, hoverScale)
+    
+    currentY = currentY + buttonHeight + buttonSpacing
+  end
+  
+  -- Draw coin animations above everything (z-order)
+  self:_drawCoinAnimations()
+end
+
+function EventScene:_wordWrap(text, maxWidth, font)
+  local lines = {}
+  
+  -- Split by explicit line breaks first (\n)
+  local paragraphs = {}
+  for paragraph in text:gmatch("([^\n]+)") do
+    table.insert(paragraphs, paragraph)
+  end
+  -- If no \n found, use entire text
+  if #paragraphs == 0 then
+    paragraphs = { text }
+  end
+  
+  -- Process each paragraph
+  for paraIdx, paragraph in ipairs(paragraphs) do
+    -- Split paragraph into words
+    local words = {}
+    for word in paragraph:gmatch("%S+") do
+      table.insert(words, word)
+    end
+    
+    local currentLine = ""
+    
+    for _, word in ipairs(words) do
+      local testLine = currentLine == "" and word or currentLine .. " " .. word
+      local width = font:getWidth(testLine)
+      
+      if width > maxWidth and currentLine ~= "" then
+        table.insert(lines, currentLine)
+        currentLine = word
+      else
+        currentLine = testLine
+      end
+    end
+    
+    if currentLine ~= "" then
+      table.insert(lines, currentLine)
+    end
+    
+    -- Add blank line between paragraphs (except after last paragraph)
+    if paraIdx < #paragraphs then
+      table.insert(lines, "")  -- Empty line for paragraph break
+    end
+  end
+  
+  return lines
+end
+
+function EventScene:_drawChoiceText(button, alpha, hoverScale)
+  hoverScale = hoverScale or 1.0
+  love.graphics.setFont(button.font)
+  
+  local text = button.label
+  local paddingX = 20
+  -- Account for hover scale in positioning and drawing
+  local cx = button.x + button.w * 0.5
+  local cy = button.y + button.h * 0.5
+  
+  -- Parse text for color markers - look for patterns like "Lose X HP." and "Gain X Gold."
+  local parts = {}
+  local defaultColor = { 0.9, 0.9, 0.9 }  -- default white
+  
+  -- Patterns to match (order matters - more specific first)
+  local patterns = {
+    { pattern = "Lose (%d+) HP%.", color = { 1, 0.3, 0.3 } },  -- red for HP loss
+    { pattern = "Gain (%d+) Gold%.", color = { 0.3, 1, 0.3 } },  -- green for gold gain
+  }
+  
+  local lastPos = 1
+  local textToProcess = text
+  
+  -- Find all pattern matches
+  while true do
+    local bestMatch = nil
+    local bestStart = #textToProcess + 1
+    local bestEnd = nil
+    
+    for _, pat in ipairs(patterns) do
+      local s, e = textToProcess:find(pat.pattern, lastPos)
+      if s and s < bestStart then
+        bestMatch = pat
+        bestStart = s
+        bestEnd = e
+      end
+    end
+    
+    if not bestMatch then
+      -- No more matches, add remaining text
+      if lastPos <= #textToProcess then
+        table.insert(parts, { text = textToProcess:sub(lastPos), color = defaultColor })
+      end
+      break
+    end
+    
+    -- Add text before match
+    if bestStart > lastPos then
+      table.insert(parts, { text = textToProcess:sub(lastPos, bestStart - 1), color = defaultColor })
+    end
+    
+    -- Add matched text with special color
+    table.insert(parts, { text = textToProcess:sub(bestStart, bestEnd), color = bestMatch.color })
+    lastPos = bestEnd + 1
+  end
+  
+  -- Draw text parts with hover scale applied
+  love.graphics.push()
+  love.graphics.translate(cx, cy)
+  love.graphics.scale(hoverScale, hoverScale)
+  
+  local startX = -button.w * 0.5 + paddingX
+  local centerY = -button.font:getHeight() * 0.5
+  local currentX = startX
+  
+  for _, part in ipairs(parts) do
+    love.graphics.setColor(part.color[1], part.color[2], part.color[3], alpha)
+    love.graphics.print(part.text, currentX, centerY)
+    currentX = currentX + button.font:getWidth(part.text)
+  end
+  
+  love.graphics.pop()
+end
+
+function EventScene:mousemoved(x, y, dx, dy, isTouch)
+  self.mouseX = x or 0
+  self.mouseY = y or 0
+end
+
+-- Start coin animation from clicked button to topbar
+function EventScene:_startCoinAnimation(goldAmount, vw, vh)
+  if not self.goldIcon or not self._clickedButtonIndex then return end
+  
+  local clickedButton = self.choiceButtons[self._clickedButtonIndex]
+  if not clickedButton or not clickedButton._hitRect then return end
+  
+  -- Calculate source position (center of clicked button)
+  local buttonRect = clickedButton._hitRect
+  local sourceX = buttonRect.x + buttonRect.w * 0.5
+  local sourceY = buttonRect.y + buttonRect.h * 0.5
+  
+  -- Calculate target position (topbar's gold icon position)
+  local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
+  local topBarIconSize = 32
+  local topBarTopPadding = (topBarHeight - topBarIconSize) * 0.5
+  local topBarLeftPadding = 24
+  local topBarIconSpacing = 12
+  
+  -- Calculate gold icon position in topbar (match TopBar.lua calculation)
+  local PlayerState = require("core.PlayerState")
+  local playerState = PlayerState.getInstance()
+  local health = playerState:getHealth()
+  local maxHealth = playerState:getMaxHealth()
+  local healthText = string.format("%d / %d", math.floor(health), math.floor(maxHealth))
+  local healthTextWidth = theme.fonts.base:getWidth(healthText)
+  local afterHealthX = topBarLeftPadding + topBarIconSize + topBarIconSpacing + healthTextWidth + 40
+  local targetX = afterHealthX + topBarIconSize * 0.5
+  local targetY = topBarTopPadding + topBarIconSize * 0.5
+  
+  -- Determine number of coins based on gold amount
+  local coinCount = math.min(math.max(5, math.floor(goldAmount / 5)), 30)
+  
+  -- Create coin animations
+  for i = 1, coinCount do
+    local delay = (i - 1) * 0.02 -- Stagger coins slightly
+    local angle = love.math.random() * math.pi * 2 -- Random initial angle
+    local speed = 200 + love.math.random() * 100 -- Random speed variation
+    local rotationSpeed = (love.math.random() * 2 - 1) * 5 -- Random rotation speed
+    
+    table.insert(self._coinAnimations, {
+      x = sourceX,
+      y = sourceY,
+      startX = sourceX,
+      startY = sourceY,
+      targetX = targetX,
+      targetY = targetY,
+      progress = 0,
+      delay = delay,
+      duration = 0.5, -- Animation duration
+      angle = angle,
+      speed = speed,
+      rotation = love.math.random() * math.pi * 2,
+      rotationSpeed = rotationSpeed,
+      scale = (0.4 + love.math.random() * 0.2) * 2, -- Random scale variation, doubled
+      alpha = 1.0,
+    })
+  end
+end
+
+-- Update coin animations
+function EventScene:_updateCoinAnimations(dt)
+  local alive = {}
+  
+  for i, coin in ipairs(self._coinAnimations) do
+    -- Handle delay
+    if coin.delay > 0 then
+      coin.delay = coin.delay - dt
+      table.insert(alive, coin)
+    else
+      -- Update progress
+      coin.progress = coin.progress + dt / coin.duration
+      
+      if coin.progress < 1 then
+        -- Ease-out cubic for smooth deceleration
+        local t = coin.progress
+        local eased = 1 - math.pow(1 - t, 3)
+        
+        -- Update position with slight arc
+        local arcHeight = 30 * math.sin(t * math.pi) -- Arc motion
+        coin.x = coin.startX + (coin.targetX - coin.startX) * eased
+        coin.y = coin.startY + (coin.targetY - coin.startY) * eased - arcHeight
+        
+        -- Update rotation
+        coin.rotation = coin.rotation + coin.rotationSpeed * dt
+        
+        -- Fade out near the end
+        local fadeStartProgress = 1.0 - (0.3 / coin.duration)
+        if coin.progress > fadeStartProgress then
+          coin.alpha = 1 - ((coin.progress - fadeStartProgress) / (1.0 - fadeStartProgress))
+        end
+        
+        table.insert(alive, coin)
+      end
+      -- Coin reached target - don't add to alive list
+    end
+  end
+  
+  self._coinAnimations = alive
+end
+
+-- Draw coin animations
+function EventScene:_drawCoinAnimations()
+  if not self.goldIcon then return end
+  
+  local TARGET_ICON_SIZE = 32
+  
+  for _, coin in ipairs(self._coinAnimations) do
+    if coin.delay <= 0 and coin.alpha > 0 then
+      love.graphics.push()
+      love.graphics.translate(coin.x, coin.y)
+      love.graphics.rotate(coin.rotation)
+      love.graphics.setColor(1, 1, 1, coin.alpha)
+      local iconW, iconH = self.goldIcon:getWidth(), self.goldIcon:getHeight()
+      local scale = coin.scale * (TARGET_ICON_SIZE / math.max(iconW, iconH))
+      love.graphics.draw(self.goldIcon, -iconW * 0.5 * scale, -iconH * 0.5 * scale, 0, scale, scale)
+      love.graphics.pop()
+    end
+  end
+  
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
+function EventScene:mousepressed(x, y, button)
+  if button ~= 1 then return nil end  -- Only handle left mouse button
+  
+  -- Prevent clicking if a choice has already been made
+  if self._choiceMade then
+    return nil
+  end
+  
+  -- Check if any button was clicked
+  for _, buttonWidget in ipairs(self.choiceButtons) do
+    if buttonWidget:mousepressed(x, y, button) then
+      return nil  -- Button handles its own onClick
+    end
+  end
+  
+  return nil
+end
+
+function EventScene:unload()
+  -- Cleanup if needed
+end
+
+return EventScene
+

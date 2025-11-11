@@ -7,6 +7,7 @@ local FormationEditorScene = require("scenes.FormationEditorScene")
 local RewardsScene = require("scenes.RewardsScene")
 local OrbRewardScene = require("scenes.OrbRewardScene")
 local EncounterSelectScene = require("scenes.EncounterSelectScene")
+local EventScene = require("scenes.EventScene")
 
 local SceneTransitionHandler = {}
 SceneTransitionHandler.__index = SceneTransitionHandler
@@ -166,6 +167,16 @@ function SceneTransitionHandler:handleCancel()
   end
 end
 
+-- Transition: Open event scene
+function SceneTransitionHandler:handleOpenEvent(data)
+  data = data or {}
+  local eventId = data.eventId or "whispering_idol"  -- Default fallback
+  self.previousScene = self.mapScene
+  local eventScene = EventScene.new(eventId)
+  self.sceneManager:set(eventScene)
+  self.setCursorForScene(eventScene)
+end
+
 -- Main handler: processes transition results from scene updates/events
 function SceneTransitionHandler:handleTransition(result)
   if not result then return end
@@ -215,6 +226,8 @@ function SceneTransitionHandler:handleTransition(result)
       self:handleStartBattle()
     elseif transitionType == "cancel" then
       self:handleCancel()
+    elseif transitionType == "open_event" then
+      self:handleOpenEvent(result)
     end
   end
 end
