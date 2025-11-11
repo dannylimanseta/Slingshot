@@ -192,8 +192,13 @@ function MapScene:load()
     self._returnGridX, self._returnGridY = nil, nil
     self._enemyTileX, self._enemyTileY = nil, nil
   end
+  
+  -- Always clear target grid positions when loading
   self.mapManager.playerTargetGridX = nil
   self.mapManager.playerTargetGridY = nil
+  
+  -- Recalculate world position from grid position (grid position is source of truth)
+  -- This ensures player position is correct when returning from events or battles
   local px, py = self.mapManager:getPlayerWorldPosition(self.gridSize, self.offsetX, self.offsetY)
   self.playerWorldX = px
   self.playerWorldY = py

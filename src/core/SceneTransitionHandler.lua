@@ -67,8 +67,9 @@ function SceneTransitionHandler:handleReturnToMap(data)
     self.sceneManager:set(rewardsScene)
     self.setCursorForScene(rewardsScene)
   else
-    -- Defeat: go straight back to map
-    self.sceneManager:set(self.mapScene)
+    -- Defeat or returning from event: go straight back to map without transition
+    -- Skip transition to avoid calling load() which would recalculate player position
+    self.sceneManager:set(self.mapScene, true)
     self.setCursorForScene(self.mapScene)
     self.previousScene = nil
     if self.mapScene then

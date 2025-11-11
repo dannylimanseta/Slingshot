@@ -4,6 +4,7 @@ local Button = require("ui.Button")
 local TopBar = require("ui.TopBar")
 local PlayerState = require("core.PlayerState")
 local events = require("data.events")
+local ProjectileManager = require("managers.ProjectileManager")
 
 local EventScene = {}
 EventScene.__index = EventScene
@@ -153,8 +154,47 @@ function EventScene:_applyChoiceEffects(effects)
     playerState:setHealth(newHP)
   end
   
+  -- Percentage-based HP damage/healing
+  if effects.hpPercent then
+    local maxHP = playerState:getMaxHealth()
+    local hpChange = math.floor(maxHP * (effects.hpPercent / 100))
+    local currentHP = playerState:getHealth()
+    local newHP = math.max(0, math.min(currentHP + hpChange, playerState:getMaxHealth()))
+    playerState:setHealth(newHP)
+  end
+  
   if effects.gold then
     playerState:addGold(effects.gold)
+  end
+  
+  -- Upgrade random orbs
+  if effects.upgradeRandomOrbs and effects.upgradeRandomOrbs > 0 then
+    local equipped = (config.player and config.player.equippedProjectiles) or {}
+    if #equipped > 0 then
+      -- Filter to only upgradable orbs (level < 5)
+      local upgradable = {}
+      for _, id in ipairs(equipped) do
+        local p = ProjectileManager.getProjectile(id)
+        if p and (p.level or 1) < 5 then
+          table.insert(upgradable, id)
+        end
+      end
+      
+      -- Shuffle and select up to the requested number
+      local numToUpgrade = math.min(effects.upgradeRandomOrbs, #upgradable)
+      if numToUpgrade > 0 then
+        -- Shuffle array
+        for i = #upgradable, 2, -1 do
+          local j = love.math.random(i)
+          upgradable[i], upgradable[j] = upgradable[j], upgradable[i]
+        end
+        
+        -- Upgrade selected orbs
+        for i = 1, numToUpgrade do
+          ProjectileManager.upgradeLevel(upgradable[i])
+        end
+      end
+    end
   end
   
   -- Add more effect types here as needed
@@ -513,6 +553,8 @@ function EventScene:_drawChoiceText(button, alpha, hoverScale)
   
   -- Patterns to match (order matters - more specific first)
   local patterns = {
+    { pattern = "Upgrade (%d+) random orbs by 1 level%.", color = { 0.3, 1, 0.3 } },  -- green for orb upgrades
+    { pattern = "Lose (%d+)%% Max HP%.", color = { 1, 0.3, 0.3 } },  -- red for percentage HP loss
     { pattern = "Lose (%d+) HP%.", color = { 1, 0.3, 0.3 } },  -- red for HP loss
     { pattern = "Gain (%d+) Gold%.", color = { 0.3, 1, 0.3 } },  -- green for gold gain
   }

@@ -20,12 +20,15 @@ end
 function SceneManager:set(scene, skipTransition)
   -- If skipTransition is true, switch immediately without transition
   if skipTransition then
-    if self.currentScene and self.currentScene.unload then
-      self.currentScene:unload()
-    end
-    self.currentScene = scene
-    if self.currentScene and self.currentScene.load then
-      self.currentScene:load()
+    -- Only unload/load if switching to a different scene
+    if self.currentScene ~= scene then
+      if self.currentScene and self.currentScene.unload then
+        self.currentScene:unload()
+      end
+      self.currentScene = scene
+      if self.currentScene and self.currentScene.load then
+        self.currentScene:load()
+      end
     end
     self.isTransitioning = false
     self.previousSceneCanvas = nil
@@ -69,10 +72,15 @@ function SceneManager:set(scene, skipTransition)
     end
   end
   
-  -- Set new scene
-  self.currentScene = scene
-  if self.currentScene and self.currentScene.load then
-    self.currentScene:load()
+  -- Set new scene (only load if it's a different scene)
+  if self.currentScene ~= scene then
+    self.currentScene = scene
+    if self.currentScene and self.currentScene.load then
+      self.currentScene:load()
+    end
+  else
+    -- Same scene, just update reference
+    self.currentScene = scene
   end
   
   -- Start transition animation

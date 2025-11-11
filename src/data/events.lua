@@ -26,6 +26,22 @@ local EVENTS = {
       }
     }
   },
+  echoing_anvil = {
+    id = "echoing_anvil",
+    title = "Echoing Anvil",
+    image = "event_placeholder.png",
+    text = "You enter a hollow in the forest where the fog is unusually still. In the center sits a stone anvil made of the same white, calcified material as the masks. Two mask-faces are fused into its sides, grinning wide.\n\nAs you approach, the anvil hums. Your orbs rattle in their slots, reacting to the ethereal anvil.\n\n\"Strike us,\" the faces whisper, \"and we will make your tools sharper… we only ask for a little of you.\"",
+    choices = {
+      {
+        text = "Place your orbs on the anvil. Upgrade 2 random orbs by 1 level. Lose 10% Max HP.",
+        effects = { upgradeRandomOrbs = 2, hpPercent = -10 }
+      },
+      {
+        text = "Leave it alone. Nothing happens.",
+        effects = {}
+      }
+    }
+  },
   -- Add more events here as needed
   -- Example template:
   -- [event_id] = {
