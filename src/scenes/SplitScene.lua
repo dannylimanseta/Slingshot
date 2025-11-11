@@ -10,6 +10,7 @@ local ProjectileCard = require("ui.ProjectileCard")
 local LayoutManager = require("managers.LayoutManager")
 local battle_profiles = require("data.battle_profiles")
 local TopBar = require("ui.TopBar")
+local InputManager = require("managers.InputManager")
 
 -- Utility: radial gradient image for glow (alpha falls off toward edge)
 -- Shared with Ball entity for consistency
@@ -820,6 +821,38 @@ function SplitScene:update(dt)
   -- Call sub-updates (battle gets full context + where center is)
   if self.left and self.left.update then self.left:update(dt, { x = 0, y = 0, w = centerRect.w, h = h }) end
   if self.right and self.right.update then self.right:update(dt, { x = 0, y = 0, w = w, h = h, center = centerRect.center }) end
+
+  -- Controller/Steam Deck support via InputManager (non-invasive)
+  do
+    -- Map pointer to gameplay (left) local coordinates
+    local pointerX, pointerY = InputManager.getPointer()
+    local centerX = centerRect.x - 100
+    local centerBounds = { x = centerX, y = 0, w = centerRect.w, h = h }
+    local inLeft =
+      pointerX >= centerBounds.x and pointerX <= centerBounds.x + centerBounds.w and
+      pointerY >= centerBounds.y and pointerY <= centerBounds.y + centerBounds.h
+
+    if inLeft and self.left then
+      local lx = pointerX - centerBounds.x
+      local ly = pointerY - centerBounds.y
+      -- Keep gameplay cursor in sync with controller pointer
+      if self.left.mousemoved then
+        self.left:mousemoved(lx, ly, 0, 0, centerBounds)
+      end
+      -- Shoot action maps to left mouse press/release
+      if InputManager.pressed("shoot") and self.left.mousepressed then
+        self.left:mousepressed(lx, ly, 1, centerBounds)
+      end
+      if InputManager.released("shoot") and self.left.mousereleased then
+        self.left:mousereleased(lx, ly, 1, centerBounds)
+      end
+    end
+
+    -- Battle target cycling
+    if self.right and InputManager.pressed("next_target") and self.right._cycleEnemySelection then
+      self.right:_cycleEnemySelection()
+    end
+  end
 
   -- Detect turn end: when player turn is active and all balls are gone
   local canShoot = self.left and self.left.canShoot

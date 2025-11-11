@@ -1,4 +1,5 @@
 local config = require("config")
+local InputManager = require("managers.InputManager")
 
 local MapController = {}
 MapController.__index = MapController
@@ -437,6 +438,33 @@ function MapController:update(deltaTime)
           s._repeatElapsed = 0
           if not moved then s._repeatElapsed = 0 end
         end
+      end
+    end
+  end
+
+  -- Controller/D-Pad navigation (edge-based, non-invasive)
+  if not s.isMoving and s.daySystem:canMove() then
+    if InputManager.pressed("nav_up") then
+      self:_attemptMoveBy(0, -1)
+    elseif InputManager.pressed("nav_down") then
+      self:_attemptMoveBy(0, 1)
+    elseif InputManager.pressed("nav_left") then
+      self:_attemptMoveBy(-1, 0)
+    elseif InputManager.pressed("nav_right") then
+      self:_attemptMoveBy(1, 0)
+    end
+  end
+
+  -- Controller confirm for End Day (when out of moves)
+  do
+    local animating = s._endDayPressed and ((s._endDaySpinTime < s._endDaySpinDuration) or (s._endDayFadeOutTime < s._endDayFadeOutDuration))
+    if (not s.daySystem:canMove()) and (not s.isMoving) and (not animating) then
+      if InputManager.pressed("end_day") or InputManager.pressed("ui_confirm") then
+        s._endDayPressed = true
+        s._endDaySpinTime = 0
+        s._endDayFadeOutTime = 0
+        s._endDayFadeOutAlpha = 1
+        s.daySystem:advanceDay()
       end
     end
   end
