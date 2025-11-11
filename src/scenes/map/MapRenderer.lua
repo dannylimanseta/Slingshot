@@ -478,6 +478,11 @@ function MapRenderer:draw(scene)
   if scene.topBar then
     scene.topBar:draw()
   end
+  
+  -- Call scene's drawUI method if it exists (for UI overlays like orbs)
+  if scene.drawUI then
+    scene:drawUI()
+  end
 end
 
 function MapRenderer:drawUI(scene)

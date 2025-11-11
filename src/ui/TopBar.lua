@@ -22,6 +22,11 @@ function TopBar.new()
     if ok then self.goldIcon = img end
   end
   
+  -- Load orbs icon
+  local orbsIconPath = "assets/images/icon_orbs.png"
+  local ok, img = pcall(love.graphics.newImage, orbsIconPath)
+  if ok then self.orbsIcon = img end
+  
   -- Step fade state
   self._stepAlpha = {}
   self._lastTime = (love.timer and love.timer.getTime()) or 0
@@ -96,6 +101,25 @@ function TopBar:draw()
 
   -- Draw Day + Steps centered across the full top bar
   self:_drawDayAndSteps(0, vw, topPadding, iconSize)
+  
+  -- Draw orbs icon on the right side
+  if self.orbsIcon then
+    local orbsIconPadding = 24
+    local orbsIconX = vw - orbsIconPadding - iconSize
+    local orbsIconY = topPadding
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(self.orbsIcon, orbsIconX, orbsIconY, 0, iconSize / self.orbsIcon:getWidth(), iconSize / self.orbsIcon:getHeight())
+    
+    -- Store clickable bounds for MapScene
+    self.orbsIconBounds = {
+      x = orbsIconX,
+      y = orbsIconY,
+      w = iconSize,
+      h = iconSize
+    }
+  else
+    self.orbsIconBounds = nil
+  end
   
   love.graphics.setColor(1, 1, 1, 1)
 end

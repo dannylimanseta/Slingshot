@@ -3,6 +3,7 @@ local config = require("config")
 local MapManager = require("managers.MapManager")
 local DaySystem = require("core.DaySystem")
 local TopBar = require("ui.TopBar")
+local OrbsUI = require("ui.OrbsUI")
 local MapController = require("scenes.map.MapController")
 local MapRenderer = require("scenes.map.MapRenderer")
 
@@ -68,6 +69,8 @@ function MapScene.new()
     _darkeningAlpha = 0, -- tweened alpha for darkening overlay when out of turns
     dayIndicator = nil, -- { text = "DAY X", t = lifetime }
     decorImage = nil, -- decorative image for day indicator
+    orbsUI = OrbsUI.new(), -- UI for viewing equipped orbs
+    _orbsUIOpen = false, -- track if orbs UI is open
   }, MapScene)
   scene.controller = MapController.new(scene)
   scene.renderer = MapRenderer.new()
@@ -209,13 +212,13 @@ function MapScene:load()
   -- Recalculate world position from grid position (grid position is source of truth)
   -- This ensures player position is correct when returning from events, battles, or rest sites
   -- Always recalculate from grid position to avoid position bugs when returning from scenes
-  local px, py = self.mapManager:getPlayerWorldPosition(self.gridSize, self.offsetX, self.offsetY)
-  self.playerWorldX = px
-  self.playerWorldY = py
-  self.cameraX = px
-  self.cameraY = py
-  self.targetCameraX = px
-  self.targetCameraY = py
+    local px, py = self.mapManager:getPlayerWorldPosition(self.gridSize, self.offsetX, self.offsetY)
+    self.playerWorldX = px
+    self.playerWorldY = py
+    self.cameraX = px
+    self.cameraY = py
+    self.targetCameraX = px
+    self.targetCameraY = py
   
   -- Clamp camera to map bounds on first frame
   self:_clampCameraToMap()
@@ -275,111 +278,10 @@ function MapScene:draw()
 end
 
 function MapScene:drawUI()
-  local vw = config.video.virtualWidth
-  local vh = config.video.virtualHeight
-  
-  -- Day and steps are now rendered by the TopBar
-  
-  -- End Day button (bottom-left) when no moves remain OR while animating after press
-  self.endDayBtnRect = nil
-  local isAnimating = self._endDayPressed and ((self._endDaySpinTime < self._endDaySpinDuration) or (self._endDayFadeOutTime < self._endDayFadeOutDuration))
-  if (not self.daySystem:canMove()) or isAnimating then
-    local paddingX = 20
-    local paddingY = 16
-    local btnH = 42 -- reduced by 20% (52 * 0.8)
-    local cornerR = 6 -- reduced corner radius
-    local gap = 9 -- reduced by 25% to decrease button width by ~20%
-
-    -- Text using theme font
-    local label = "END DAY"
-    local font = theme.fonts.base or love.graphics.getFont()
-    love.graphics.setFont(font)
-    local textW = font:getWidth(label)
-    local textH = font:getHeight()
-
-    -- Icon sizes (fit inside button height with vertical padding)
-    local contentH = btnH - 16
-    local leftIconW, leftIconH = 0, 0
-    local keyIconW, keyIconH = 0, 0
-    local leftScale, keyScale = 1, 1
-
-    local baseLeftScale = 1
-    if self.endDayIcon then
-      local iw, ih = self.endDayIcon:getDimensions()
-      -- Base size increased by 30% (1.3 * 1.3 = 1.69)
-      baseLeftScale = (contentH * 1.69) / math.max(iw, ih) -- +69% total (30% on top of existing 30%)
-      -- Apply hover scale for visual effect only (not for layout)
-      leftScale = baseLeftScale * (self._endDayHoverScale or 1)
-      -- Use base scale for width calculation to prevent button from growing
-      leftIconW = iw * baseLeftScale
-      leftIconH = ih * baseLeftScale
+  -- Draw orbs UI overlay if open
+  if self.orbsUI and self._orbsUIOpen then
+    self.orbsUI:draw()
     end
-    if self.keySpaceIcon then
-      local iw, ih = self.keySpaceIcon:getDimensions()
-      keyScale = contentH * 0.68 / math.max(iw, ih)
-      keyIconW = iw * keyScale
-      keyIconH = ih * keyScale
-    end
-
-    local btnMargin = 32 -- Match tooltip padding from battle scene
-    local btnInternalPad = 12 -- Reduced internal padding to decrease button width
-    -- Calculate content width and reduce by 20%
-    local contentWidth = leftIconW + (self.endDayIcon and gap or 0) + textW + (self.keySpaceIcon and (gap + keyIconW) or 0)
-    local btnW = math.floor(btnMargin + contentWidth * 0.8 + btnMargin + 0.5) -- Reduce content width by 20%
-    local btnX = btnMargin
-    local btnY = vh - btnH - btnMargin
-
-    -- During animation, show at full base alpha (ignore fade-in), then apply fade-out
-    local baseAlpha = isAnimating and 1.0 or (self._endDayFadeAlpha or 1)
-    local a = baseAlpha * (self._endDayFadeOutAlpha or 1) -- Apply fade out
-    -- Background
-    love.graphics.setColor(0.06, 0.07, 0.10, 0.92 * a)
-    love.graphics.rectangle("fill", btnX, btnY, btnW, btnH, cornerR, cornerR)
-    -- Subtle border
-    love.graphics.setColor(1, 1, 1, 0.06 * a)
-    love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", btnX, btnY, btnW, btnH, cornerR, cornerR)
-
-    -- Layout content
-    local cx = btnX + btnInternalPad
-    local cy = btnY + btnH * 0.5
-
-    if self.endDayIcon then
-      love.graphics.setColor(1, 1, 1, 0.95 * a)
-      local iconW, iconH = self.endDayIcon:getDimensions()
-      -- Shift icon to the right by 10px
-      local iconX = cx + 20
-      -- Apply spin rotation and scale from center pivot
-      love.graphics.push()
-      love.graphics.translate(iconX, cy)
-      love.graphics.rotate(self._endDaySpinAngle or 0)
-      love.graphics.draw(self.endDayIcon, 0, 0, 0, leftScale, leftScale, iconW * 0.5, iconH * 0.5)
-      love.graphics.pop()
-      -- Use base scale for spacing calculation to prevent layout jump
-      cx = cx + (iconW * baseLeftScale) + gap
-    end
-
-    -- Label - use hover alpha (0.7 normally, 1.0 on hover)
-    local textAlpha = (self._endDayHovered and 1.0 or 0.7) * a
-    love.graphics.setColor(1, 1, 1, textAlpha)
-    -- Center text vertically by accounting for font baseline/ascent, with small offset to shift down
-    local textY = cy - font:getAscent() + textH * 0.5 + 2
-    love.graphics.print(label, cx, textY)
-    cx = cx + textW
-
-    if self.keySpaceIcon then
-      cx = cx + gap
-      -- Use hover alpha (0.7 normally, 1.0 on hover)
-      local keyAlpha = (self._endDayHovered and 1.0 or 0.7) * a
-      love.graphics.setColor(1, 1, 1, keyAlpha)
-      love.graphics.draw(self.keySpaceIcon, cx, cy, 0, keyScale, keyScale, 0, (self.keySpaceIcon:getHeight() * 0.5))
-    end
-
-    -- Save button rect for clicks
-    self.endDayBtnRect = { x = btnX, y = btnY, w = btnW, h = btnH }
-  end
-  
-  -- Hover tooltip removed
 end
 
 function MapScene:mousepressed(x, y, button)
@@ -388,6 +290,10 @@ end
 
 function MapScene:mousemoved(x, y, dx, dy)
   if self.controller then self.controller:mousemoved(x, y, dx, dy) end
+end
+
+function MapScene:wheelmoved(dx, dy)
+  if self.controller then self.controller:wheelmoved(dx, dy) end
 end
 
 -- Map WASD key to a direction vector (dx, dy). Returns nil if not a WASD key.

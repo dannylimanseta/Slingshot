@@ -144,6 +144,31 @@ function MapController:mousepressed(x, y, button)
     return
   end
   if button ~= 1 then return end
+  
+  -- Check if orbs UI is open - handle close button click
+  if s._orbsUIOpen and s.orbsUI then
+    if s.orbsUI:mousepressed(x, y, button) then
+      -- Close button was clicked
+      s._orbsUIOpen = false
+      s.orbsUI:setVisible(false)
+      return
+    end
+    -- Don't process other clicks when UI is open (allow scrolling)
+    return
+  end
+  
+  -- Check if clicking on orbs icon in top bar
+  if s.topBar and s.topBar.orbsIconBounds then
+    local bounds = s.topBar.orbsIconBounds
+    if x >= bounds.x and x <= bounds.x + bounds.w and y >= bounds.y and y <= bounds.y + bounds.h then
+      s._orbsUIOpen = true
+      if s.orbsUI then
+        s.orbsUI:setVisible(true)
+      end
+      return
+    end
+  end
+  
   if not s.daySystem:canMove() then
     if s.endDayBtnRect then
       local r = s.endDayBtnRect
@@ -209,6 +234,16 @@ function MapController:mousemoved(x, y)
   end
 end
 
+function MapController:wheelmoved(dx, dy)
+  local s = self.scene
+  -- If orbs UI is open, scroll it
+  if s._orbsUIOpen and s.orbsUI then
+    s.orbsUI:scroll(dy)
+    return
+  end
+  -- Otherwise, could handle other wheel interactions here
+end
+
 function MapController:resize(width, height)
   local s = self.scene
   local vw = config.video.virtualWidth
@@ -229,6 +264,11 @@ function MapController:update(deltaTime)
     s._inputSuppressTimer = math.max(0, s._inputSuppressTimer - deltaTime)
   end
   s._treeSwayTime = s._treeSwayTime + deltaTime
+  
+  -- Update orbs UI with mouse coordinates
+  if s.orbsUI then
+    s.orbsUI:update(deltaTime, s._mouseX, s._mouseY)
+  end
 
   local cameraSpeed = config.map.cameraFollowSpeed
   local dx = s.targetCameraX - s.cameraX
