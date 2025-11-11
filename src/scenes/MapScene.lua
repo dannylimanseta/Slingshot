@@ -91,6 +91,12 @@ function MapScene:load()
     if ok then self.playerGlow = glow end
   end
   
+  -- Load player glow 2 (optional)
+  do
+    local ok, glow = pcall(love.graphics.newImage, "assets/images/map/player_glow_2.png")
+    if ok then self.playerGlow2 = glow end
+  end
+  
   -- Load orange glow for rest sites (optional)
   do
     local ok, glow = pcall(love.graphics.newImage, "assets/images/map/orange_glow.png")

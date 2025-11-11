@@ -345,7 +345,7 @@ function MapRenderer:draw(scene)
 
   addToQueue(py, px, function()
     if scene.playerSprite then
-      local spriteSize = scene.gridSize * 0.8 * 1.5
+      local spriteSize = scene.gridSize * 0.8 * 1.5 * 0.9
       local spriteW, spriteH = scene.playerSprite:getDimensions()
       local scale = spriteSize / math.max(spriteW, spriteH)
       local bobOffset = 0
@@ -354,6 +354,18 @@ function MapRenderer:draw(scene)
         bobOffset = -math.sin(scene._movementTime * bobConfig.speed * 2 * math.pi) * bobConfig.amplitude
       end
       local verticalOffset = config.map.playerVerticalOffset or 0
+      
+      -- Draw player glow 2 below the player (before player sprite for z-order)
+      if scene.playerGlow2 then
+        local gw2, gh2 = scene.playerGlow2:getDimensions()
+        local glowTiles2 = (config.map and config.map.playerGlow2 and config.map.playerGlow2.tileScale) or 11.2
+        local glowSize2 = scene.gridSize * glowTiles2 * 0.3  -- Reduce size by 50%
+        local glowScale2 = glowSize2 / math.max(gw2, gh2)
+        local glowOffsetY = scene.gridSize * 0.2 - 30  -- Offset below the player, shifted up by 50px
+        love.graphics.setColor(1, 1, 1, 0.9)
+        love.graphics.draw(scene.playerGlow2, px, py + verticalOffset + bobOffset + glowOffsetY, 0, glowScale2, glowScale2, gw2 * 0.5, gh2 * 0.5)
+      end
+      
       love.graphics.setColor(1, 1, 1, 1)
       local scaleX = scene.playerFacingRight and scale or -scale
       love.graphics.draw(scene.playerSprite, px, py + verticalOffset + bobOffset, 0, scaleX, scale, spriteW * 0.5, spriteH)
