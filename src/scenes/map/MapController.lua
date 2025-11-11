@@ -71,6 +71,9 @@ function MapController:keypressed(key, scancode, isRepeat)
     s._endDayFadeOutTime = 0
     s._endDayFadeOutAlpha = 1
     s.daySystem:advanceDay()
+    -- Show "DAY X" indicator
+    local currentDay = s.daySystem:getCurrentDay()
+    s.dayIndicator = { text = "DAY " .. tostring(currentDay), t = 1.0 }
     return
   end
 
@@ -150,6 +153,9 @@ function MapController:mousepressed(x, y, button)
         s._endDayFadeOutTime = 0
         s._endDayFadeOutAlpha = 1
         s.daySystem:advanceDay()
+        -- Show "DAY X" indicator
+        local currentDay = s.daySystem:getCurrentDay()
+        s.dayIndicator = { text = "DAY " .. tostring(currentDay), t = 1.0 }
         return
       end
     end
@@ -374,6 +380,14 @@ function MapController:update(deltaTime)
     end
   end
 
+  -- Update day indicator timer
+  if s.dayIndicator then
+    s.dayIndicator.t = s.dayIndicator.t - deltaTime
+    if s.dayIndicator.t <= 0 then
+      s.dayIndicator = nil
+    end
+  end
+
   local isAnimating = s._endDayPressed and ((s._endDaySpinTime < s._endDaySpinDuration) or (s._endDayFadeOutTime < s._endDayFadeOutDuration))
   if (not s.daySystem:canMove()) or isAnimating then
     if isAnimating then
@@ -478,6 +492,9 @@ function MapController:update(deltaTime)
         s._endDayFadeOutTime = 0
         s._endDayFadeOutAlpha = 1
         s.daySystem:advanceDay()
+        -- Show "DAY X" indicator
+        local currentDay = s.daySystem:getCurrentDay()
+        s.dayIndicator = { text = "DAY " .. tostring(currentDay), t = 1.0 }
       end
     end
   end

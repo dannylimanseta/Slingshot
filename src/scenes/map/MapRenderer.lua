@@ -394,6 +394,86 @@ function MapRenderer:draw(scene)
     love.graphics.rectangle("fill", 0, 0, vw, vh)
   end
 
+  -- Draw day indicator overlay and text (same style as turn indicators)
+  if scene.dayIndicator then
+    local vw = config.video.virtualWidth
+    local vh = config.video.virtualHeight
+    local lifetime = 1.0
+    local t = scene.dayIndicator.t / lifetime -- 1 -> 0
+    local fadeStart = 0.4 -- Start fading at 40% of lifetime
+    local alpha = 1.0
+    if t < fadeStart then
+      -- Fade out
+      alpha = t / fadeStart
+    end
+    
+    -- Draw black overlay (0.6 alpha)
+    love.graphics.setColor(0, 0, 0, 0.6 * alpha)
+    love.graphics.rectangle("fill", 0, 0, vw, vh)
+    love.graphics.setColor(1, 1, 1, 1)
+    
+    -- Pop-in scale animation (easeOutBack)
+    local scale = 1.0
+    if t > 0.7 then
+      local popT = (1.0 - t) / 0.3 -- 0 -> 1
+      local c1, c3 = 1.70158, 2.70158
+      local u = (popT - 1)
+      scale = 1 + c3 * (u * u * u) + c1 * (u * u)
+    end
+    
+    love.graphics.push()
+    love.graphics.setFont(theme.fonts.jackpot or theme.fonts.large)
+    local text = scene.dayIndicator.text
+    local font = theme.fonts.jackpot or theme.fonts.large
+    local textW = font:getWidth(text)
+    local centerX = vw * 0.5
+    local centerY = vh * 0.5 - 50 -- Shifted up by 50px
+    
+    -- Spacing between decorative images and text
+    local decorSpacing = 40
+    
+    love.graphics.push()
+    love.graphics.translate(centerX, centerY)
+    love.graphics.scale(scale, scale)
+    
+    -- Draw decorative images on both sides of text
+    if scene.decorImage then
+      local decorW = scene.decorImage:getWidth()
+      local decorH = scene.decorImage:getHeight()
+      local decorScale = 0.7 -- 30% size reduction (70% of original)
+      local scaledW = decorW * decorScale
+      local scaledH = decorH * decorScale
+      
+      -- Calculate center positions for both images
+      local leftCenterX = -textW * 0.5 - decorSpacing - scaledW * 0.5
+      local rightCenterX = textW * 0.5 + decorSpacing + scaledW * 0.5
+      
+      love.graphics.setColor(1, 1, 1, alpha)
+      
+      -- Draw left decorative image (normal, scaled with center pivot)
+      love.graphics.push()
+      love.graphics.translate(leftCenterX, 0)
+      love.graphics.scale(decorScale, decorScale)
+      love.graphics.draw(scene.decorImage, -decorW * 0.5, -decorH * 0.5)
+      love.graphics.pop()
+      
+      -- Draw right decorative image (flipped horizontally, scaled with center pivot)
+      love.graphics.push()
+      love.graphics.translate(rightCenterX, 0)
+      love.graphics.scale(-decorScale, decorScale) -- Flip horizontally and scale
+      love.graphics.draw(scene.decorImage, -decorW * 0.5, -decorH * 0.5)
+      love.graphics.pop()
+    end
+    
+    -- Draw text (no outline)
+    love.graphics.setColor(1, 1, 1, alpha)
+    love.graphics.print(text, -textW * 0.5, -font:getHeight() * 0.5)
+    love.graphics.pop()
+    
+    love.graphics.setFont(theme.fonts.base)
+    love.graphics.pop()
+  end
+
   self:drawUI(scene)
   if scene.topBar then
     scene.topBar:draw()
