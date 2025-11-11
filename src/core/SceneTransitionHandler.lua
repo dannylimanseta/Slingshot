@@ -71,6 +71,9 @@ function SceneTransitionHandler:handleReturnToMap(data)
     self.sceneManager:set(self.mapScene)
     self.setCursorForScene(self.mapScene)
     self.previousScene = nil
+    if self.mapScene then
+      self.mapScene._inputSuppressTimer = 0.2
+    end
   end
 end
 

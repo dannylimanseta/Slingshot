@@ -15,6 +15,7 @@ function MapScene.new()
     daySystem = DaySystem.new(),
     cameraX = 0,
     cameraY = 0,
+    _inputSuppressTimer = 0,
     targetCameraX = 0,
     targetCameraY = 0,
     playerWorldX = 0,

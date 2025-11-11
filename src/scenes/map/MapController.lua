@@ -61,6 +61,9 @@ end
 
 function MapController:keypressed(key, scancode, isRepeat)
   local s = self.scene
+  if s._inputSuppressTimer and s._inputSuppressTimer > 0 then
+    return
+  end
   if key == "space" and not s.daySystem:canMove() and not s.isMoving then
     s._endDayPressed = true
     s._endDaySpinTime = 0
@@ -133,6 +136,9 @@ end
 
 function MapController:mousepressed(x, y, button)
   local s = self.scene
+  if s._inputSuppressTimer and s._inputSuppressTimer > 0 then
+    return
+  end
   if button ~= 1 then return end
   if not s.daySystem:canMove() then
     if s.endDayBtnRect then
@@ -212,6 +218,9 @@ end
 
 function MapController:update(deltaTime)
   local s = self.scene
+  if s._inputSuppressTimer and s._inputSuppressTimer > 0 then
+    s._inputSuppressTimer = math.max(0, s._inputSuppressTimer - deltaTime)
+  end
   s._treeSwayTime = s._treeSwayTime + deltaTime
 
   local cameraSpeed = config.map.cameraFollowSpeed
