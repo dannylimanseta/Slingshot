@@ -213,7 +213,7 @@ function RestSiteScene:update(dt, mouseX, mouseY)
   
   -- Check for exit
   if self._exitRequested then
-    -- Return with skipTransition = false to enable shader transition
+    -- Return to map with shader transition
     return { type = "return_to_map", skipTransition = false }
   end
   

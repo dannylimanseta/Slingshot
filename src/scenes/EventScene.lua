@@ -341,8 +341,8 @@ function EventScene:update(dt, mouseX, mouseY)
       -- Still counting, don't exit yet
       return nil
     end
-    -- No gold or counting complete, safe to exit
-    return { type = "return_to_map" }
+    -- No gold or counting complete, safe to exit with shader transition
+    return { type = "return_to_map", skipTransition = false }
   end
   
   return nil
