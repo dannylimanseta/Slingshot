@@ -61,11 +61,6 @@ end
 
 function MapController:keypressed(key, scancode, isRepeat)
   local s = self.scene
-  if key == "p" and not isRepeat then
-    -- Open encounter selection menu
-    return "open_encounter_select"
-  end
-  
   if key == "space" and not s.daySystem:canMove() and not s.isMoving then
     s._endDayPressed = true
     s._endDaySpinTime = 0
@@ -250,8 +245,19 @@ function MapController:update(deltaTime)
           local px2, py2 = s.mapManager:getPlayerWorldPosition(s.gridSize, s.offsetX, s.offsetY)
           s.playerWorldX = px2
           s.playerWorldY = py2
-          -- Trigger event scene
-          s._pendingEvent = true
+          -- Trigger event scene immediately (more reliable than deferring)
+          do
+            local events = require("data.events")
+            local event = events.getRandom and events.getRandom() or nil
+            if event then
+              -- Ensure we don't leave a stale flag
+              s._pendingEvent = false
+              return { type = "open_event", eventId = event.id }
+            else
+              -- Fallback: set a pending flag so the handler above can try again next frame
+              s._pendingEvent = true
+            end
+          end
         elseif result == "merchant_visited" then
           local px3, py3 = s.mapManager:getPlayerWorldPosition(s.gridSize, s.offsetX, s.offsetY)
           s.playerWorldX = px3
@@ -260,6 +266,19 @@ function MapController:update(deltaTime)
           local px4, py4 = s.mapManager:getPlayerWorldPosition(s.gridSize, s.offsetX, s.offsetY)
           s.playerWorldX = px4
           s.playerWorldY = py4
+        else
+          -- Fallback check: in case result was dropped, directly inspect current tile for EVENT
+          local tile = s.mapManager:getTile(s.mapManager.playerGridX, s.mapManager.playerGridY)
+          if tile and tile.type == require("managers.MapManager").TileType.EVENT then
+            tile.type = require("managers.MapManager").TileType.GROUND
+            local events = require("data.events")
+            local event = events.getRandom and events.getRandom() or nil
+            if event then
+              return { type = "open_event", eventId = event.id }
+            else
+              s._pendingEvent = true
+            end
+          end
         end
       else
         local oldX = s.playerWorldX
@@ -289,11 +308,10 @@ function MapController:update(deltaTime)
       return { type = "open_event", eventId = event.id }
     else
       -- If no event found, log warning but still clear flag to prevent infinite loop
-      print("Warning: No events available when trying to trigger event scene")
       s._pendingEvent = false
     end
   end
-  
+
   if s._battleTransitionDelay ~= nil then
     if s._battleTransitionDelay > 0 then
       s._battleTransitionDelay = s._battleTransitionDelay - deltaTime

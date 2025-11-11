@@ -1088,8 +1088,8 @@ function MapManager:completeMovement()
     end
 
     if tile and tile.type == MapManager.TileType.EVENT then
-      tile.type = MapManager.TileType.GROUND
-      return false, "event_collected"
+		tile.type = MapManager.TileType.GROUND
+		return false, "event_collected"
     end
 
     if tile and tile.type == MapManager.TileType.MERCHANT then

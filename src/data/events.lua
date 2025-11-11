@@ -52,7 +52,9 @@ function M.getRandom()
     table.insert(keys, k)
   end
   if #keys > 0 then
-    return EVENTS[keys[love.math.random(#keys)]]
+    local key = keys[love.math.random(#keys)]
+    local ev = EVENTS[key]
+    return ev
   end
   return nil
 end

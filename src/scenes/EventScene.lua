@@ -44,7 +44,7 @@ function EventScene:load()
   self._fadeTimer = 0
   
   -- Load event data
-  self.event = events.get(self.eventId)
+	self.event = events.get(self.eventId)
   if not self.event then
     -- Fallback to placeholder event if not found
     self.event = {
@@ -57,6 +57,9 @@ function EventScene:load()
       }
     }
   end
+	if self.event and self.event.id then
+	else
+	end
   
   -- Load event image
   local imagePath = "assets/images/events/" .. self.event.image
