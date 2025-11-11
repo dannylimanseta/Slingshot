@@ -65,6 +65,16 @@ function MapController:keypressed(key, scancode, isRepeat)
   if s._inputSuppressTimer and s._inputSuppressTimer > 0 then
     return
   end
+  
+  -- Handle P key to open encounter select menu
+  if key == "p" and not isRepeat then
+    -- Don't open if orbs UI is open
+    if s._orbsUIOpen then
+      return
+    end
+    return "open_encounter_select"
+  end
+  
   if key == "space" and not s.daySystem:canMove() and not s.isMoving then
     s._endDayPressed = true
     s._endDaySpinTime = 0

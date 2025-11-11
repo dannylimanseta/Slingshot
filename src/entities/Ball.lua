@@ -99,6 +99,8 @@ function Ball.new(world, x, y, dirX, dirY, opts)
     glowT = 0,
     burstTimer = 0, -- timer for glow burst effect on block hits
     onLastBounce = opts.onLastBounce or nil,
+    spawnX = x, -- store spawn position to prevent immediate wall destruction
+    spawnY = y,
   }, Ball)
 
   self.body = love.physics.newBody(world, x, y, "dynamic")
@@ -249,10 +251,25 @@ function Ball:draw()
   if self.ballImg then
     local imgW, imgH = self.ballImg:getWidth(), self.ballImg:getHeight()
     local scale = (self.radius * 2) / math.max(imgW, imgH) -- scale to fit radius
+    
+    -- Calculate rotation angle from velocity direction
+    -- Rotate 90 degrees to the right (clockwise) from the direction
+    local rotation = 0
+    if self.pierce and self._initialDirection then
+      -- Pierce orbs: rotate based on initial direction
+      rotation = math.atan2(self._initialDirection.y, self._initialDirection.x) + math.pi / 2
+    else
+      -- Regular orbs: rotate based on current velocity
+      local vx, vy = self.body:getLinearVelocity()
+      if vx ~= 0 or vy ~= 0 then
+        rotation = math.atan2(vy, vx) + math.pi / 2
+      end
+    end
+    
     love.graphics.push("all")
     love.graphics.setShader(BRIGHTNESS_SHADER)
     BRIGHTNESS_SHADER:send("u_brightness", 1.5) -- +50% brightness
-    love.graphics.draw(self.ballImg, x, y, 0, scale, scale, imgW * 0.5, imgH * 0.5)
+    love.graphics.draw(self.ballImg, x, y, rotation, scale, scale, imgW * 0.5, imgH * 0.5)
     love.graphics.setShader()
     love.graphics.pop()
   else

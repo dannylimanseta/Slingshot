@@ -68,7 +68,7 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
   self.world:setCallbacks(
     function(a, b, contact) self:beginContact(a, b, contact) end,
     function(a, b, contact) self:preSolve(a, b, contact) end,
-    nil,
+    function(a, b, contact) self:postSolve(a, b, contact) end,
     nil
   )
 
@@ -150,6 +150,18 @@ function GameplayScene:update(dt, bounds)
   self._blocksHitThisFrame = {}
   
   if self.world then self.world:update(dt) end
+  
+  -- Correct pierce orb positions after physics step (if needed)
+  if self.ball and self.ball.alive and self.ball.pierce and self.ball._needsPositionCorrection then
+    self:_correctPiercePosition(self.ball)
+  end
+  if self.balls and #self.balls > 0 then
+    for _, ball in ipairs(self.balls) do
+      if ball and ball.alive and ball.pierce and ball._needsPositionCorrection then
+        self:_correctPiercePosition(ball)
+      end
+    end
+  end
   
   -- Update single ball (backward compatibility)
   if self.ball and self.ball.alive then self.ball:update(dt, { bounds = bounds }) end
@@ -1065,6 +1077,41 @@ function GameplayScene:updateWalls(newWidth, newHeight)
   end
 end
 
+function GameplayScene:_correctPiercePosition(ball)
+  -- Correct position shifts for pierce orbs after physics step
+  if not ball or not ball.pierce or not ball._piercePosition or not ball._initialDirection then
+    return
+  end
+  
+  local storedX = ball._piercePosition.x
+  local storedY = ball._piercePosition.y
+  local currentX = ball.body:getX()
+  local currentY = ball.body:getY()
+  
+  -- Calculate vector from stored position to current position
+  local dx = currentX - storedX
+  local dy = currentY - storedY
+  
+  -- Project this vector onto the initial direction to get the correct position
+  -- Projection: proj = (v · d) * d, where v is the vector and d is the direction
+  local math2d = require("utils.math2d")
+  local dirX = ball._initialDirection.x
+  local dirY = ball._initialDirection.y
+  local dot = dx * dirX + dy * dirY
+  
+  -- Calculate the correct position along the straight path
+  local correctX = storedX + dirX * dot
+  local correctY = storedY + dirY * dot
+  
+  -- Set the corrected position (world is unlocked now)
+  ball.body:setPosition(correctX, correctY)
+  
+  -- Clear stored position and correction flag
+  ball._piercePosition = nil
+  ball._pierceTime = nil
+  ball._needsPositionCorrection = false
+end
+
 function GameplayScene:preSolve(fixA, fixB, contact)
   -- Disable collision response for pierce orbs hitting blocks (they pierce through)
   -- With restitution=0 and direction maintained in update(), this ensures straight piercing
@@ -1081,8 +1128,33 @@ function GameplayScene:preSolve(fixA, fixB, contact)
   local block = getBlock(a) or getBlock(b)
   
   -- If a pierce orb hits a block, disable collision response (no bounce, pierces through)
+  -- Store position and time before collision to prevent position shifts
   if ball and block and ball.pierce then
+    if not ball._piercePosition then
+      ball._piercePosition = { x = ball.body:getX(), y = ball.body:getY() }
+      ball._pierceTime = love.timer.getTime()
+    end
     contact:setEnabled(false)
+  end
+end
+
+function GameplayScene:postSolve(fixA, fixB, contact)
+  -- Mark pierce orbs that need position correction (can't modify physics during step)
+  local a = fixA and fixA:getUserData() or nil
+  local b = fixB and fixB:getUserData() or nil
+  local function getBall(x)
+    return x and x.type == "ball" and x.ref or nil
+  end
+  local function getBlock(x)
+    return x and x.type == "block" and x.ref or nil
+  end
+  
+  local ball = getBall(a) or getBall(b)
+  local block = getBlock(a) or getBlock(b)
+  
+  -- Mark pierce orb for position correction after physics step
+  if ball and block and ball.pierce and ball._piercePosition and ball._initialDirection then
+    ball._needsPositionCorrection = true
   end
 end
 
@@ -1107,32 +1179,18 @@ function GameplayScene:beginContact(fixA, fixB, contact)
     local wallData = (aType == "wall" and a) or (bType == "wall" and b)
     
     if ball.pierce then
-      -- Pierce orbs: manually bounce off walls (since restitution is 0)
-      -- Reverse the direction component perpendicular to the wall
-      local vx, vy = ball.body:getLinearVelocity()
-      if wallData and wallData.side then
-        if wallData.side == "left" or wallData.side == "right" then
-          -- Bounce off left/right walls: reverse X direction
-          vx = -vx
-        end
-        -- Top wall: reverse Y direction (if needed)
-        if not wallData.side then
-          vy = -vy
-        end
-      end
-      -- Update initial direction for pierce orb to maintain new direction
-      local math2d = require("utils.math2d")
-      local nx, ny = math2d.normalize(vx, vy)
-      if nx and ny then
-        ball._initialDirection = { x = nx, y = ny }
-        ball.body:setLinearVelocity(nx * ball.speed, ny * ball.speed)
-      end
-      
-      -- Trigger edge glow effect for left/right walls
-      if wallData and wallData.side and self.onEdgeHit then
-        local x, y = contact:getPositions()
-        local bounceY = y or -200
-        pcall(function() self.onEdgeHit(wallData.side, bounceY) end)
+      -- Pierce orbs: destroy when hitting walls (they don't bounce)
+      -- But only if the ball has moved away from spawn position AND has pierced at least one block
+      -- This prevents immediate destruction when firing from the edge
+      local bx, by = ball.body:getPosition()
+      local dx = bx - (ball.spawnX or bx)
+      local dy = by - (ball.spawnY or by)
+      local distFromSpawn = math.sqrt(dx * dx + dy * dy)
+      local hasPierced = (ball.pierces or 0) > 0
+      -- Only destroy if moved at least 3 pixels from spawn AND has pierced at least one block
+      -- This allows pierce orbs to travel through blocks even when fired from the edge
+      if distFromSpawn >= 3 and hasPierced then
+        ball:destroy()
       end
     else
       -- Regular orbs: normal bounce (restitution handles it)
@@ -1154,6 +1212,11 @@ function GameplayScene:beginContact(fixA, fixB, contact)
         ball:onBounce()
       end
       return
+    end
+    
+    -- For pierce orbs, store position right before hitting the block
+    if ball.pierce and not ball._piercePosition then
+      ball._piercePosition = { x = ball.body:getX(), y = ball.body:getY() }
     end
     
     -- Mark block as hit this frame IMMEDIATELY to prevent race conditions (double check)
