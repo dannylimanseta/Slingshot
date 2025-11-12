@@ -31,6 +31,7 @@ function Shooter.new(x, y, projectileId)
     slotRenderCache = {}, -- { [slotIndex] = {x, size, alpha, depthAlpha, projectileIndex} }
     arrowOffsetX = 0, -- Relative offset from shooter center (tweened)
     lastTurnNumber = 1, -- Track turn number to detect changes
+    bobTime = 0, -- Time tracker for bobbing animation
   }, Shooter)
   
   -- Load all projectiles dynamically
@@ -79,7 +80,7 @@ function Shooter:loadProjectiles()
     -- Fallback: add default projectile
     local defaultSlot = {
       id = "strike",
-      icon = "assets/images/ball_1.png",
+      icon = "assets/images/orb_strike.png",
       image = nil,
     }
     local ok, img = pcall(love.graphics.newImage, defaultSlot.icon)
@@ -188,7 +189,8 @@ end
 function Shooter:calculateSlotSize(relativePosition)
   local r = config.shooter.radius
   local ballSize = r * 0.7
-  local activeBallSize = ballSize * 1.2 * 1.2
+  -- Increase selected orb size by 10%: 1.2 * 1.2 * 1.1 = 1.584x
+  local activeBallSize = ballSize * 1.2 * 1.2 * 1.1
   
   local distanceFromCenter = math.abs(relativePosition)
   
@@ -219,6 +221,9 @@ function Shooter:setProjectile(projectileId)
 end
 
 function Shooter:update(dt, bounds)
+  -- Update bobbing animation time
+  self.bobTime = (self.bobTime or 0) + dt
+  
   local speed = config.shooter.speed
   local move = 0
   if love.keyboard.isDown("a") then move = move - 1 end
@@ -383,17 +388,26 @@ function Shooter:draw()
       
     -- Combine edge fade and depth fade
     local finalAlpha = slotData.edgeFade * slotData.depthFade
+    
+    -- Calculate bobbing effect for selected orb (center slot)
+    local bobScale = 1.0
+    if math.abs(slotData.relativePosition) < 0.5 then
+      -- Selected orb: bob with +/- 5% size variation
+      local bobSpeed = 2.0 -- Animation speed (cycles per second)
+      local bobAmount = 0.05 -- +/- 5% size variation
+      bobScale = 1.0 + math.sin(self.bobTime * bobSpeed * math.pi * 2) * bobAmount
+    end
       
       -- Draw projectile image or fallback circle
       if slotImage then
       love.graphics.setColor(1, 1, 1, finalAlpha)
         local iw, ih = slotImage:getWidth(), slotImage:getHeight()
-      local scale = (slotData.size * 2) / math.max(iw, ih)
+      local scale = (slotData.size * 2 * bobScale) / math.max(iw, ih)
       love.graphics.draw(slotImage, slotData.x, drawY, 0, scale, scale, iw * 0.5, ih * 0.5)
   else
       -- Fallback circle
       love.graphics.setColor(0.8, 0.8, 0.8, finalAlpha)
-      love.graphics.circle("fill", slotData.x, drawY, slotData.size)
+      love.graphics.circle("fill", slotData.x, drawY, slotData.size * bobScale)
     end
       end
       
@@ -409,14 +423,22 @@ function Shooter:draw()
     local centerSlot = self.slotRenderCache[centerSlotIndex]
     
     if centerSlot then
-      local arrowY = drawY + centerSlot.size + r * 0.3 + 3
+      -- Calculate bobbing scale for arrow (matches selected orb)
+      local bobScale = 1.0
+      if math.abs(centerSlot.relativePosition) < 0.5 then
+        local bobSpeed = 2.0
+        local bobAmount = 0.05
+        bobScale = 1.0 + math.sin(self.bobTime * bobSpeed * math.pi * 2) * bobAmount
+      end
+      
+      local arrowY = drawY + centerSlot.size * bobScale + r * 0.3 + 3
       
       -- Arrow position synced with shooter movement (relative offset)
       local arrowX = self.x + self.arrowOffsetX
     
-    -- Scale arrow to match ball size
+    -- Scale arrow to match ball size (with bobbing)
     local iw, ih = self.arrowImage:getWidth(), self.arrowImage:getHeight()
-      local scale = (centerSlot.size * 1.5) / math.max(iw, ih) * 1.5
+      local scale = (centerSlot.size * bobScale * 1.5) / math.max(iw, ih) * 1.5
       love.graphics.draw(self.arrowImage, arrowX, arrowY, 0, scale, scale, iw * 0.5, ih * 0.5)
     end
   end

@@ -877,7 +877,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
         self.ball = nil -- Clear single ball
         self.balls = {}
         if not spritePath then
-          spritePath = (config.assets.images.ball_3) or "assets/images/ball_3.png"
+          spritePath = (config.assets.images.ball_3) or "assets/images/orb_twin_strike.png"
         end
         local maxBounces = (effective and effective.maxBounces) or 5
         
@@ -924,7 +924,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
         local spreadAngle = spreadConfig.spreadAngle or 0.15
         local radiusScale = spreadConfig.radiusScale or 0.7
           if not spritePath then
-            spritePath = spreadConfig.sprite or (config.assets.images.ball_2)
+            spritePath = spreadConfig.sprite or (config.assets.images.ball_2) or "assets/images/orb_multi_strike.png"
           end
         local maxBounces = (effective and effective.maxBounces) or (spreadConfig.maxBounces or 3)
         

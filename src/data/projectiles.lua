@@ -36,7 +36,7 @@ projectiles.data = {
       [4] = { baseDamage = 10, maxBounces = 8 },
       [5] = { baseDamage = 16, maxBounces = 10 },
     },
-    icon = "assets/images/ball_1.png", -- using existing ball sprite
+    icon = "assets/images/orb_strike.png", -- using existing ball sprite
     description = "A basic projectile that grows stronger with each block it hits."
   },
   {
@@ -52,7 +52,7 @@ projectiles.data = {
       [4] = { baseDamage = 5, count = 4, maxBounces = 4 },
       [5] = { baseDamage = 6, count = 5, maxBounces = 4 },
     },
-    icon = "assets/images/ball_2.png", -- spread shot sprite
+    icon = "assets/images/orb_multi_strike.png", -- spread shot sprite
     description = "Multiple projectiles fired in a spread pattern."
   },
   {
@@ -68,7 +68,7 @@ projectiles.data = {
       [4] = { baseDamage = 10, count = 2, maxBounces = 8 },
       [5] = { baseDamage = 16, count = 2, maxBounces = 10 },
     },
-    icon = "assets/images/ball_3.png",
+    icon = "assets/images/orb_twin_strike.png",
     description = "Two projectiles that mirror each other's trajectory."
   },
   {

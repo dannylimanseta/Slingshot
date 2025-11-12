@@ -44,7 +44,7 @@ config.ball = {
     maxBounces = 3, -- each projectile bounces 3 times
     spreadAngle = 0.29, -- cone spread in radians (~16.6 degrees, increased by 8 degrees)
     radiusScale = 0.7, -- 30% smaller than regular projectile
-    sprite = "assets/images/ball_2.png", -- sprite for spread projectiles
+    sprite = "assets/images/orb_multi_strike.png", -- sprite for spread projectiles
     trail = {
       enabled = true,
       width = 16.38, -- 30% smaller than regular trail (23.4 * 0.7)
@@ -60,7 +60,7 @@ config.ball = {
       invert = true, -- invert along-length gradient (bright at head)
     },
   },
-  -- Twin strike (ball_3) visual settings
+  -- Twin strike (orb_twin_strike) visual settings
   twinStrike = {
     trail = {
       enabled = true,
@@ -469,9 +469,9 @@ config.assets = {
     player = "assets/images/player_char_1.png",
     enemy = "assets/images/enemy_1.png",
     enemy2 = "assets/images/enemy_2.png",
-    ball = "assets/images/ball_1.png",
-    ball_2 = "assets/images/ball_2.png", -- spread shot projectile sprite
-    ball_3 = "assets/images/ball_3.png", -- twin strike projectile sprite
+    ball = "assets/images/orb_strike.png",
+    ball_2 = "assets/images/orb_multi_strike.png", -- spread shot projectile sprite
+    ball_3 = "assets/images/orb_twin_strike.png", -- twin strike projectile sprite
     block_attack = "assets/images/block_attack.png",
     block_defend = "assets/images/block_defend.png",
     block_crit = "assets/images/block_crit.png",
