@@ -227,7 +227,7 @@ function GameplayScene:update(dt, bounds)
   if self.blackHoles and #self.blackHoles > 0 then
     local aliveEffects = {}
     local cfg = (config.gameplay and config.gameplay.blackHole) or {}
-    local radius = cfg.radius or 96
+    local baseRadius = cfg.radius or 96
     local duration = cfg.duration or 1.8
     local suckSpeed = cfg.suckSpeed or 220
     local swirlBase = cfg.swirlSpeed or 240
@@ -235,6 +235,10 @@ function GameplayScene:update(dt, bounds)
       hole.t = (hole.t or 0) + dt
       -- Update rotation (anti-clockwise is negative in Love2D, 30% slower)
       hole.rotation = (hole.rotation or 0) - (math.pi * 2 * dt * 0.7)
+      -- Scale radius based on level: level 1 = 1.0x, level 5 = 1.5x (reduced from 2.0x by 50%)
+      local level = hole.level or 1
+      local radiusScale = 1.0 + (level - 1) * 0.125 -- 1.0, 1.125, 1.25, 1.375, 1.5 for levels 1-5
+      local radius = baseRadius * radiusScale
       -- Open (ease-out), hold, then close (ease-in) for longer block removal window
       local u = math.max(0, math.min(1, (hole.t or 0) / math.max(1e-6, duration)))
       local openFrac = cfg.openFrac or 0.25
@@ -261,7 +265,11 @@ function GameplayScene:update(dt, bounds)
             local dx = hole.x - b.cx
             local dy = hole.y - b.cy
             local dist = math.sqrt(dx * dx + dy * dy)
-            if dist <= r then
+            -- Process blocks that are within radius OR blocks that were already being pulled in
+            -- (have _bhSpeedMul set) - this ensures blocks continue to be destroyed even after hole closes
+            local isWithinRadius = dist <= r
+            local wasBeingPulled = b._bhSpeedMul ~= nil
+            if isWithinRadius or wasBeingPulled then
               -- Assign a per-block speed variance (+/- 20%) once
               if not b._bhSpeedMul then
                 b._bhSpeedMul = 0.8 + love.math.random() * 0.4
@@ -281,7 +289,12 @@ function GameplayScene:update(dt, bounds)
               -- Tangent (perpendicular) unit vector
               local tdx, tdy = -ndy, ndx
               -- Strength scales with proximity (more swirl near center)
-              local proximity = 1 - math.min(1, dist / math.max(1e-6, r))
+              -- For blocks outside current radius, use original radius for proximity calculation
+              -- This ensures blocks continue moving toward center even after hole closes
+              local effectiveRadius = isWithinRadius and r or radius
+              local proximity = 1 - math.min(1, dist / math.max(1e-6, effectiveRadius))
+              -- Clamp proximity to valid range [0, 1]
+              proximity = math.max(0, math.min(1, proximity))
               -- Ease-in: slow at start, faster near center
               -- Use a milder curve: start at 0.3, ramp up to 1.0 near center
               local easeIn = 0.3 + 0.7 * (proximity * proximity)
@@ -308,12 +321,12 @@ function GameplayScene:update(dt, bounds)
               end
               -- Increase black tint as it approaches the hole
               do
-                local t = 1 - math.min(1, dist / math.max(1e-6, r))
+                local t = 1 - math.min(1, dist / math.max(1e-6, effectiveRadius))
                 b._bhTint = math.max(b._bhTint or 0, t)
               end
               -- Shrink toward the center (mild warp)
               if b._bhBaseTargetSize then
-                local shrink = 1 - 0.35 * (1 - math.min(1, dist / math.max(1e-6, r)))
+                local shrink = 1 - 0.35 * (1 - math.min(1, dist / math.max(1e-6, effectiveRadius)))
                 local newTarget = math.max(4, b._bhBaseTargetSize * shrink)
                 if math.abs(newTarget - b.targetSize) > 0.1 then
                   b.targetSize = newTarget
@@ -370,6 +383,51 @@ function GameplayScene:update(dt, bounds)
       end
     end
     self.blackHoles = aliveEffects
+    
+    -- Cleanup: After black holes close, destroy any blocks that were being pulled in but didn't reach center
+    -- This ensures no blocks get stuck halfway
+    if #self.blackHoles == 0 and self.blocks and self.blocks.blocks then
+      for _, b in ipairs(self.blocks.blocks) do
+        if b and b.alive and b._bhSpeedMul then
+          -- Block was being pulled in but black hole closed - destroy it
+          b._suckedByBlackHole = true -- suppress particle explosion
+          
+          -- Track damage for blocks destroyed by black hole cleanup
+          local perHit = (config.score and config.score.rewardPerHit) or 1
+          local hitReward = perHit
+          if b.kind == "crit" then
+            self.critThisTurn = (self.critThisTurn or 0) + 1
+          elseif b.kind == "multiplier" then
+            self.multiplierThisTurn = (self.multiplierThisTurn or 0) + 1
+          elseif b.kind == "aoe" then
+            local aoeReward = 3
+            hitReward = hitReward + aoeReward
+            self.aoeThisTurn = true
+          elseif b.kind == "armor" then
+            hitReward = 0
+            local rewardByHp = (config.armor and config.armor.rewardByHp) or {}
+            local hp = (b and b.hp) or 1
+            local armorGain = rewardByHp[hp] or rewardByHp[1] or 3
+            self.armorThisTurn = self.armorThisTurn + armorGain
+          elseif b.kind == "potion" then
+            hitReward = 0
+            local healAmount = (config.heal and config.heal.potionHeal) or 8
+            self.healThisTurn = self.healThisTurn + healAmount
+          end
+          self.score = self.score + hitReward
+          
+          -- Track block hit for animated damage display
+          if b.kind == "damage" or b.kind == "attack" or b.kind == "crit" or b.kind == "multiplier" or b.kind == "aoe" then
+            table.insert(self.blockHitSequence, {
+              damage = hitReward,
+              kind = b.kind
+            })
+          end
+          
+          b:destroy()
+        end
+      end
+    end
   end
   -- Aim guide fade toward canShoot state
   do
@@ -535,8 +593,8 @@ function GameplayScene:draw(bounds)
         love.graphics.draw(self.blackHoleImage, hole.x, hole.y, hole.rotation or 0, scale, scale, imgW * 0.5, imgH * 0.5)
       else
         -- Fallback to circle if image not loaded
-        love.graphics.setColor(0, 0, 0, 0.95)
-        love.graphics.circle("fill", hole.x, hole.y, r)
+      love.graphics.setColor(0, 0, 0, 0.95)
+      love.graphics.circle("fill", hole.x, hole.y, r)
       end
     end
     love.graphics.pop()
@@ -1217,6 +1275,10 @@ function GameplayScene:mousereleased(x, y, button, bounds)
         })
         if self.ball then
           self.ball.projectileId = projectileId
+          -- Store projectile level for level-based scaling (e.g., black hole size)
+          if projectileData and projectileData.level then
+            self.ball.projectileLevel = projectileData.level
+          end
           local baseDmg = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
           self.ball.score = baseDmg
           self.score = self.score + self.ball.score
@@ -1485,7 +1547,9 @@ function GameplayScene:beginContact(fixA, fixB, contact)
       local hx = x or (ball.body and select(1, ball.body:getPosition())) or block.cx
       local hy = y or (ball.body and select(2, ball.body:getPosition())) or block.cy
       self.blackHoles = self.blackHoles or {}
-      table.insert(self.blackHoles, { x = hx, y = hy, t = 0, r = 0 })
+      -- Store projectile level for size scaling (default to level 1 if not set)
+      local level = ball.projectileLevel or 1
+      table.insert(self.blackHoles, { x = hx, y = hy, t = 0, r = 0, level = level })
       destroyBallAfter = true
     end
     

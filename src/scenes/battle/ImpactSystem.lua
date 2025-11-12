@@ -382,7 +382,7 @@ function ImpactSystem.updateBlackHoleAttacks(scene, dt)
           local shardVertices = {}
           -- Random elongation for more jagged, shard-like appearance
           local elongationAngle = love.math.random() * math.pi * 2
-          local elongationFactor = 0.7 + love.math.random() * 1.0 -- 0.7-1.7x stretch
+          local elongationFactor = 1.2 + love.math.random() * 1.8 -- 1.2-3.0x stretch for thinner shards
           -- Generate vertices in a roughly circular pattern with lots of variation
           for v = 1, vertexCount do
             local angle = (v / vertexCount) * math.pi * 2 + (love.math.random() - 0.5) * 0.8 -- Add angle jitter
@@ -441,9 +441,12 @@ function ImpactSystem.updateBlackHoleAttacks(scene, dt)
         local progressSpeed = 1.2 * (shard.homingSpeedMul or 1) -- Speed affects how fast shard completes its path
         shard.progress = math.min(1, shard.progress + dt * progressSpeed)
         
+        -- Apply ease-in-cubic for acceleration (shards speed up as they approach enemies)
+        local linearProgress = shard.progress
+        local t = linearProgress * linearProgress * linearProgress -- Cubic ease-in for strong acceleration
+        
         -- Quadratic bezier curve: P(t) = (1-t)²·P0 + 2(1-t)t·P1 + t²·P2
         -- P0 = start (black hole), P1 = burst endpoint (control point), P2 = target (enemy)
-        local t = shard.progress
         local oneMinusT = 1 - t
         local oneMinusT2 = oneMinusT * oneMinusT
         local t2 = t * t
@@ -648,7 +651,7 @@ function ImpactSystem.drawBlackHoleAttacks(scene)
         love.graphics.draw(scene.blackHoleImage, attack.x, attack.y, attack.rotation or 0, scale, scale, imgW * 0.5, imgH * 0.5)
       else
         -- Fallback to circle if image not loaded
-        love.graphics.setColor(0, 0, 0, 0.95)
+      love.graphics.setColor(0, 0, 0, 0.95)
         love.graphics.circle("fill", attack.x, attack.y, r)
       end
       love.graphics.pop()

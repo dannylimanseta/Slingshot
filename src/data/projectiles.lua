@@ -91,17 +91,17 @@ projectiles.data = {
     id = "black_hole",
     name = "Black Hole",
     rarity = projectiles.Rarity.RARE,
-    level = 1,
-    baseDamage = 2,
+    level = 5, -- Testing level 5
+    baseDamage = 0,
     levels = {
-      [1] = { baseDamage = 2, maxBounces = 3 },
-      [2] = { baseDamage = 3, maxBounces = 3 },
-      [3] = { baseDamage = 4, maxBounces = 4 },
-      [4] = { baseDamage = 5, maxBounces = 4 },
-      [5] = { baseDamage = 6, maxBounces = 5 },
+      [1] = { baseDamage = 0 },
+      [2] = { baseDamage = 0 },
+      [3] = { baseDamage = 0 },
+      [4] = { baseDamage = 0 },
+      [5] = { baseDamage = 0 },
     },
     icon = "assets/images/orb_black_hole.png",
-    description = "On first block hit, opens a black hole that pulls in nearby blocks."
+    description = "Creates a black hole that sucks blocks into it."
   },
 }
 

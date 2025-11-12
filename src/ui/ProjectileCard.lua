@@ -14,11 +14,48 @@ local RARITY_COLORS = {
   LEGENDARY = { 1, 0.65, 0.2, 1 },     -- Gold/Orange
 }
 
+-- Word wrap text to fit within maxWidth
+local function wrapText(text, font, maxWidth)
+  local words = {}
+  for word in text:gmatch("%S+") do
+    table.insert(words, word)
+  end
+  
+  local lines = {}
+  local currentLine = ""
+  
+  for _, word in ipairs(words) do
+    local testLine = currentLine == "" and word or currentLine .. " " .. word
+    local width = font:getWidth(testLine)
+    
+    if width > maxWidth and currentLine ~= "" then
+      table.insert(lines, currentLine)
+      currentLine = word
+    else
+      currentLine = testLine
+    end
+  end
+  
+  if currentLine ~= "" then
+    table.insert(lines, currentLine)
+  end
+  
+  return lines
+end
+
 -- Build dynamic stat lines based on current level/effective values
-local function buildDynamicStats(projectile, effective)
+local function buildDynamicStats(projectile, effective, maxWidth, font)
   local lines = {}
   local id = projectile.id or ""
-  if id == "multi_strike" then
+  if id == "black_hole" then
+    -- Black hole: show description with word wrapping
+    if projectile.description then
+      local wrappedLines = wrapText(projectile.description, font, maxWidth)
+      for _, line in ipairs(wrappedLines) do
+        table.insert(lines, line)
+      end
+    end
+  elseif id == "multi_strike" then
     table.insert(lines, string.format("Fires %d projectiles", (effective and effective.count) or 3))
     if effective and effective.maxBounces then
       table.insert(lines, string.format("Bounces %d times", effective.maxBounces))
@@ -78,6 +115,13 @@ end
 function ProjectileCard:calculateHeight(projectile)
   local padding = 12
   local spacing = 4
+  local cardW = 288
+  local iconSize = 24 * 1.3
+  local iconPadding = 12
+  
+  -- Calculate text area width
+  local textStartX = iconPadding + iconSize + padding
+  local maxWidth = cardW - textStartX - padding
   
   -- Top padding
   local height = padding
@@ -96,7 +140,7 @@ function ProjectileCard:calculateHeight(projectile)
   
   -- Stats area (include baseDamage line if present)
   local effective = ProjectileManager.getEffective(projectile)
-  local stats = buildDynamicStats(projectile, effective)
+  local stats = buildDynamicStats(projectile, effective, maxWidth, self.statFont)
   local statLineHeight = self.statFont:getHeight() + 2
   local bonus = (effective and effective.baseDamage and 1 or 0)
   local statCount = math.min(#stats + bonus, 10) -- Limit to 10 lines max for safety
@@ -202,7 +246,8 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   theme.drawTextWithOutline(levelText, levelX, nameY, 1, 1, 1, alpha, 1)
   
   -- Stats (below name, dynamic based on content) - apply alpha
-  local stats = buildDynamicStats(projectile, effective)
+  local textW = cardW - textStartX - padding
+  local stats = buildDynamicStats(projectile, effective, textW, self.statFont)
   local statsStartY = nameY + nameFontH + 4
   love.graphics.setColor(1, 1, 1, 0.9 * alpha)
   love.graphics.setFont(self.statFont)
