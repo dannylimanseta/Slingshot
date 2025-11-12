@@ -787,6 +787,7 @@ function BattleScene:update(dt, bounds)
       p.sequenceTimer = (p.sequenceTimer or 0) + dt
       local currentStep = p.sequence[p.sequenceIndex]
       
+      -- Ensure we wait for the full duration of each step before advancing
       if currentStep and p.sequenceTimer >= currentStep.duration then
         -- Move to next step in sequence (only reset timer when advancing)
         if p.sequenceIndex < #p.sequence then
@@ -799,8 +800,10 @@ function BattleScene:update(dt, bounds)
       end
       
       -- Check if sequence has completed (on final step and its duration has elapsed)
+      -- IMPORTANT: Only mark as completed when we're on the final step AND its full duration has elapsed
       if p.sequenceIndex == #p.sequence then
         local finalStep = p.sequence[p.sequenceIndex]
+        -- Force wait for the full duration of the final step before marking complete
         if finalStep and p.sequenceTimer >= finalStep.duration then
           sequenceCompleted = true
           -- Mark sequence as completed (only once)
@@ -816,6 +819,10 @@ function BattleScene:update(dt, bounds)
             p.originalLifetime = p.t
           end
         end
+      else
+        -- If not on final step yet, ensure sequence is not marked as finished
+        -- This prevents premature display of final number
+        sequenceCompleted = false
       end
       
       -- Update bounce timer (for bounce animation on step changes)
@@ -901,9 +908,18 @@ function BattleScene:update(dt, bounds)
     end
     
     -- Only decrement popup timer if sequence has completed (or if not an animated damage popup)
+    -- CRITICAL: For animated damage, NEVER decrement timer until sequence is fully complete
     local isAnimatedDamage = (p.kind == "animated_damage" and p.sequence)
-    if not isAnimatedDamage or sequenceCompleted or (p.sequenceFinished == true) then
+    if not isAnimatedDamage then
+      -- Non-animated popups: decrement normally
       p.t = p.t - dt
+    elseif sequenceCompleted or (p.sequenceFinished == true) then
+      -- Animated damage: only decrement after sequence has fully completed
+      -- This ensures the final number stays visible until all steps have finished
+      p.t = p.t - dt
+    else
+      -- Sequence still in progress: keep popup alive indefinitely until it completes
+      -- Don't decrement timer - this forces the sequence to finish before fade starts
     end
     
     -- Keep popup alive if it has time left
@@ -1143,6 +1159,7 @@ function BattleScene:update(dt, bounds)
               enemy.flash = config.battle.hitFlashDuration
               enemy.knockbackTime = 1e-6
               -- Calculate total animation duration + linger + disintegration time
+              -- IMPORTANT: Sum ALL step durations to ensure we wait for the complete sequence
               local totalSequenceDuration = 0
               for _, step in ipairs(damageSequence) do
                 totalSequenceDuration = totalSequenceDuration + (step.duration or 0.1)
@@ -1153,7 +1170,9 @@ function BattleScene:update(dt, bounds)
               local lingerTime = hasExclamation and 0.2 or 0.05 -- Longer linger for final "XX!" number
               -- Only keep popup visible for a short time during disintegration, not the full duration
               local disintegrationDisplayTime = 0.2 -- Show during first part of disintegration
-              local totalPopupLifetime = totalSequenceDuration + lingerTime + disintegrationDisplayTime
+              -- Add extra buffer to ensure sequence always completes (safety margin)
+              local safetyBuffer = 0.5 -- Extra time to ensure sequence never times out prematurely
+              local totalPopupLifetime = totalSequenceDuration + lingerTime + disintegrationDisplayTime + safetyBuffer
               
               table.insert(self.popups, { 
                 x = 0, 
@@ -1242,13 +1261,16 @@ function BattleScene:update(dt, bounds)
             selectedEnemy.flash = config.battle.hitFlashDuration
             selectedEnemy.knockbackTime = 1e-6
             -- Calculate total animation duration + linger + disintegration time
+            -- IMPORTANT: Sum ALL step durations to ensure we wait for the complete sequence
             local totalSequenceDuration = 0
             for _, step in ipairs(damageSequence) do
               totalSequenceDuration = totalSequenceDuration + (step.duration or 0.1)
             end
             local lingerTime = 0.3
             local disintegrationDuration = (config.battle.disintegration and config.battle.disintegration.duration) or 1.5
-            local totalPopupLifetime = totalSequenceDuration + lingerTime + disintegrationDuration
+            -- Add extra buffer to ensure sequence always completes (safety margin)
+            local safetyBuffer = 0.5 -- Extra time to ensure sequence never times out prematurely
+            local totalPopupLifetime = totalSequenceDuration + lingerTime + disintegrationDuration + safetyBuffer
             
             table.insert(self.popups, { 
               x = 0, 
