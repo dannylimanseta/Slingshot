@@ -60,6 +60,8 @@ function GameplayScene.new()
     hoveredBlock = nil,
     hoverTime = 0,
     lastHoveredBlock = nil,
+    -- Black hole image
+    blackHoleImage = nil,
   }, GameplayScene)
 end
 
@@ -128,6 +130,12 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
       local ok, img = pcall(love.graphics.newImage, imgs.icon_armor)
       if ok then self.iconArmor = img end
     end
+  end
+  
+  -- Load black hole image
+  do
+    local ok, img = pcall(love.graphics.newImage, "assets/images/fx/black_hole.png")
+    if ok then self.blackHoleImage = img end
   end
 
   -- Hook block destroy events to particles
@@ -225,6 +233,8 @@ function GameplayScene:update(dt, bounds)
     local swirlBase = cfg.swirlSpeed or 240
     for _, hole in ipairs(self.blackHoles) do
       hole.t = (hole.t or 0) + dt
+      -- Update rotation (anti-clockwise is negative in Love2D, 30% slower)
+      hole.rotation = (hole.rotation or 0) - (math.pi * 2 * dt * 0.7)
       -- Open (ease-out), hold, then close (ease-in) for longer block removal window
       local u = math.max(0, math.min(1, (hole.t or 0) / math.max(1e-6, duration)))
       local openFrac = cfg.openFrac or 0.25
@@ -517,8 +527,17 @@ function GameplayScene:draw(bounds)
     love.graphics.setBlendMode("alpha")
     for _, hole in ipairs(self.blackHoles) do
       local r = hole.r or 0
-      love.graphics.setColor(0, 0, 0, 0.95)
-      love.graphics.circle("fill", hole.x, hole.y, r)
+      if self.blackHoleImage and r > 0 then
+        -- Draw spinning black hole image
+        love.graphics.setColor(1, 1, 1, 0.95)
+        local imgW, imgH = self.blackHoleImage:getDimensions()
+        local scale = (r * 2) / math.max(imgW, imgH)
+        love.graphics.draw(self.blackHoleImage, hole.x, hole.y, hole.rotation or 0, scale, scale, imgW * 0.5, imgH * 0.5)
+      else
+        -- Fallback to circle if image not loaded
+        love.graphics.setColor(0, 0, 0, 0.95)
+        love.graphics.circle("fill", hole.x, hole.y, r)
+      end
     end
     love.graphics.pop()
   end

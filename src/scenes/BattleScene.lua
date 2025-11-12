@@ -152,6 +152,7 @@ function BattleScene.new()
     splatterImage = nil, -- Splatter image for hit effects (backwards compatibility)
     splatterImages = {}, -- Array of splatter images for randomization
     splatterInstances = {}, -- Array of active splatter instances {x, y, rotation, scale, alpha, lifetime, maxLifetime, image}
+    blackHoleImage = nil, -- Black hole image for black hole attacks
     -- Staggered flash and knockback events
     enemyFlashEvents = {}, -- Array of {delay, duration} for staggered flashes
     enemyKnockbackEvents = {}, -- Array of {delay, startTime} for staggered knockbacks
@@ -326,6 +327,13 @@ function BattleScene:load(bounds, battleProfile)
   end
   -- Keep single image reference for backwards compatibility (use first if available)
   self.splatterImage = (#self.splatterImages > 0) and self.splatterImages[1] or nil
+  
+  -- Load black hole image
+  local blackHolePath = "assets/images/fx/black_hole.png"
+  local okBlackHole, blackHoleImg = pcall(love.graphics.newImage, blackHolePath)
+  if okBlackHole then
+    self.blackHoleImage = blackHoleImg
+  end
   
   -- Initialize selection to leftmost enemy (index 1)
   self.selectedEnemyIndex = 1

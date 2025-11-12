@@ -295,6 +295,8 @@ function ImpactSystem.updateBlackHoleAttacks(scene, dt)
   local aliveAttacks = {}
   for _, attack in ipairs(scene.blackHoleAttacks) do
     attack.t = attack.t + dt
+    -- Update rotation (anti-clockwise is negative in Love2D, 30% slower)
+    attack.rotation = (attack.rotation or 0) - (math.pi * 2 * dt * 0.7)
     local progress = attack.t / attack.duration
     
     -- Phase 1 (0-0.4): Open with ease-in-out
@@ -373,9 +375,28 @@ function ImpactSystem.updateBlackHoleAttacks(scene, dt)
             speed = 350 + love.math.random() * 250
           end
           local rotSpeed = (love.math.random() * 3 - 1.5) * math.pi -- Slower rotation
-          -- More varied triangle sizes and aspect ratios
+          -- More varied shard sizes
           local baseSize = 4 + love.math.random() * 14 -- 4-18px
-          local aspectRatio = 0.4 + love.math.random() * 1.2 -- Width/height ratio (0.4 to 1.6)
+          -- Create irregular shard shape (3 or 4 vertices for more varied shapes)
+          local vertexCount = love.math.random() < 0.6 and 3 or 4 -- 60% triangular, 40% quadrilateral
+          local shardVertices = {}
+          -- Random elongation for more jagged, shard-like appearance
+          local elongationAngle = love.math.random() * math.pi * 2
+          local elongationFactor = 0.7 + love.math.random() * 1.0 -- 0.7-1.7x stretch
+          -- Generate vertices in a roughly circular pattern with lots of variation
+          for v = 1, vertexCount do
+            local angle = (v / vertexCount) * math.pi * 2 + (love.math.random() - 0.5) * 0.8 -- Add angle jitter
+            local radius = baseSize * (0.4 + love.math.random() * 0.8) -- Vary distance from center (40-120%)
+            -- Apply elongation in a random direction for jagged shard look
+            local vx = math.cos(angle) * radius
+            local vy = math.sin(angle) * radius
+            -- Stretch vertices along elongation direction
+            local dotProduct = vx * math.cos(elongationAngle) + vy * math.sin(elongationAngle)
+            vx = vx + math.cos(elongationAngle) * dotProduct * (elongationFactor - 1)
+            vy = vy + math.sin(elongationAngle) * dotProduct * (elongationFactor - 1)
+            table.insert(shardVertices, vx)
+            table.insert(shardVertices, vy)
+          end
           -- Random offset within medium radius around enemy center
           local offsetRadius = 60 -- Medium radius for spread
           local offsetAngle = love.math.random() * math.pi * 2
@@ -403,12 +424,13 @@ function ImpactSystem.updateBlackHoleAttacks(scene, dt)
             rotation = love.math.random() * math.pi * 2,
             rotSpeed = rotSpeed,
             size = baseSize,
-            aspect = aspectRatio,
             alpha = 1.0,
             targetX = targetX, -- Final target (enemy position)
             targetY = targetY,
             progress = 0, -- Overall progress through animation (0 to 1)
-            homingSpeedMul = homingSpeedVariance
+            homingSpeedMul = homingSpeedVariance,
+            -- Irregular shard shape
+            vertices = shardVertices
           })
         end
       end
@@ -614,11 +636,21 @@ function ImpactSystem.drawBlackHoleAttacks(scene)
   
   for _, attack in ipairs(scene.blackHoleAttacks) do
     if attack.phase == "opening" or attack.phase == "hold" then
-      -- Draw black hole circle
+      -- Draw black hole
       love.graphics.push("all")
       love.graphics.setBlendMode("alpha")
-      love.graphics.setColor(0, 0, 0, 0.95)
-      love.graphics.circle("fill", attack.x, attack.y, attack.currentRadius or 0)
+      local r = attack.currentRadius or 0
+      if scene.blackHoleImage and r > 0 then
+        -- Draw spinning black hole image
+        love.graphics.setColor(1, 1, 1, 0.95)
+        local imgW, imgH = scene.blackHoleImage:getDimensions()
+        local scale = (r * 2) / math.max(imgW, imgH)
+        love.graphics.draw(scene.blackHoleImage, attack.x, attack.y, attack.rotation or 0, scale, scale, imgW * 0.5, imgH * 0.5)
+      else
+        -- Fallback to circle if image not loaded
+        love.graphics.setColor(0, 0, 0, 0.95)
+        love.graphics.circle("fill", attack.x, attack.y, r)
+      end
       love.graphics.pop()
     elseif attack.phase == "shatter" then
       -- Draw falling triangle shards
@@ -629,14 +661,10 @@ function ImpactSystem.drawBlackHoleAttacks(scene)
         love.graphics.push()
         love.graphics.translate(shard.x, shard.y)
         love.graphics.rotate(shard.rotation)
-        -- Draw triangle with varied aspect ratio (width * aspect, height)
-        local width = shard.size * (shard.aspect or 1)
-        local height = shard.size
-        love.graphics.polygon("fill", 
-          0, -height * 0.67,  -- top
-          -width * 0.5, height * 0.33,  -- bottom left
-          width * 0.5, height * 0.33   -- bottom right
-        )
+        -- Draw irregular shard shape using stored vertices
+        if shard.vertices and #shard.vertices >= 6 then
+          love.graphics.polygon("fill", shard.vertices)
+        end
         love.graphics.pop()
       end
       love.graphics.pop()
