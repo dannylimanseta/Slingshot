@@ -236,6 +236,51 @@ function MapScene:update(deltaTime)
   return nil
 end
 
+-- Reset all movement/input state and re-apply saved world position when resuming this scene.
+-- Use when returning from other scenes to avoid replaying stale movement steps.
+function MapScene:resetMovementOnResume()
+  -- Clear movement
+  self.isMoving = false
+  self.playerTargetX = nil
+  self.playerTargetY = nil
+  self._movementTime = 0
+
+  -- Clear held input state
+  self._heldMoveKey = nil
+  self._heldDirX = 0
+  self._heldDirY = 0
+  self._holdElapsed = 0
+  self._repeatElapsed = 0
+  self._hasFiredInitialRepeat = false
+
+  -- Clear target grid positions
+  if self.mapManager then
+    self.mapManager.playerTargetGridX = nil
+    self.mapManager.playerTargetGridY = nil
+  end
+
+  -- Recompute and restore precise world position
+  if self.mapManager then
+    local px, py = self.mapManager:getPlayerWorldPosition(self.gridSize, self.offsetX, self.offsetY)
+    local restoreX = self._savedWorldX or px
+    local restoreY = self._savedWorldY or py
+    self.playerWorldX = restoreX
+    self.playerWorldY = restoreY
+    self.cameraX = restoreX
+    self.cameraY = restoreY
+    self.targetCameraX = restoreX
+    self.targetCameraY = restoreY
+    -- Clear saved world position after applying
+    self._savedWorldX, self._savedWorldY = nil, nil
+  end
+
+  -- Clamp camera immediately
+  if self._clampCameraToMap then
+    self:_clampCameraToMap(true)
+    self:_clampCameraToMap(false)
+  end
+end
+
 -- Keep camera inside the map so edges are never visible.
 -- If clampTarget is true, clamp targetCameraX/Y; otherwise clamp current cameraX/Y.
 function MapScene:_clampCameraToMap(clampTarget)
@@ -291,6 +336,10 @@ end
 
 function MapScene:mousepressed(x, y, button)
   if self.controller then self.controller:mousepressed(x, y, button) end
+end
+
+function MapScene:mousereleased(x, y, button)
+  if self.controller then self.controller:mousereleased(x, y, button) end
 end
 
 function MapScene:mousemoved(x, y, dx, dy)

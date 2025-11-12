@@ -89,6 +89,10 @@ function SceneTransitionHandler:handleReturnToMap(data)
       self.setCursorForScene(self.mapScene)
       self.previousScene = nil
       if self.mapScene then
+        -- Ensure stale movement/input state is cleared on resume
+        if self.mapScene.resetMovementOnResume then
+          self.mapScene:resetMovementOnResume()
+        end
         self.mapScene._inputSuppressTimer = 0.2
       end
     else
@@ -97,6 +101,10 @@ function SceneTransitionHandler:handleReturnToMap(data)
       self.setCursorForScene(self.mapScene)
       self.previousScene = nil
       if self.mapScene then
+        -- Ensure stale movement/input state is cleared on resume
+        if self.mapScene.resetMovementOnResume then
+          self.mapScene:resetMovementOnResume()
+        end
         self.mapScene._inputSuppressTimer = 0.2
       end
     end

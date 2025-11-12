@@ -26,6 +26,14 @@ function RewardsScene.new(params)
     _goldButtonFadeAlpha = 1.0,
     _goldButtonClicked = false,
     _goldAnimationComplete = false,
+    -- Keyboard navigation
+    _selectedIndex = 1, -- First option is selected by default
+    _prevSelectedIndex = 1, -- Track previous selection for fade transitions
+    -- Glow animation
+    _glowTime = 0, -- Time tracker for glow pulsing animation
+    _glowFadeAlpha = 1.0, -- Fade alpha for currently selected glow (0 to 1)
+    _prevGlowFadeAlpha = 0.0, -- Fade alpha for previously selected glow (fades out)
+    _glowFadeSpeed = 8.0, -- Speed of fade in/out
   }, RewardsScene)
 end
 
@@ -85,6 +93,7 @@ function RewardsScene:load()
   self._fadeInDelayStep = 0.25
   self._fadeStartDelay = 0.3
   self._goldFadeInAlpha = 0
+  self._selectedIndex = 1 -- Reset to first option
   -- Circle pulse on scene entry (drives shader u_transitionProgress)
   self._enterPulseTimer = 0
   self._enterPulseDuration = (config.transition and config.transition.duration) or 0.6
@@ -148,6 +157,7 @@ end
 function RewardsScene:update(dt)
   self.time = self.time + dt
   self._uiFadeTimer = self._uiFadeTimer + dt
+  self._glowTime = (self._glowTime or 0) + dt
   if self.shader then
     local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
     local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
@@ -201,10 +211,51 @@ function RewardsScene:update(dt)
   -- Dynamic row index for stacking buttons from top to bottom
   local nextRowIndex = 0
   
+  -- Build list of available buttons in order (for keyboard navigation)
+  local buttons = {}
+  if self.orbButton then table.insert(buttons, self.orbButton) end
+  if self.goldButton and not self._goldButtonClicked then table.insert(buttons, self.goldButton) end
+  if self.skipButton then table.insert(buttons, self.skipButton) end
+  
+  -- Clamp selected index to valid range
+  if #buttons > 0 then
+    self._selectedIndex = math.max(1, math.min(self._selectedIndex, #buttons))
+    
+    -- Detect selection change and reset glow fade
+    if self._selectedIndex ~= self._prevSelectedIndex then
+      -- Transfer current fade to previous fade (for fade out)
+      self._prevGlowFadeAlpha = self._glowFadeAlpha
+      -- Start new selection fade from 0
+      self._glowFadeAlpha = 0
+      self._prevSelectedIndex = self._selectedIndex
+    end
+    
+    -- Tween glow fade alpha toward 1.0 (fade in)
+    local targetAlpha = 1.0
+    local diff = targetAlpha - self._glowFadeAlpha
+    self._glowFadeAlpha = self._glowFadeAlpha + diff * math.min(1, self._glowFadeSpeed * dt)
+    
+    -- Tween previous glow fade alpha toward 0.0 (fade out)
+    local prevDiff = 0.0 - self._prevGlowFadeAlpha
+    self._prevGlowFadeAlpha = self._prevGlowFadeAlpha + prevDiff * math.min(1, self._glowFadeSpeed * dt)
+  end
+  
   -- Layout orb button if present
   if self.orbButton then
     local layoutRow = createRewardButtonLayout(vw, vh, nextRowIndex, dt, self._mouseX, self._mouseY)
     layoutRow(self.orbButton)
+    -- Set hover state based on keyboard selection
+    if #buttons > 0 then
+      local buttonIndex = 1
+      local wasSelected = (self._prevSelectedIndex == buttonIndex and self._selectedIndex ~= buttonIndex)
+      self.orbButton._hovered = (self._selectedIndex == buttonIndex)
+      self.orbButton._wasSelected = wasSelected -- Track if this was the previous selection
+      if self.orbButton._hovered then
+        self.orbButton._scale = math.min(1.05, (self.orbButton._scale or 1.0) + dt * 3)
+      else
+        self.orbButton._scale = math.max(1.0, (self.orbButton._scale or 1.0) - dt * 3)
+      end
+    end
     nextRowIndex = nextRowIndex + 1
   end
   
@@ -218,6 +269,18 @@ function RewardsScene:update(dt)
     local by = math.floor(vh * 0.78)
     self.skipButton:setLayout(bx, by, bw, bh)
     self.skipButton:update(dt, self._mouseX, self._mouseY)
+    -- Set hover state based on keyboard selection
+    if #buttons > 0 then
+      local buttonIndex = #buttons -- Skip button is always last
+      local wasSelected = (self._prevSelectedIndex == buttonIndex and self._selectedIndex ~= buttonIndex)
+      self.skipButton._hovered = (self._selectedIndex == buttonIndex)
+      self.skipButton._wasSelected = wasSelected -- Track if this was the previous selection
+      if self.skipButton._hovered then
+        self.skipButton._scale = math.min(1.05, (self.skipButton._scale or 1.0) + dt * 3)
+      else
+        self.skipButton._scale = math.max(1.0, (self.skipButton._scale or 1.0) - dt * 3)
+      end
+    end
   end
   
   -- Update gold button layout if gold reward is available
@@ -247,6 +310,18 @@ function RewardsScene:update(dt)
     -- Layout gold button at current row
     local layoutGoldButton = createRewardButtonLayout(vw, vh, nextRowIndex, dt, self._mouseX, self._mouseY)
     layoutGoldButton(self.goldButton)
+    -- Set hover state based on keyboard selection
+    if #buttons > 0 and not self._goldButtonClicked then
+      local buttonIndex = (self.orbButton and 2 or 1)
+      local wasSelected = (self._prevSelectedIndex == buttonIndex and self._selectedIndex ~= buttonIndex)
+      self.goldButton._hovered = (self._selectedIndex == buttonIndex)
+      self.goldButton._wasSelected = wasSelected -- Track if this was the previous selection
+      if self.goldButton._hovered then
+        self.goldButton._scale = math.min(1.05, (self.goldButton._scale or 1.0) + dt * 3)
+      else
+        self.goldButton._scale = math.max(1.0, (self.goldButton._scale or 1.0) - dt * 3)
+      end
+    end
     nextRowIndex = nextRowIndex + 1
   end
   
@@ -388,6 +463,39 @@ function RewardsScene:draw()
   -- Reward option button
   if self.orbButton then
     self.orbButton:draw()
+    -- Draw multi-layer faint white glow when hovered/highlighted or fading out
+    if self.orbButton._hovered or (self.orbButton._wasSelected and self._prevGlowFadeAlpha > 0) then
+      love.graphics.push()
+      local cx = self.orbButton.x + self.orbButton.w * 0.5
+      local cy = self.orbButton.y + self.orbButton.h * 0.5
+      local s = self.orbButton._scale or 1.0
+      love.graphics.translate(cx, cy)
+      love.graphics.scale(s, s)
+      love.graphics.setBlendMode("add")
+      
+      -- Pulsing animation (sine wave) - slowed down
+      local pulseSpeed = 1.0 -- cycles per second (slowed from 2.0)
+      local pulseAmount = 0.15 -- pulse variation (15%)
+      local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
+      
+      -- Draw multiple glow layers - smaller sizes
+      local fadeAlpha = self.orbButton._wasSelected and self._prevGlowFadeAlpha or self._glowFadeAlpha
+      local baseAlpha = 0.15 * (self.orbButton.alpha or 1.0) * fadeAlpha -- Reduced opacity with fade
+      local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } } -- Smaller glow (was 6, 10, 14)
+      
+      for _, layer in ipairs(layers) do
+        local glowAlpha = baseAlpha * layer.alpha * pulse
+        local glowWidth = layer.width * pulse
+        love.graphics.setColor(1, 1, 1, glowAlpha)
+        love.graphics.setLineWidth(glowWidth)
+        love.graphics.rectangle("line", -self.orbButton.w * 0.5 - glowWidth * 0.5, -self.orbButton.h * 0.5 - glowWidth * 0.5, 
+                               self.orbButton.w + glowWidth, self.orbButton.h + glowWidth, 
+                               Button.defaults.cornerRadius + glowWidth * 0.5, Button.defaults.cornerRadius + glowWidth * 0.5)
+      end
+      
+      love.graphics.setBlendMode("alpha")
+      love.graphics.pop()
+    end
   end
   
   -- Gold reward button (matches orb button style)
@@ -426,6 +534,34 @@ function RewardsScene:draw()
       love.graphics.setLineWidth(oldLW or 1)
     end
     
+    -- Draw multi-layer faint white glow when hovered/highlighted or fading out
+    if self.goldButton._hovered or (self.goldButton._wasSelected and self._prevGlowFadeAlpha > 0) then
+      love.graphics.setBlendMode("add")
+      
+      -- Pulsing animation (sine wave) - slowed down
+      local pulseSpeed = 1.0 -- cycles per second (slowed from 2.0)
+      local pulseAmount = 0.15 -- pulse variation (15%)
+      local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
+      
+      -- Draw multiple glow layers - smaller sizes
+      local fadeAlpha = self.goldButton._wasSelected and self._prevGlowFadeAlpha or self._glowFadeAlpha
+      local baseAlpha = 0.15 * self._goldButtonFadeAlpha * (self._goldFadeInAlpha or 1) * fadeAlpha -- Reduced opacity with fade
+      local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } } -- Smaller glow (was 6, 10, 14)
+      
+      for _, layer in ipairs(layers) do
+        local glowAlpha = baseAlpha * layer.alpha * pulse
+        local glowWidth = layer.width * pulse
+        love.graphics.setColor(1, 1, 1, glowAlpha)
+        love.graphics.setLineWidth(glowWidth)
+        love.graphics.rectangle("line", -self.goldButton.w * 0.5 - glowWidth * 0.5, -self.goldButton.h * 0.5 - glowWidth * 0.5, 
+                               self.goldButton.w + glowWidth, self.goldButton.h + glowWidth, 
+                               Button.defaults.cornerRadius + glowWidth * 0.5, Button.defaults.cornerRadius + glowWidth * 0.5)
+      end
+      
+      love.graphics.setBlendMode("alpha")
+      love.graphics.setLineWidth(oldLW or 1)
+    end
+    
     -- Draw icon and text with alpha
     love.graphics.setFont(self.goldButton.font or theme.fonts.base)
     local tw = (self.goldButton.font or theme.fonts.base):getWidth(self.goldButton.label)
@@ -457,6 +593,39 @@ function RewardsScene:draw()
   -- Skip button
   if self.skipButton then
     self.skipButton:draw()
+    -- Draw multi-layer faint white glow when hovered/highlighted or fading out
+    if self.skipButton._hovered or (self.skipButton._wasSelected and self._prevGlowFadeAlpha > 0) then
+      love.graphics.push()
+      local cx = self.skipButton.x + self.skipButton.w * 0.5
+      local cy = self.skipButton.y + self.skipButton.h * 0.5
+      local s = self.skipButton._scale or 1.0
+      love.graphics.translate(cx, cy)
+      love.graphics.scale(s, s)
+      love.graphics.setBlendMode("add")
+      
+      -- Pulsing animation (sine wave) - slowed down
+      local pulseSpeed = 1.0 -- cycles per second (slowed from 2.0)
+      local pulseAmount = 0.15 -- pulse variation (15%)
+      local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
+      
+      -- Draw multiple glow layers - smaller sizes
+      local fadeAlpha = self.skipButton._wasSelected and self._prevGlowFadeAlpha or self._glowFadeAlpha
+      local baseAlpha = 0.15 * (self.skipButton.alpha or 1.0) * fadeAlpha -- Reduced opacity with fade
+      local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } } -- Smaller glow (was 6, 10, 14)
+      
+      for _, layer in ipairs(layers) do
+        local glowAlpha = baseAlpha * layer.alpha * pulse
+        local glowWidth = layer.width * pulse
+        love.graphics.setColor(1, 1, 1, glowAlpha)
+        love.graphics.setLineWidth(glowWidth)
+        love.graphics.rectangle("line", -self.skipButton.w * 0.5 - glowWidth * 0.5, -self.skipButton.h * 0.5 - glowWidth * 0.5, 
+                               self.skipButton.w + glowWidth, self.skipButton.h + glowWidth, 
+                               Button.defaults.cornerRadius + glowWidth * 0.5, Button.defaults.cornerRadius + glowWidth * 0.5)
+      end
+      
+      love.graphics.setBlendMode("alpha")
+      love.graphics.pop()
+    end
   end
   
   -- Draw top bar
@@ -469,9 +638,43 @@ function RewardsScene:draw()
 end
 
 function RewardsScene:keypressed(key, scancode, isRepeat)
+  -- Build list of available buttons in order (top to bottom)
+  local buttons = {}
+  if self.orbButton then table.insert(buttons, self.orbButton) end
+  if self.goldButton and not self._goldButtonClicked then table.insert(buttons, self.goldButton) end
+  if self.skipButton then table.insert(buttons, self.skipButton) end
+  
+  if #buttons == 0 then
   if key == "space" or key == "return" or key == "escape" then
+      return "return_to_map"
+    end
+    return nil
+  end
+  
+  -- Clamp selected index to valid range
+  self._selectedIndex = math.max(1, math.min(self._selectedIndex, #buttons))
+  
+  -- Handle navigation keys
+  if key == "w" or key == "up" then
+    self._selectedIndex = self._selectedIndex - 1
+    if self._selectedIndex < 1 then self._selectedIndex = #buttons end
+    return nil
+  elseif key == "s" or key == "down" then
+    self._selectedIndex = self._selectedIndex + 1
+    if self._selectedIndex > #buttons then self._selectedIndex = 1 end
+    return nil
+  elseif key == "space" or key == "return" then
+    -- Activate selected button
+    local selectedButton = buttons[self._selectedIndex]
+    if selectedButton and selectedButton.onClick then
+      selectedButton.onClick()
+    end
+    return nil
+  elseif key == "escape" then
     return "return_to_map"
   end
+  
+  return nil
 end
 
 function RewardsScene:mousepressed(x, y, button)

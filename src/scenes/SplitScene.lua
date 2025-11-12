@@ -823,6 +823,17 @@ function SplitScene:mousepressed(x, y, button)
 end
 
 function SplitScene:mousereleased(x, y, button)
+  -- Check if orbs UI is open - handle drag and drop
+  if self._orbsUIOpen and self.orbsUI then
+    if self.orbsUI:mousereleased(x, y, button) then
+      -- If orbs were reordered, reload shooter projectiles
+      if self.left and self.left.shooter and self.left.shooter.loadProjectiles then
+        self.left.shooter:loadProjectiles()
+      end
+      return
+    end
+  end
+  
   local w = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
   local h = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
   local centerRect = self.layoutManager:getCenterRect(w, h)

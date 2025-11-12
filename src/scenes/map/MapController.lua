@@ -244,6 +244,17 @@ function MapController:mousemoved(x, y)
   end
 end
 
+function MapController:mousereleased(x, y, button)
+  local s = self.scene
+  -- Check if orbs UI is open - handle drag and drop
+  if s._orbsUIOpen and s.orbsUI then
+    if s.orbsUI:mousereleased(x, y, button) then
+      -- Orbs were reordered (shooter doesn't exist on map, so no reload needed)
+      return
+    end
+  end
+end
+
 function MapController:wheelmoved(dx, dy)
   local s = self.scene
   -- If orbs UI is open, scroll it

@@ -31,6 +31,14 @@ function RestSiteScene.new()
     _orbBounds = {},
     _selectedOrbIndex = nil,
     card = ProjectileCard.new(),
+    -- Keyboard navigation
+    _selectedIndex = 1, -- First option is selected by default
+    _prevSelectedIndex = 1, -- Track previous selection for fade transitions
+    -- Glow animation
+    _glowTime = 0, -- Time tracker for glow pulsing animation
+    _glowFadeAlpha = 1.0, -- Fade alpha for currently selected glow (0 to 1)
+    _prevGlowFadeAlpha = 0.0, -- Fade alpha for previously selected glow (fades out)
+    _glowFadeSpeed = 8.0, -- Speed of fade in/out
   }, RestSiteScene)
 end
 
@@ -40,6 +48,7 @@ function RestSiteScene:load()
   self._exitRequested = false
   self._showOrbSelection = false
   self._selectedOrbIndex = nil
+  self._selectedIndex = 1 -- Reset to first option
   
   -- Load background image
   local bgPath = "assets/images/rest/rest_bg_1.png"
@@ -120,6 +129,9 @@ function RestSiteScene:_buildOrbSelection()
 end
 
 function RestSiteScene:update(dt, mouseX, mouseY)
+  -- Update glow animation time
+  self._glowTime = (self._glowTime or 0) + dt
+  
   -- Get mouse position
   if mouseX and mouseY then
     self.mouseX = mouseX
@@ -197,10 +209,48 @@ function RestSiteScene:update(dt, mouseX, mouseY)
     buttonY = buttonY + buttonHeight + buttonSpacing
     self.removeOrbButton:setLayout(rightPanelX, buttonY, buttonWidth, buttonHeight)
     
+    -- Clamp selected index to valid range
+    self._selectedIndex = math.max(1, math.min(self._selectedIndex, 2))
+    
+    -- Detect selection change and reset glow fade
+    if self._selectedIndex ~= self._prevSelectedIndex then
+      -- Transfer current fade to previous fade (for fade out)
+      self._prevGlowFadeAlpha = self._glowFadeAlpha
+      -- Start new selection fade from 0
+      self._glowFadeAlpha = 0
+      self._prevSelectedIndex = self._selectedIndex
+    end
+    
+    -- Tween glow fade alpha toward 1.0 (fade in)
+    local targetAlpha = 1.0
+    local diff = targetAlpha - self._glowFadeAlpha
+    self._glowFadeAlpha = self._glowFadeAlpha + diff * math.min(1, self._glowFadeSpeed * dt)
+    
+    -- Tween previous glow fade alpha toward 0.0 (fade out)
+    local prevDiff = 0.0 - self._prevGlowFadeAlpha
+    self._prevGlowFadeAlpha = self._prevGlowFadeAlpha + prevDiff * math.min(1, self._glowFadeSpeed * dt)
+    
     -- Update buttons (hover effects) - disable if choice already made
     if not self._choiceMade then
       self.restButton:update(dt, self.mouseX, self.mouseY)
       self.removeOrbButton:update(dt, self.mouseX, self.mouseY)
+      -- Set hover state based on keyboard selection
+      local restWasSelected = (self._prevSelectedIndex == 1 and self._selectedIndex ~= 1)
+      local removeWasSelected = (self._prevSelectedIndex == 2 and self._selectedIndex ~= 2)
+      self.restButton._hovered = (self._selectedIndex == 1)
+      self.restButton._wasSelected = restWasSelected
+      self.removeOrbButton._hovered = (self._selectedIndex == 2)
+      self.removeOrbButton._wasSelected = removeWasSelected
+      if self.restButton._hovered then
+        self.restButton._scale = math.min(1.05, (self.restButton._scale or 1.0) + dt * 3)
+      else
+        self.restButton._scale = math.max(1.0, (self.restButton._scale or 1.0) - dt * 3)
+      end
+      if self.removeOrbButton._hovered then
+        self.removeOrbButton._scale = math.min(1.05, (self.removeOrbButton._scale or 1.0) + dt * 3)
+      else
+        self.removeOrbButton._scale = math.max(1.0, (self.removeOrbButton._scale or 1.0) - dt * 3)
+      end
     else
       self.restButton._hovered = false
       self.restButton._scale = 1.0
@@ -384,6 +434,34 @@ function RestSiteScene:_drawMainChoices(fadeAlpha)
   love.graphics.rectangle("line", -self.restButton.w * 0.5, -self.restButton.h * 0.5, self.restButton.w, self.restButton.h, Button.defaults.cornerRadius, Button.defaults.cornerRadius)
   love.graphics.setLineWidth(oldLW or 1)
   
+  -- Draw multi-layer faint white glow when hovered/highlighted or fading out
+  if self.restButton._hovered or (self.restButton._wasSelected and self._prevGlowFadeAlpha > 0) then
+    love.graphics.setBlendMode("add")
+    
+    -- Pulsing animation (sine wave) - slowed down
+    local pulseSpeed = 1.0 -- cycles per second (slowed from 2.0)
+    local pulseAmount = 0.15 -- pulse variation (15%)
+    local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
+    
+    -- Draw multiple glow layers - smaller sizes
+    local glowFadeAlpha = self.restButton._wasSelected and self._prevGlowFadeAlpha or self._glowFadeAlpha
+    local baseAlpha = 0.15 * fadeAlpha * glowFadeAlpha -- Reduced opacity with fade
+    local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } }
+    
+    for _, layer in ipairs(layers) do
+      local glowAlpha = baseAlpha * layer.alpha * pulse
+      local glowWidth = layer.width * pulse
+      love.graphics.setColor(1, 1, 1, glowAlpha)
+      love.graphics.setLineWidth(glowWidth)
+      love.graphics.rectangle("line", -self.restButton.w * 0.5 - glowWidth * 0.5, -self.restButton.h * 0.5 - glowWidth * 0.5, 
+                             self.restButton.w + glowWidth, self.restButton.h + glowWidth, 
+                             Button.defaults.cornerRadius + glowWidth * 0.5, Button.defaults.cornerRadius + glowWidth * 0.5)
+    end
+    
+    love.graphics.setBlendMode("alpha")
+    love.graphics.setLineWidth(oldLW or 1)
+  end
+  
   love.graphics.pop()
   
   -- Draw rest button text with color parsing
@@ -415,6 +493,34 @@ function RestSiteScene:_drawMainChoices(fadeAlpha)
   love.graphics.setLineWidth(Button.defaults.borderWidth)
   love.graphics.rectangle("line", -self.removeOrbButton.w * 0.5, -self.removeOrbButton.h * 0.5, self.removeOrbButton.w, self.removeOrbButton.h, Button.defaults.cornerRadius, Button.defaults.cornerRadius)
   love.graphics.setLineWidth(oldLW or 1)
+  
+  -- Draw multi-layer faint white glow when hovered/highlighted or fading out
+  if self.removeOrbButton._hovered or (self.removeOrbButton._wasSelected and self._prevGlowFadeAlpha > 0) then
+    love.graphics.setBlendMode("add")
+    
+    -- Pulsing animation (sine wave) - slowed down
+    local pulseSpeed = 1.0 -- cycles per second (slowed from 2.0)
+    local pulseAmount = 0.15 -- pulse variation (15%)
+    local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
+    
+    -- Draw multiple glow layers - smaller sizes
+    local glowFadeAlpha = self.removeOrbButton._wasSelected and self._prevGlowFadeAlpha or self._glowFadeAlpha
+    local baseAlpha = 0.15 * fadeAlpha * glowFadeAlpha -- Reduced opacity with fade
+    local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } }
+    
+    for _, layer in ipairs(layers) do
+      local glowAlpha = baseAlpha * layer.alpha * pulse
+      local glowWidth = layer.width * pulse
+      love.graphics.setColor(1, 1, 1, glowAlpha)
+      love.graphics.setLineWidth(glowWidth)
+      love.graphics.rectangle("line", -self.removeOrbButton.w * 0.5 - glowWidth * 0.5, -self.removeOrbButton.h * 0.5 - glowWidth * 0.5, 
+                             self.removeOrbButton.w + glowWidth, self.removeOrbButton.h + glowWidth, 
+                             Button.defaults.cornerRadius + glowWidth * 0.5, Button.defaults.cornerRadius + glowWidth * 0.5)
+    end
+    
+    love.graphics.setBlendMode("alpha")
+    love.graphics.setLineWidth(oldLW or 1)
+  end
   
   love.graphics.pop()
   
@@ -627,6 +733,36 @@ function RestSiteScene:mousepressed(x, y, button)
     if self.removeOrbButton:mousepressed(x, y, button) then
       return nil
     end
+  end
+  
+  return nil
+end
+
+function RestSiteScene:keypressed(key, scancode, isRepeat)
+  if self._choiceMade then return nil end
+  
+  if self._showOrbSelection then
+    -- In orb selection mode, don't handle keyboard navigation
+    return nil
+  end
+  
+  -- Handle navigation keys
+  if key == "w" or key == "up" then
+    self._selectedIndex = self._selectedIndex - 1
+    if self._selectedIndex < 1 then self._selectedIndex = 2 end
+    return nil
+  elseif key == "s" or key == "down" then
+    self._selectedIndex = self._selectedIndex + 1
+    if self._selectedIndex > 2 then self._selectedIndex = 1 end
+    return nil
+  elseif key == "space" or key == "return" then
+    -- Activate selected button
+    if self._selectedIndex == 1 and self.restButton and self.restButton.onClick then
+      self.restButton.onClick()
+    elseif self._selectedIndex == 2 and self.removeOrbButton and self.removeOrbButton.onClick then
+      self.removeOrbButton.onClick()
+    end
+    return nil
   end
   
   return nil

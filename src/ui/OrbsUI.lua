@@ -28,6 +28,15 @@ function OrbsUI.new()
       align = "center", -- Center the text in the button
       onClick = function() end, -- Will be set by parent
     }),
+    -- Drag and drop state
+    _draggedIndex = nil, -- Index of card being dragged
+    _dragStartX = 0, -- Mouse X when drag started
+    _dragStartY = 0, -- Mouse Y when drag started
+    _dragOffsetX = 0, -- Offset from card center when dragging started
+    _dragOffsetY = 0,
+    _cardBounds = {}, -- Store card bounds for hit testing { [index] = {x, y, w, h} }
+    _mouseX = 0, -- Current mouse X position
+    _mouseY = 0, -- Current mouse Y position
   }, OrbsUI)
   return self
 end
@@ -38,6 +47,8 @@ function OrbsUI:setVisible(visible)
     -- Reset scroll when closing
     self.scrollOffset = 0
     self.scrollVelocity = 0
+    -- Reset drag state
+    self._draggedIndex = nil
   end
 end
 
@@ -47,6 +58,12 @@ function OrbsUI:scroll(delta)
 end
 
 function OrbsUI:update(dt, mouseX, mouseY)
+  -- Store mouse position for drag visualization
+  if mouseX and mouseY then
+    self._mouseX = mouseX
+    self._mouseY = mouseY
+  end
+  
   -- Smooth fade in/out
   local diff = self.targetAlpha - self.fadeAlpha
   self.fadeAlpha = self.fadeAlpha + diff * math.min(1, self.fadeSpeed * dt)
@@ -78,6 +95,57 @@ function OrbsUI:mousepressed(x, y, button)
       return true -- Close button was clicked
     end
   end
+  
+  -- Check if clicking on an orb card to start dragging
+  if button == 1 and self.fadeAlpha > 0.5 then
+    local equippedIds = (config.player and config.player.equippedProjectiles) or {}
+    for i, bounds in ipairs(self._cardBounds) do
+      if x >= bounds.x and x <= bounds.x + bounds.w and
+         y >= bounds.y and y <= bounds.y + bounds.h then
+        -- Start dragging this card
+        self._draggedIndex = i
+        self._dragStartX = x
+        self._dragStartY = y
+        self._dragOffsetX = x - (bounds.x + bounds.w * 0.5)
+        self._dragOffsetY = y - (bounds.y + bounds.h * 0.5)
+        return false -- Don't consume event, but mark as dragging
+      end
+    end
+  end
+  
+  return false
+end
+
+function OrbsUI:mousereleased(x, y, button)
+  if button == 1 and self._draggedIndex then
+    local equippedIds = (config.player and config.player.equippedProjectiles) or {}
+    
+    -- Find which card (if any) the mouse was released over
+    local targetIndex = nil
+    for i, bounds in ipairs(self._cardBounds) do
+      if x >= bounds.x and x <= bounds.x + bounds.w and
+         y >= bounds.y and y <= bounds.y + bounds.h then
+        targetIndex = i
+        break
+      end
+    end
+    
+    -- If released over a different card, swap them
+    if targetIndex and targetIndex ~= self._draggedIndex and targetIndex <= #equippedIds then
+      -- Swap the orbs in the equipped list
+      local temp = equippedIds[self._draggedIndex]
+      equippedIds[self._draggedIndex] = equippedIds[targetIndex]
+      equippedIds[targetIndex] = temp
+      
+      -- Return true to indicate order was changed (so parent can reload shooter)
+      self._draggedIndex = nil
+      return true
+    end
+    
+    -- End dragging
+    self._draggedIndex = nil
+  end
+  
   return false
 end
 
@@ -174,6 +242,10 @@ function OrbsUI:draw()
   local scissorH = visibleHeight * supersamplingFactor
   love.graphics.setScissor(scissorX, scissorY, scissorW, scissorH)
   
+  -- Use stored mouse position for drag visualization
+  local virtualMouseX = self._mouseX or 0
+  local virtualMouseY = self._mouseY or 0
+  
   -- Draw orb cards in rows
   for i, projectileId in ipairs(equippedIds) do
     local rowIndex = math.floor((i - 1) / maxCardsPerRow)
@@ -187,8 +259,36 @@ function OrbsUI:draw()
     local cardX = rowStartX + colIndex * (baseCardW + baseCardSpacing)
     local cardY = startY + rowIndex * (cardH + rowSpacing)
     
+    -- Store card bounds for hit testing
+    self._cardBounds[i] = {
+      x = cardX,
+      y = cardY,
+      w = baseCardW,
+      h = cardH
+    }
+    
+    -- If this card is being dragged, draw it at mouse position with reduced alpha
+    if self._draggedIndex == i then
+      -- Draw original position with reduced alpha
+      love.graphics.setColor(1, 1, 1, self.fadeAlpha * 0.3)
+      self.card:draw(cardX, cardY, projectileId, self.fadeAlpha * 0.3)
+      
+      -- Draw dragged card at mouse position
+      local dragX = virtualMouseX - self._dragOffsetX
+      local dragY = virtualMouseY - self._dragOffsetY
+      love.graphics.setColor(1, 1, 1, self.fadeAlpha)
+      love.graphics.push()
+      love.graphics.translate(dragX - cardX, dragY - cardY)
+      self.card:draw(cardX, cardY, projectileId, self.fadeAlpha)
+      love.graphics.pop()
+    else
+      -- Normal drawing
+      love.graphics.setColor(1, 1, 1, self.fadeAlpha)
     self.card:draw(cardX, cardY, projectileId, self.fadeAlpha)
+    end
   end
+  
+  love.graphics.setColor(1, 1, 1, 1)
   
   love.graphics.setScissor()
   love.graphics.pop()

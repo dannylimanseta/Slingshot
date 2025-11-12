@@ -38,11 +38,20 @@ function EventScene.new(eventId)
     _goldCountDuration = 0.6, -- seconds to count up
     _goldDisplayStart = 0,
     _goldDisplayTarget = 0,
+    -- Keyboard navigation
+    _selectedIndex = 1, -- First option is selected by default
+    _prevSelectedIndex = 1, -- Track previous selection for fade transitions
+    -- Glow animation
+    _glowTime = 0, -- Time tracker for glow pulsing animation
+    _glowFadeAlpha = 1.0, -- Fade alpha for currently selected glow (0 to 1)
+    _prevGlowFadeAlpha = 0.0, -- Fade alpha for previously selected glow (fades out)
+    _glowFadeSpeed = 8.0, -- Speed of fade in/out
   }, EventScene)
 end
 
 function EventScene:load()
   self._fadeTimer = 0
+  self._selectedIndex = 1 -- Reset to first option
   
   -- Load event data
 	self.event = events.get(self.eventId)
@@ -223,6 +232,7 @@ function EventScene:update(dt, mouseX, mouseY)
   
   -- Update fade timer
   self._fadeTimer = self._fadeTimer + dt
+  self._glowTime = (self._glowTime or 0) + dt
   
   -- Calculate button layout first (needed for coin animation source position)
   local vw = config.video.virtualWidth
@@ -316,6 +326,29 @@ function EventScene:update(dt, mouseX, mouseY)
     end
   end
   
+  -- Clamp selected index to valid range
+  if #self.choiceButtons > 0 then
+    self._selectedIndex = math.max(1, math.min(self._selectedIndex, #self.choiceButtons))
+    
+    -- Detect selection change and reset glow fade
+    if self._selectedIndex ~= self._prevSelectedIndex then
+      -- Transfer current fade to previous fade (for fade out)
+      self._prevGlowFadeAlpha = self._glowFadeAlpha
+      -- Start new selection fade from 0
+      self._glowFadeAlpha = 0
+      self._prevSelectedIndex = self._selectedIndex
+    end
+    
+    -- Tween glow fade alpha toward 1.0 (fade in)
+    local targetAlpha = 1.0
+    local diff = targetAlpha - self._glowFadeAlpha
+    self._glowFadeAlpha = self._glowFadeAlpha + diff * math.min(1, self._glowFadeSpeed * dt)
+    
+    -- Tween previous glow fade alpha toward 0.0 (fade out)
+    local prevDiff = 0.0 - self._prevGlowFadeAlpha
+    self._prevGlowFadeAlpha = self._prevGlowFadeAlpha + prevDiff * math.min(1, self._glowFadeSpeed * dt)
+  end
+  
   -- Update buttons (hover effects) - disable if choice already made
   for i, button in ipairs(self.choiceButtons) do
     -- Initialize scale if not set
@@ -331,6 +364,15 @@ function EventScene:update(dt, mouseX, mouseY)
       button._scale = 1.0
     else
       button:update(dt, self.mouseX, self.mouseY)
+      -- Set hover state based on keyboard selection
+      local wasSelected = (self._prevSelectedIndex == i and self._selectedIndex ~= i)
+      button._hovered = (self._selectedIndex == i)
+      button._wasSelected = wasSelected -- Track if this was the previous selection
+      if button._hovered then
+        button._scale = math.min(1.05, (button._scale or 1.0) + dt * 3)
+      else
+        button._scale = math.max(1.0, (button._scale or 1.0) - dt * 3)
+      end
     end
   end
   
@@ -343,6 +385,35 @@ function EventScene:update(dt, mouseX, mouseY)
     end
     -- No gold or counting complete, safe to exit with shader transition
     return { type = "return_to_map", skipTransition = false }
+  end
+  
+  return nil
+end
+
+function EventScene:keypressed(key, scancode, isRepeat)
+  if self._choiceMade then return nil end
+  
+  if #self.choiceButtons == 0 then return nil end
+  
+  -- Clamp selected index to valid range
+  self._selectedIndex = math.max(1, math.min(self._selectedIndex, #self.choiceButtons))
+  
+  -- Handle navigation keys
+  if key == "w" or key == "up" then
+    self._selectedIndex = self._selectedIndex - 1
+    if self._selectedIndex < 1 then self._selectedIndex = #self.choiceButtons end
+    return nil
+  elseif key == "s" or key == "down" then
+    self._selectedIndex = self._selectedIndex + 1
+    if self._selectedIndex > #self.choiceButtons then self._selectedIndex = 1 end
+    return nil
+  elseif key == "space" or key == "return" then
+    -- Activate selected button
+    local selectedButton = self.choiceButtons[self._selectedIndex]
+    if selectedButton and selectedButton.onClick then
+      selectedButton.onClick()
+    end
+    return nil
   end
   
   return nil
@@ -472,6 +543,34 @@ function EventScene:draw()
     love.graphics.setLineWidth(Button.defaults.borderWidth)
     love.graphics.rectangle("line", -button.w * 0.5, -button.h * 0.5, button.w, button.h, Button.defaults.cornerRadius, Button.defaults.cornerRadius)
     love.graphics.setLineWidth(oldLW or 1)
+    
+    -- Draw multi-layer faint white glow when hovered/highlighted or fading out
+    if button._hovered or (button._wasSelected and self._prevGlowFadeAlpha > 0) then
+      love.graphics.setBlendMode("add")
+      
+      -- Pulsing animation (sine wave) - slowed down
+      local pulseSpeed = 1.0 -- cycles per second (slowed from 2.0)
+      local pulseAmount = 0.15 -- pulse variation (15%)
+      local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
+      
+      -- Draw multiple glow layers - smaller sizes
+      local glowFadeAlpha = button._wasSelected and self._prevGlowFadeAlpha or self._glowFadeAlpha
+      local baseAlpha = 0.15 * fadeAlpha * glowFadeAlpha -- Reduced opacity with fade
+      local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } } -- Smaller glow (was 6, 10, 14)
+      
+      for _, layer in ipairs(layers) do
+        local glowAlpha = baseAlpha * layer.alpha * pulse
+        local glowWidth = layer.width * pulse
+        love.graphics.setColor(1, 1, 1, glowAlpha)
+        love.graphics.setLineWidth(glowWidth)
+        love.graphics.rectangle("line", -button.w * 0.5 - glowWidth * 0.5, -button.h * 0.5 - glowWidth * 0.5, 
+                               button.w + glowWidth, button.h + glowWidth, 
+                               Button.defaults.cornerRadius + glowWidth * 0.5, Button.defaults.cornerRadius + glowWidth * 0.5)
+      end
+      
+      love.graphics.setBlendMode("alpha")
+      love.graphics.setLineWidth(oldLW or 1)
+    end
     
     love.graphics.pop()
     
