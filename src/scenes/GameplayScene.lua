@@ -112,6 +112,8 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
     self.shooter:setTurnManager(self.turnManager)
   end
   self.particles = ParticleManager.new()
+  -- Black hole effect state
+  self.blackHoles = {}
 
   -- Load popup icons
   do
@@ -130,7 +132,7 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
   -- Hook block destroy events to particles
   for _, b in ipairs(self.blocks.blocks) do
     b.onDestroyed = function()
-      if self.particles then
+      if self.particles and not b._suckedByBlackHole then
         -- Get block color based on kind
         local blockColor = theme.colors.block -- default (damage blocks)
         if b.kind == "armor" then
@@ -211,6 +213,115 @@ function GameplayScene:update(dt, bounds)
   end
   if self.blocks and self.blocks.update then
     self.blocks:update(dt)
+  end
+  -- Update black hole effects (pull + swirl nearby blocks and destroy when close)
+  if self.blackHoles and #self.blackHoles > 0 then
+    local aliveEffects = {}
+    local cfg = (config.gameplay and config.gameplay.blackHole) or {}
+    local radius = cfg.radius or 96
+    local duration = cfg.duration or 1.8
+    local suckSpeed = cfg.suckSpeed or 220
+    local swirlBase = cfg.swirlSpeed or 240
+    for _, hole in ipairs(self.blackHoles) do
+      hole.t = (hole.t or 0) + dt
+      -- Open (ease-out), hold, then close (ease-in) for longer block removal window
+      local u = math.max(0, math.min(1, (hole.t or 0) / math.max(1e-6, duration)))
+      local openFrac = cfg.openFrac or 0.25
+      local closeFrac = cfg.closeFrac or 0.35
+      local r
+      if u < openFrac then
+        -- Ease-out open
+        local x = u / math.max(1e-6, openFrac)
+        local easeOut = 1 - (1 - x) * (1 - x)
+        r = radius * easeOut
+      elseif u <= 1 - closeFrac then
+        -- Hold fully open
+        r = radius
+      else
+        -- Ease-in close
+        local x = (u - (1 - closeFrac)) / math.max(1e-6, closeFrac)
+        local easeIn = x * x
+        r = radius * (1 - easeIn)
+      end
+      hole.r = r
+      if self.blocks and self.blocks.blocks then
+        for _, b in ipairs(self.blocks.blocks) do
+          if b and b.alive then
+            local dx = hole.x - b.cx
+            local dy = hole.y - b.cy
+            local dist = math.sqrt(dx * dx + dy * dy)
+            if dist <= r then
+              -- Assign a per-block speed variance (+/- 20%) once
+              if not b._bhSpeedMul then
+                b._bhSpeedMul = 0.8 + love.math.random() * 0.4
+              end
+              -- Assign swirl properties once
+              if not b._bhSwirlDir then
+                b._bhSwirlDir = (love.math.random() < 0.5) and -1 or 1
+                b._bhSwirlSpeed = swirlBase * (0.8 + love.math.random() * 0.4) -- +/-20%
+                -- Rotation setup (radians/sec), +/- 40% variance
+                b._bhTwistSpeed = (2.0 + love.math.random() * 2.0) * b._bhSwirlDir * (0.8 + love.math.random() * 0.4)
+                b._bhTwistAngle = b._bhTwistAngle or 0
+                -- Capture base size to shrink toward center
+                b._bhBaseTargetSize = b._bhBaseTargetSize or b.targetSize
+              end
+              local ndx = (dist > 0) and (dx / dist) or 0
+              local ndy = (dist > 0) and (dy / dist) or 0
+              -- Tangent (perpendicular) unit vector
+              local tdx, tdy = -ndy, ndx
+              -- Strength scales with proximity (more swirl near center)
+              local proximity = 1 - math.min(1, dist / math.max(1e-6, r))
+              -- Ease-in: slow at start, faster near center
+              -- Use a milder curve: start at 0.3, ramp up to 1.0 near center
+              local easeIn = 0.3 + 0.7 * (proximity * proximity)
+              local radialMove = suckSpeed * (b._bhSpeedMul or 1) * easeIn * dt
+              local swirlMove = (b._bhSwirlSpeed or swirlBase) * (0.2 + 0.8 * proximity) * easeIn * dt
+              -- Compose motion: radial inwards + tangential swirl
+              local stepX = ndx * radialMove + tdx * swirlMove * (b._bhSwirlDir or 1)
+              local stepY = ndy * radialMove + tdy * swirlMove * (b._bhSwirlDir or 1)
+              -- Clamp so we don't overshoot
+              if (stepX * stepX + stepY * stepY) > (dist * dist) then
+                -- Normalize step to distance
+                local sm = math.sqrt(stepX * stepX + stepY * stepY)
+                if sm > 0 then
+                  stepX = stepX / sm * dist
+                  stepY = stepY / sm * dist
+                end
+              end
+              b.cx = b.cx + stepX
+              b.cy = b.cy + stepY
+              b.pendingResize = true
+              -- Continuous shader twist while flying in (scaled by proximity)
+              if b._bhTwistSpeed then
+                b._bhTwistAngle = (b._bhTwistAngle or 0) + b._bhTwistSpeed * (0.4 + 0.6 * proximity) * dt
+              end
+              -- Increase black tint as it approaches the hole
+              do
+                local t = 1 - math.min(1, dist / math.max(1e-6, r))
+                b._bhTint = math.max(b._bhTint or 0, t)
+              end
+              -- Shrink toward the center (mild warp)
+              if b._bhBaseTargetSize then
+                local shrink = 1 - 0.35 * (1 - math.min(1, dist / math.max(1e-6, r)))
+                local newTarget = math.max(4, b._bhBaseTargetSize * shrink)
+                if math.abs(newTarget - b.targetSize) > 0.1 then
+                  b.targetSize = newTarget
+                  b.pendingResize = true
+                end
+              end
+              if dist <= 8 then
+                b._suckedByBlackHole = true -- suppress particle explosion
+                b:destroy()
+              end
+            end
+          end
+        end
+      end
+      if (hole.t or 0) < duration then
+        table.insert(aliveEffects, hole)
+      end
+    end
+    self.blackHoles = aliveEffects
   end
   -- Aim guide fade toward canShoot state
   do
@@ -330,7 +441,7 @@ function GameplayScene:respawnDestroyedBlocks(bounds, count)
   local newBlocks = self.blocks:addRandomBlocks(self.world, width, height, toSpawn)
   for _, nb in ipairs(newBlocks) do
     nb.onDestroyed = function()
-      if self.particles then
+      if self.particles and not nb._suckedByBlackHole then
         -- Get block color based on kind
         local blockColor = theme.colors.block -- default (damage blocks)
         if nb.kind == "armor" then
@@ -362,8 +473,38 @@ function GameplayScene:draw(bounds)
     love.graphics.translate(ox, oy)
   end
 
+  -- Black hole visuals (below blocks)
+  if self.blackHoles and #self.blackHoles > 0 then
+    love.graphics.push("all")
+    love.graphics.setBlendMode("alpha")
+    for _, hole in ipairs(self.blackHoles) do
+      local r = hole.r or 0
+      love.graphics.setColor(0, 0, 0, 0.95)
+      love.graphics.circle("fill", hole.x, hole.y, r)
+    end
+    love.graphics.pop()
+  end
+
   -- Blocks
   self.blocks:draw()
+
+  -- Black hole block tint overlay (above blocks)
+  do
+    if self.blocks and self.blocks.blocks then
+      love.graphics.push("all")
+      love.graphics.setBlendMode("alpha")
+      for _, b in ipairs(self.blocks.blocks) do
+        if b and b.alive and b._bhTint and b._bhTint > 0 then
+          local x, y, w, h = b:getAABB()
+          -- Expand tint overlay by 10% to cover edges during rotation
+          local expand = math.max(w, h) * 0.1
+          love.graphics.setColor(0, 0, 0, math.max(0, math.min(1, b._bhTint)) * 0.9)
+          love.graphics.rectangle("fill", x - expand, y - expand, w + expand * 2, h + expand * 2, 4, 4)
+        end
+      end
+      love.graphics.pop()
+    end
+  end
 
   -- Ball (single)
   if self.ball then self.ball:draw() end
@@ -900,6 +1041,8 @@ function GameplayScene:mousereleased(x, y, button, bounds)
             ball:destroy()
           end
         })
+        if ball1 then ball1.projectileId = projectileId end
+        if ball2 then ball2.projectileId = projectileId end
         
         local baseDmg = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
         if ball1 then
@@ -954,6 +1097,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
           })
           
           if ball then
+            ball.projectileId = projectileId
             local baseDmg = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
             ball.score = baseDmg
             self.score = self.score + ball.score
@@ -971,6 +1115,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
             end
           })
           if self.ball then
+            self.ball.projectileId = projectileId
             local baseDmg = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
             self.ball.score = baseDmg
             self.score = self.score + self.ball.score
@@ -995,6 +1140,24 @@ function GameplayScene:mousereleased(x, y, button, bounds)
           end
         })
         if self.ball then
+          self.ball.projectileId = projectileId
+          local baseDmg = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
+          self.ball.score = baseDmg
+          self.score = self.score + self.ball.score
+          self.baseDamageThisTurn = self.baseDamageThisTurn + baseDmg -- Track base damage for animation
+        end
+      elseif projectileId == "black_hole" then
+        -- Black Hole: single projectile, spawns a black hole on first block hit
+        self.balls = {} -- Clear multiple balls
+        self.ball = Ball.new(self.world, self.aimStartX, self.aimStartY, ndx, ndy, {
+          maxBounces = (effective and effective.maxBounces) or config.ball.maxBounces,
+          spritePath = spritePath,
+          onLastBounce = function(ball)
+            ball:destroy()
+          end
+        })
+        if self.ball then
+          self.ball.projectileId = projectileId
           local baseDmg = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
           self.ball.score = baseDmg
           self.score = self.score + self.ball.score
@@ -1012,6 +1175,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
           end
         })
         if self.ball then
+          self.ball.projectileId = projectileId
           local baseDmg = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
           self.ball.score = baseDmg
           self.score = self.score + self.ball.score
@@ -1207,6 +1371,7 @@ function GameplayScene:beginContact(fixA, fixB, contact)
     end
   end
   if ball and block then
+    local destroyBallAfter = false
     -- Early exit checks: block must be alive, not already hit, and not marked as hit this frame
     if not block.alive or block.hitThisFrame or self._blocksHitThisFrame[block] then
       -- Block already destroyed or already processed this frame, skip all processing
@@ -1255,6 +1420,15 @@ function GameplayScene:beginContact(fixA, fixB, contact)
     local x, y = contact:getPositions()
     if x and y and self.particles then self.particles:emitSpark(x, y) end
     ball:onBlockHit() -- Trigger glow burst effect
+    -- Black Hole: on first block hit spawn effect and end projectile
+    if ball.projectileId == "black_hole" and not ball._blackHoleTriggered then
+      ball._blackHoleTriggered = true
+      local hx = x or (ball.body and select(1, ball.body:getPosition())) or block.cx
+      local hy = y or (ball.body and select(2, ball.body:getPosition())) or block.cy
+      self.blackHoles = self.blackHoles or {}
+      table.insert(self.blackHoles, { x = hx, y = hy, t = 0, r = 0 })
+      destroyBallAfter = true
+    end
     
     -- Handle pierce vs bounce behavior
     if ball.pierce then
@@ -1304,6 +1478,9 @@ function GameplayScene:beginContact(fixA, fixB, contact)
       -- Potion block heals player based on config
       local healAmount = (config.heal and config.heal.potionHeal) or 8
       self.healThisTurn = self.healThisTurn + healAmount
+    end
+    if destroyBallAfter and ball and ball.alive then
+      ball:destroy()
     end
   end
   if ball and (aType == "bottom" or bType == "bottom") then

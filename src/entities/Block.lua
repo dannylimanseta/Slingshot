@@ -348,7 +348,7 @@ function Block:draw()
     local s = self.size / math.max(1, math.max(iw, ih))
     local mul = (config.blocks and config.blocks.spriteScale) or 1
     s = s * mul * (self.bounceScale or 1.0) -- Apply bounce scale
-    local rotation = self.dropRotation or 0
+    local rotation = self.dropRotation or self._bhTwistAngle or 0
     local centerX = self.cx + xOffset
     local centerY = self.cy + yOffset
     local dx = centerX - iw * s * 0.5

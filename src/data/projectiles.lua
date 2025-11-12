@@ -87,6 +87,22 @@ projectiles.data = {
     icon = "assets/images/orb_pierce.png",
     description = "Doesn't bounce, pierces through up to 4 blocks."
   },
+  {
+    id = "black_hole",
+    name = "Black Hole",
+    rarity = projectiles.Rarity.RARE,
+    level = 1,
+    baseDamage = 2,
+    levels = {
+      [1] = { baseDamage = 2, maxBounces = 3 },
+      [2] = { baseDamage = 3, maxBounces = 3 },
+      [3] = { baseDamage = 4, maxBounces = 4 },
+      [4] = { baseDamage = 5, maxBounces = 4 },
+      [5] = { baseDamage = 6, maxBounces = 5 },
+    },
+    icon = "assets/images/orb_black_hole.png",
+    description = "On first block hit, opens a black hole that pulls in nearby blocks."
+  },
 }
 
 -- Helper function to get projectile by ID

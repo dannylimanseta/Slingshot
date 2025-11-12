@@ -340,6 +340,7 @@ config.player = {
   -- Array of projectile IDs that appear in the shooter carousel
   -- Order matters: this is the sequence they rotate through
   equippedProjectiles = {
+    "black_hole",    -- Black Hole (Level 1)
     "strike",        -- Strike (Level 1)
   },
 }
