@@ -29,6 +29,13 @@ function OrbRewardScene.new(params)
   return setmetatable({
     time = params.shaderTime or 0,
     _fadeTimer = 0,
+    -- Keyboard selection and glow
+    _selectedIndex = 1, -- default to first option
+    _prevSelectedIndex = 1,
+    _glowTime = 0,
+    _glowFadeAlpha = 1.0,
+    _prevGlowFadeAlpha = 0.0,
+    _glowFadeSpeed = 8.0,
 		-- Selection animation state
 		selectedIndex = nil,         -- which option is selected (1..n)
 		selectionTimer = 0,          -- elapsed time for selection anim
@@ -44,6 +51,7 @@ function OrbRewardScene.new(params)
     mouseX = 0,
     mouseY = 0,
     bounds = {}, -- clickable bounds per option
+    _hoverProgress = {}, -- per-option hover/selection tween 0..1
     scales = {}, -- per-option hover scale
     optionAlphas = {}, -- per-option fade-in alpha
     skipButton = nil,
@@ -77,6 +85,8 @@ function OrbRewardScene:load()
 
   -- Fonts (same size as Rewards title ~50px, scaled for crisp rendering)
   self.titleFont = theme.newFont(50)
+  -- Grey out orbs icon on orb reward screen
+  if self.topBar then self.topBar.disableOrbsIcon = true end
 
   -- Build options
   local equipped, equippedSet = getEquipped()
@@ -151,6 +161,9 @@ local function drawCardWithLevel(card, projectileId, level, x, y, alpha)
 end
 
 function OrbRewardScene:update(dt)
+  -- Advance glow timer
+  self._glowTime = (self._glowTime or 0) + dt
+
 	-- Play selection animation if an option was chosen
 	if self.selectedIndex and self.pendingChoice then
 		self.selectionTimer = self.selectionTimer + dt
@@ -253,18 +266,50 @@ function OrbRewardScene:update(dt)
 		if canInteract then
 			self.skipButton:update(dt, self.mouseX, self.mouseY)
 		end
+    -- Merge keyboard selection with mouse hover for skip
+    local numOptions = #self.options
+    local mouseHovered = self.skipButton._hovered
+    -- Also suppress skip key-selected highlight if any option is mouse-hovered
+    local anyMouseHovered = false
+    if self.bounds then
+      local hoveringAllowed = not (self.selectedIndex and self.pendingChoice)
+      for i, r in ipairs(self.bounds) do
+        local mh = hoveringAllowed and (self.mouseX >= r.x and self.mouseX <= r.x + r.w and self.mouseY >= r.y and self.mouseY <= r.y + r.h)
+        if mh then anyMouseHovered = true; break end
+      end
+    end
+    self.skipButton._keySelected = (self._selectedIndex == (numOptions + 1))
+    self.skipButton._hovered = mouseHovered or (self.skipButton._keySelected and not anyMouseHovered)
+    -- Tween skip hover progress
+    local hp = self.skipButton._hoverProgress or 0
+    local target = self.skipButton._hovered and 1 or 0
+    self.skipButton._hoverProgress = hp + (target - hp) * math.min(1, 10 * dt)
   end
 
-  -- Tween per-option scales based on hover state using existing bounds
+  -- Tween per-option scales; suppress key-selected highlight when any option is mouse-hovered
 	if self.bounds then
+    -- First pass: find any mouse hovered option (when interactions allowed)
+    local hoveringAllowed = not (self.selectedIndex and self.pendingChoice)
+    local anyMouseHovered = false
+    local mouseHoveredFlags = {}
     for i, r in ipairs(self.bounds) do
-			-- Disable hover interactions during selection animation
-			local hoveringAllowed = not (self.selectedIndex and self.pendingChoice)
-			local hovered = hoveringAllowed and (self.mouseX >= r.x and self.mouseX <= r.x + r.w and self.mouseY >= r.y and self.mouseY <= r.y + r.h)
+      local mh = hoveringAllowed and (self.mouseX >= r.x and self.mouseX <= r.x + r.w and self.mouseY >= r.y and self.mouseY <= r.y + r.h)
+      mouseHoveredFlags[i] = mh
+      if mh then anyMouseHovered = true end
+    end
+    -- Second pass: apply hover/selection with suppression
+    for i, r in ipairs(self.bounds) do
+      local mouseHovered = mouseHoveredFlags[i]
+      local keySelected = (self._selectedIndex == i)
+      local hovered = mouseHovered or (keySelected and not anyMouseHovered)
       local target = hovered and 1.05 or 1.0
       local s = self.scales[i] or 1.0
       local k = math.min(1, (12 * dt))
       self.scales[i] = s + (target - s) * k
+      -- Tween hover progress for glow
+      local hp = self._hoverProgress[i] or 0
+      local htarget = hovered and 1 or 0
+      self._hoverProgress[i] = hp + (htarget - hp) * math.min(1, 10 * dt)
     end
   end
   
@@ -455,11 +500,61 @@ function OrbRewardScene:draw()
 		local bw = cardW * scale * extraScale
 		local bh = cardH * scale * extraScale
 		self.bounds[i] = { x = cx - bw * 0.5, y = (cy + yOffset) - bh * 0.5, w = bw, h = bh }
+    -- Draw glow for hovered/highlighted option
+    local hp = self._hoverProgress[i] or 0
+    if hp > 0 then
+      love.graphics.push()
+      love.graphics.translate(cx, cy + yOffset)
+      love.graphics.scale(scale * extraScale, scale * extraScale)
+      love.graphics.setBlendMode("add")
+      local pulseSpeed = 1.0
+      local pulseAmount = 0.15
+      local pulse = 1.0 + math.sin((self._glowTime or 0) * pulseSpeed * math.pi * 2) * pulseAmount
+      local baseAlpha = 0.12 * a * hp
+      local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } }
+      for _, layer in ipairs(layers) do
+        local glowAlpha = baseAlpha * layer.alpha * pulse
+        local glowWidth = layer.width * pulse
+        love.graphics.setColor(1, 1, 1, glowAlpha)
+        love.graphics.setLineWidth(glowWidth)
+        love.graphics.rectangle("line", -cardW * 0.5 - glowWidth * 0.5, -cardH * 0.5 - glowWidth * 0.5,
+                                cardW + glowWidth, cardH + glowWidth,
+                                Button.defaults.cornerRadius + glowWidth * 0.5, Button.defaults.cornerRadius + glowWidth * 0.5)
+      end
+      love.graphics.setBlendMode("alpha")
+      love.graphics.pop()
+    end
   end
 
   -- Draw Skip button
   if self.skipButton then
     self.skipButton:draw()
+    -- Draw glow for skip when hovered/highlighted
+    if self.skipButton._hovered then
+      love.graphics.push()
+      local cx = self.skipButton.x + self.skipButton.w * 0.5
+      local cy = self.skipButton.y + self.skipButton.h * 0.5
+      local s = self.skipButton._scale or 1.0
+      love.graphics.translate(cx, cy)
+      love.graphics.scale(s, s)
+      love.graphics.setBlendMode("add")
+      local pulseSpeed = 1.0
+      local pulseAmount = 0.15
+      local pulse = 1.0 + math.sin((self._glowTime or 0) * pulseSpeed * math.pi * 2) * pulseAmount
+      local baseAlpha = 0.12 * (self.skipButton.alpha or 1.0) * (self.skipButton._hoverProgress or 0)
+      local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } }
+      for _, layer in ipairs(layers) do
+        local glowAlpha = baseAlpha * layer.alpha * pulse
+        local glowWidth = layer.width * pulse
+        love.graphics.setColor(1, 1, 1, glowAlpha)
+        love.graphics.setLineWidth(glowWidth)
+        love.graphics.rectangle("line", -self.skipButton.w * 0.5 - glowWidth * 0.5, -self.skipButton.h * 0.5 - glowWidth * 0.5,
+                                self.skipButton.w + glowWidth, self.skipButton.h + glowWidth,
+                                Button.defaults.cornerRadius + glowWidth * 0.5, Button.defaults.cornerRadius + glowWidth * 0.5)
+      end
+      love.graphics.setBlendMode("alpha")
+      love.graphics.pop()
+    end
   end
   
   -- Draw top bar on top (z-order)
@@ -480,6 +575,7 @@ function OrbRewardScene:mousepressed(x, y, button)
     local a = self.optionAlphas and self.optionAlphas[i] or 1.0
     if a > 0.85 and x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h then
 			self.selectedIndex = i
+      self._selectedIndex = i
 			self.selectionTimer = 0
 			self.pendingChoice = self.options[i]
       return
@@ -491,6 +587,38 @@ end
 function OrbRewardScene:keypressed(key)
   if key == "escape" then
     return "return_to_map"
+  end
+  -- Ignore navigation during selection animation
+  if self.selectedIndex and self.pendingChoice then return end
+  local n = #self.options
+  if n == 0 then return end
+  if key == "a" or key == "left" then
+    if self._selectedIndex == n + 1 then
+      self._selectedIndex = n
+    else
+      self._selectedIndex = math.max(1, (self._selectedIndex or 1) - 1)
+    end
+  elseif key == "d" or key == "right" then
+    if self._selectedIndex == n + 1 then
+      self._selectedIndex = n
+    else
+      self._selectedIndex = math.min(n, (self._selectedIndex or 1) + 1)
+    end
+  elseif key == "s" or key == "down" then
+    self._selectedIndex = n + 1 -- skip button
+  elseif key == "w" or key == "up" then
+    if self._selectedIndex == n + 1 then
+      self._selectedIndex = 1
+    end
+  elseif key == "space" or key == "return" then
+    if self._selectedIndex and self._selectedIndex >= 1 and self._selectedIndex <= n then
+      -- Select highlighted option
+      self.selectedIndex = self._selectedIndex
+      self.selectionTimer = 0
+      self.pendingChoice = self.options[self.selectedIndex]
+    elseif self._selectedIndex == n + 1 and self.skipButton and self.skipButton.onClick then
+      self.skipButton.onClick()
+    end
   end
 end
 

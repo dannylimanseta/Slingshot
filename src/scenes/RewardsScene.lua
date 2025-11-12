@@ -135,6 +135,8 @@ function RewardsScene:load()
       self._selectedOrb = true
     end
   )
+  -- Grey out orbs icon in top bar on rewards screen
+  if self.topBar then self.topBar.disableOrbsIcon = true end
   
   -- Initialize top bar gold override to pre-reward amount
   do
@@ -246,15 +248,24 @@ function RewardsScene:update(dt)
     layoutRow(self.orbButton)
     -- Set hover state based on keyboard selection
     if #buttons > 0 then
+      -- Detect any mouse hover among buttons (orb/gold/skip)
+      local anyMouseHovered = false
+      if self.orbButton then anyMouseHovered = anyMouseHovered or (self.orbButton._hovered == true) end
+      if self.goldButton and not self._goldButtonClicked then anyMouseHovered = anyMouseHovered or (self.goldButton._hovered == true) end
+      if self.skipButton then anyMouseHovered = anyMouseHovered or (self.skipButton._hovered == true) end
       local buttonIndex = 1
       local wasSelected = (self._prevSelectedIndex == buttonIndex and self._selectedIndex ~= buttonIndex)
-      self.orbButton._hovered = (self._selectedIndex == buttonIndex)
+      local mouseHovered = self.orbButton._hovered -- preserve value set by Button:update
+      self.orbButton._keySelected = (self._selectedIndex == buttonIndex)
       self.orbButton._wasSelected = wasSelected -- Track if this was the previous selection
-      if self.orbButton._hovered then
-        self.orbButton._scale = math.min(1.05, (self.orbButton._scale or 1.0) + dt * 3)
-      else
-        self.orbButton._scale = math.max(1.0, (self.orbButton._scale or 1.0) - dt * 3)
-      end
+      -- Suppress key-selected highlight when any button is mouse-hovered
+      self.orbButton._hovered = mouseHovered or (self.orbButton._keySelected and not anyMouseHovered)
+      -- Tween hover progress
+      local hp = self.orbButton._hoverProgress or 0
+      local target = self.orbButton._hovered and 1 or 0
+      self.orbButton._hoverProgress = hp + (target - hp) * math.min(1, 10 * dt)
+      -- Scale with tweened hover
+      self.orbButton._scale = 1.0 + 0.05 * (self.orbButton._hoverProgress or 0)
     end
     nextRowIndex = nextRowIndex + 1
   end
@@ -273,13 +284,19 @@ function RewardsScene:update(dt)
     if #buttons > 0 then
       local buttonIndex = #buttons -- Skip button is always last
       local wasSelected = (self._prevSelectedIndex == buttonIndex and self._selectedIndex ~= buttonIndex)
-      self.skipButton._hovered = (self._selectedIndex == buttonIndex)
+      local mouseHovered = self.skipButton._hovered
+      -- Detect any mouse hover among buttons
+      local anyMouseHovered = false
+      if self.orbButton then anyMouseHovered = anyMouseHovered or (self.orbButton._hovered == true) end
+      if self.goldButton and not self._goldButtonClicked then anyMouseHovered = anyMouseHovered or (self.goldButton._hovered == true) end
+      if self.skipButton then anyMouseHovered = anyMouseHovered or (self.skipButton._hovered == true) end
+      self.skipButton._keySelected = (self._selectedIndex == buttonIndex)
       self.skipButton._wasSelected = wasSelected -- Track if this was the previous selection
-      if self.skipButton._hovered then
-        self.skipButton._scale = math.min(1.05, (self.skipButton._scale or 1.0) + dt * 3)
-      else
-        self.skipButton._scale = math.max(1.0, (self.skipButton._scale or 1.0) - dt * 3)
-      end
+      self.skipButton._hovered = mouseHovered or (self.skipButton._keySelected and not anyMouseHovered)
+      local hp = self.skipButton._hoverProgress or 0
+      local target = self.skipButton._hovered and 1 or 0
+      self.skipButton._hoverProgress = hp + (target - hp) * math.min(1, 10 * dt)
+      self.skipButton._scale = 1.0 + 0.05 * (self.skipButton._hoverProgress or 0)
     end
   end
   
@@ -314,13 +331,19 @@ function RewardsScene:update(dt)
     if #buttons > 0 and not self._goldButtonClicked then
       local buttonIndex = (self.orbButton and 2 or 1)
       local wasSelected = (self._prevSelectedIndex == buttonIndex and self._selectedIndex ~= buttonIndex)
-      self.goldButton._hovered = (self._selectedIndex == buttonIndex)
+      local mouseHovered = self.goldButton._hovered
+      -- Detect any mouse hover among buttons
+      local anyMouseHovered = false
+      if self.orbButton then anyMouseHovered = anyMouseHovered or (self.orbButton._hovered == true) end
+      if self.goldButton and not self._goldButtonClicked then anyMouseHovered = anyMouseHovered or (self.goldButton._hovered == true) end
+      if self.skipButton then anyMouseHovered = anyMouseHovered or (self.skipButton._hovered == true) end
+      self.goldButton._keySelected = (self._selectedIndex == buttonIndex)
       self.goldButton._wasSelected = wasSelected -- Track if this was the previous selection
-      if self.goldButton._hovered then
-        self.goldButton._scale = math.min(1.05, (self.goldButton._scale or 1.0) + dt * 3)
-      else
-        self.goldButton._scale = math.max(1.0, (self.goldButton._scale or 1.0) - dt * 3)
-      end
+      self.goldButton._hovered = mouseHovered or (self.goldButton._keySelected and not anyMouseHovered)
+      local hp = self.goldButton._hoverProgress or 0
+      local target = self.goldButton._hovered and 1 or 0
+      self.goldButton._hoverProgress = hp + (target - hp) * math.min(1, 10 * dt)
+      self.goldButton._scale = 1.0 + 0.05 * (self.goldButton._hoverProgress or 0)
     end
     nextRowIndex = nextRowIndex + 1
   end
@@ -479,8 +502,8 @@ function RewardsScene:draw()
       local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
       
       -- Draw multiple glow layers - smaller sizes
-      local fadeAlpha = self.orbButton._wasSelected and self._prevGlowFadeAlpha or self._glowFadeAlpha
-      local baseAlpha = 0.15 * (self.orbButton.alpha or 1.0) * fadeAlpha -- Reduced opacity with fade
+      local fadeAlpha = self.orbButton._wasSelected and self._prevGlowFadeAlpha or (self._glowFadeAlpha * (self.orbButton._hoverProgress or 0))
+      local baseAlpha = 0.12 * (self.orbButton.alpha or 1.0) * fadeAlpha -- Reduced opacity with fade
       local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } } -- Smaller glow (was 6, 10, 14)
       
       for _, layer in ipairs(layers) do
@@ -544,8 +567,8 @@ function RewardsScene:draw()
       local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
       
       -- Draw multiple glow layers - smaller sizes
-      local fadeAlpha = self.goldButton._wasSelected and self._prevGlowFadeAlpha or self._glowFadeAlpha
-      local baseAlpha = 0.15 * self._goldButtonFadeAlpha * (self._goldFadeInAlpha or 1) * fadeAlpha -- Reduced opacity with fade
+      local fadeAlpha = self.goldButton._wasSelected and self._prevGlowFadeAlpha or (self._glowFadeAlpha * (self.goldButton._hoverProgress or 0))
+      local baseAlpha = 0.12 * self._goldButtonFadeAlpha * (self._goldFadeInAlpha or 1) * fadeAlpha -- Reduced opacity with fade
       local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } } -- Smaller glow (was 6, 10, 14)
       
       for _, layer in ipairs(layers) do
@@ -609,8 +632,8 @@ function RewardsScene:draw()
       local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
       
       -- Draw multiple glow layers - smaller sizes
-      local fadeAlpha = self.skipButton._wasSelected and self._prevGlowFadeAlpha or self._glowFadeAlpha
-      local baseAlpha = 0.15 * (self.skipButton.alpha or 1.0) * fadeAlpha -- Reduced opacity with fade
+      local fadeAlpha = self.skipButton._wasSelected and self._prevGlowFadeAlpha or (self._glowFadeAlpha * (self.skipButton._hoverProgress or 0))
+      local baseAlpha = 0.12 * (self.skipButton.alpha or 1.0) * fadeAlpha -- Reduced opacity with fade
       local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } } -- Smaller glow (was 6, 10, 14)
       
       for _, layer in ipairs(layers) do

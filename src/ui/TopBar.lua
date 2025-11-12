@@ -107,16 +107,23 @@ function TopBar:draw()
     local orbsIconPadding = 24
     local orbsIconX = vw - orbsIconPadding - iconSize
     local orbsIconY = topPadding
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(self.orbsIcon, orbsIconX, orbsIconY, 0, iconSize / self.orbsIcon:getWidth(), iconSize / self.orbsIcon:getHeight())
-    
-    -- Store clickable bounds for MapScene
-    self.orbsIconBounds = {
-      x = orbsIconX,
-      y = orbsIconY,
-      w = iconSize,
-      h = iconSize
-    }
+    -- Grey out when disabled
+    if self.disableOrbsIcon then
+      love.graphics.setColor(1, 1, 1, 0.35)
+      love.graphics.draw(self.orbsIcon, orbsIconX, orbsIconY, 0, iconSize / self.orbsIcon:getWidth(), iconSize / self.orbsIcon:getHeight())
+      -- Do not expose clickable bounds when disabled
+      self.orbsIconBounds = nil
+    else
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(self.orbsIcon, orbsIconX, orbsIconY, 0, iconSize / self.orbsIcon:getWidth(), iconSize / self.orbsIcon:getHeight())
+      -- Store clickable bounds for MapScene
+      self.orbsIconBounds = {
+        x = orbsIconX,
+        y = orbsIconY,
+        w = iconSize,
+        h = iconSize
+      }
+    end
   else
     self.orbsIconBounds = nil
   end

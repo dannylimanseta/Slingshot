@@ -106,6 +106,8 @@ function SplitScene:load()
   -- Ensure only SplitScene draws the shared top bar
   if self.left then self.left.disableTopBar = true end
   if self.right then self.right.disableTopBar = true end
+  -- Grey out orbs icon during battle (use shared top bar)
+  if self.topBar then self.topBar.disableOrbsIcon = true end
 
   -- Remove per-first-enemy runtime scale multiplier for consistent enemy sizes
 

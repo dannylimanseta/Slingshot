@@ -17,6 +17,9 @@ function OrbsUI.new()
     fadeAlpha = 0,
     targetAlpha = 0,
     fadeSpeed = 8,
+    _glowTime = 0,
+    _cardHoverProgress = {}, -- per-card tweened hover
+    _selectedIndex = 1, -- default highlighted card index
     scrollOffset = 0, -- Current vertical scroll position
     scrollVelocity = 0, -- Current scroll velocity (for smooth scrolling)
     scrollSpeed = 400, -- Pixels per second scroll speed
@@ -49,6 +52,12 @@ function OrbsUI:setVisible(visible)
     self.scrollVelocity = 0
     -- Reset drag state
     self._draggedIndex = nil
+    -- Reset selection
+    self._selectedIndex = 1
+  else
+    -- When opening, default highlight the first card
+    self._selectedIndex = 1
+    self._cardHoverProgress[1] = 1
   end
 end
 
@@ -58,6 +67,18 @@ function OrbsUI:scroll(delta)
 end
 
 function OrbsUI:update(dt, mouseX, mouseY)
+  -- Glow time
+  self._glowTime = (self._glowTime or 0) + dt
+  -- Clamp selected index to valid range if equipped list changed
+  do
+    local equippedIds = (config.player and config.player.equippedProjectiles) or {}
+    if #equippedIds > 0 then
+      if not self._selectedIndex or self._selectedIndex < 1 then self._selectedIndex = 1 end
+      if self._selectedIndex > #equippedIds then self._selectedIndex = #equippedIds end
+    else
+      self._selectedIndex = nil
+    end
+  end
   -- Store mouse position for drag visualization
   if mouseX and mouseY then
     self._mouseX = mouseX
@@ -86,7 +107,44 @@ function OrbsUI:update(dt, mouseX, mouseY)
   -- Update close button
   if self.closeButton and mouseX and mouseY then
     self.closeButton:update(dt, mouseX, mouseY)
+    -- Tween hover progress for close button
+    local hp = self.closeButton._hoverProgress or 0
+    local target = (self.closeButton._hovered and 1) or 0
+    self.closeButton._hoverProgress = hp + (target - hp) * math.min(1, 10 * dt)
   end
+end
+ 
+-- Keyboard navigation for inventory cards
+function OrbsUI:keypressed(key)
+  local equippedIds = (config.player and config.player.equippedProjectiles) or {}
+  local count = #equippedIds
+  if count == 0 then return false end
+  -- Recompute layout params to match draw()
+  local vw = config.video.virtualWidth
+  local baseCardW = 288
+  local baseCardSpacing = 40
+  local sidePadding = 40
+  local availableWidth = vw - (sidePadding * 2)
+  local maxCardsPerRow = math.floor((availableWidth + baseCardSpacing) / (baseCardW + baseCardSpacing))
+  maxCardsPerRow = math.max(1, maxCardsPerRow)
+  local idx = self._selectedIndex or 1
+  local consumed = false
+  if key == "a" or key == "left" then
+    idx = math.max(1, idx - 1); consumed = true
+  elseif key == "d" or key == "right" then
+    idx = math.min(count, idx + 1); consumed = true
+  elseif key == "w" or key == "up" then
+    idx = math.max(1, idx - maxCardsPerRow); consumed = true
+  elseif key == "s" or key == "down" then
+    idx = math.min(count, idx + maxCardsPerRow); consumed = true
+  end
+  if consumed then
+    self._selectedIndex = idx
+    -- Boost hover progress for selected card for immediate feedback
+    self._cardHoverProgress[idx] = math.max(0.6, self._cardHoverProgress[idx] or 0)
+    return true
+  end
+  return false
 end
 
 function OrbsUI:mousepressed(x, y, button)
@@ -246,6 +304,39 @@ function OrbsUI:draw()
   local virtualMouseX = self._mouseX or 0
   local virtualMouseY = self._mouseY or 0
   
+  -- Pre-pass: detect if mouse is hovering any card (using current scaled size),
+  -- so we can suppress default selection highlight while hovering.
+  local tmpMouseHovered = {}
+  local anyHoveredCard = false
+  for i, projectileId in ipairs(equippedIds) do
+    local rowIndex = math.floor((i - 1) / maxCardsPerRow)
+    local colIndex = ((i - 1) % maxCardsPerRow)
+    local cardsInThisRow = math.min(maxCardsPerRow, #equippedIds - rowIndex * maxCardsPerRow)
+    local rowWidth = baseCardW * cardsInThisRow + baseCardSpacing * math.max(0, cardsInThisRow - 1)
+    local rowStartX = (vw - rowWidth) * 0.5
+    local cardX = rowStartX + colIndex * (baseCardW + baseCardSpacing)
+    local cardY = startY + rowIndex * (cardH + rowSpacing)
+    -- Dynamic height for accurate hover
+    local dynamicCardH = cardH
+    do
+      local p = ProjectileManager.getProjectile(projectileId)
+      if p then
+        local calcH = self.card:calculateHeight(p)
+        if calcH and calcH > 0 then dynamicCardH = calcH end
+      end
+    end
+    local hpPrev = self._cardHoverProgress[i] or 0
+    local scale = 1.0 + 0.05 * hpPrev
+    local cx = cardX + baseCardW * 0.5
+    local cy = cardY + dynamicCardH * 0.5
+    local halfW = baseCardW * scale * 0.5
+    local halfH = dynamicCardH * scale * 0.5
+    local mouseHovered = (virtualMouseX >= cx - halfW and virtualMouseX <= cx + halfW and
+                          virtualMouseY >= cy - halfH and virtualMouseY <= cy + halfH)
+    tmpMouseHovered[i] = mouseHovered
+    if mouseHovered then anyHoveredCard = true end
+  end
+  
   -- Draw orb cards in rows
   for i, projectileId in ipairs(equippedIds) do
     local rowIndex = math.floor((i - 1) / maxCardsPerRow)
@@ -259,13 +350,34 @@ function OrbsUI:draw()
     local cardX = rowStartX + colIndex * (baseCardW + baseCardSpacing)
     local cardY = startY + rowIndex * (cardH + rowSpacing)
     
+    -- Calculate this card's dynamic height (tooltips may vary)
+    local dynamicCardH = cardH
+    do
+      local p = ProjectileManager.getProjectile(projectileId)
+      if p then
+        local calcH = self.card:calculateHeight(p)
+        if calcH and calcH > 0 then dynamicCardH = calcH end
+      end
+    end
+
     -- Store card bounds for hit testing
     self._cardBounds[i] = {
       x = cardX,
       y = cardY,
       w = baseCardW,
-      h = cardH
+      h = dynamicCardH
     }
+    -- Update hover progress for glow
+    do
+      -- Merge mouse hover and default selection (suppressed when any card is hovered)
+      local mouseHovered = tmpMouseHovered[i] or false
+      local hovered = mouseHovered or ((not anyHoveredCard) and (self._selectedIndex == i))
+      local hp = self._cardHoverProgress[i] or 0
+      local target = hovered and 1 or 0
+      -- Approximate dt via fadeSpeed smoothing when update order differs
+      local k = 0.16 -- ~10 * 0.016 default frame
+      self._cardHoverProgress[i] = hp + (target - hp) * k
+    end
     
     -- If this card is being dragged, draw it at mouse position with reduced alpha
     if self._draggedIndex == i then
@@ -284,7 +396,46 @@ function OrbsUI:draw()
     else
       -- Normal drawing
       love.graphics.setColor(1, 1, 1, self.fadeAlpha)
+      -- Apply visual scale like orb rewards
+      local hpNow = self._cardHoverProgress[i] or 0
+      local scale = 1.0 + 0.05 * hpNow
+      love.graphics.push()
+      local cx = cardX + baseCardW * 0.5
+      local cy = cardY + dynamicCardH * 0.5
+      love.graphics.translate(cx, cy)
+      love.graphics.scale(scale, scale)
+      love.graphics.translate(-cx, -cy)
     self.card:draw(cardX, cardY, projectileId, self.fadeAlpha)
+      love.graphics.pop()
+  end
+    -- Draw glow for hovered card
+    do
+      local hp = self._cardHoverProgress[i] or 0
+      if hp > 0 then
+        love.graphics.push()
+        local cx = cardX + baseCardW * 0.5
+        local cy = cardY + dynamicCardH * 0.5
+        local scale = 1.0 + 0.05 * hp
+        love.graphics.translate(cx, cy)
+        love.graphics.scale(scale, scale)
+        love.graphics.setBlendMode("add")
+        local pulseSpeed = 1.0
+        local pulseAmount = 0.15
+        local pulse = 1.0 + math.sin((self._glowTime or 0) * pulseSpeed * math.pi * 2) * pulseAmount
+        local baseAlpha = 0.12 * (self.fadeAlpha or 1.0) * hp
+        local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } }
+        for _, layer in ipairs(layers) do
+          local glowAlpha = baseAlpha * layer.alpha * pulse
+          local glowWidth = layer.width * pulse
+          love.graphics.setColor(1, 1, 1, glowAlpha)
+          love.graphics.setLineWidth(glowWidth)
+          love.graphics.rectangle("line", -baseCardW * 0.5 - glowWidth * 0.5, -dynamicCardH * 0.5 - glowWidth * 0.5,
+                                  baseCardW + glowWidth, dynamicCardH + glowWidth,
+                                  Button.defaults.cornerRadius + glowWidth * 0.5, Button.defaults.cornerRadius + glowWidth * 0.5)
+        end
+        love.graphics.setBlendMode("alpha")
+        love.graphics.pop()
+      end
     end
   end
   
@@ -330,6 +481,32 @@ function OrbsUI:draw()
     self.closeButton:setLayout(buttonX, buttonY, buttonW, buttonH)
     self.closeButton.alpha = self.fadeAlpha
     self.closeButton:draw()
+    -- Glow on hover for close button
+    if self.closeButton._hovered then
+      love.graphics.push()
+      local cx = self.closeButton.x + self.closeButton.w * 0.5
+      local cy = self.closeButton.y + self.closeButton.h * 0.5
+      local s = self.closeButton._scale or 1.0
+      love.graphics.translate(cx, cy)
+      love.graphics.scale(s, s)
+      love.graphics.setBlendMode("add")
+      local pulseSpeed = 1.0
+      local pulseAmount = 0.15
+      local pulse = 1.0 + math.sin((self._glowTime or 0) * pulseSpeed * math.pi * 2) * pulseAmount
+      local baseAlpha = 0.12 * (self.closeButton.alpha or 1.0) * (self.closeButton._hoverProgress or 0)
+      local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } }
+      for _, layer in ipairs(layers) do
+        local glowAlpha = baseAlpha * layer.alpha * pulse
+        local glowWidth = layer.width * pulse
+        love.graphics.setColor(1, 1, 1, glowAlpha)
+        love.graphics.setLineWidth(glowWidth)
+        love.graphics.rectangle("line", -self.closeButton.w * 0.5 - glowWidth * 0.5, -self.closeButton.h * 0.5 - glowWidth * 0.5,
+                                self.closeButton.w + glowWidth, self.closeButton.h + glowWidth,
+                                Button.defaults.cornerRadius + glowWidth * 0.5, Button.defaults.cornerRadius + glowWidth * 0.5)
+      end
+      love.graphics.setBlendMode("alpha")
+      love.graphics.pop()
+    end
   end
   
   love.graphics.setColor(1, 1, 1, 1)

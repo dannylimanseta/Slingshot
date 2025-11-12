@@ -65,6 +65,10 @@ function MapController:keypressed(key, scancode, isRepeat)
   if s._inputSuppressTimer and s._inputSuppressTimer > 0 then
     return
   end
+  -- Suppress map movement when orbs inventory is open
+  if s._orbsUIOpen then
+    return
+  end
   
   -- Handle P key to open encounter select menu
   if key == "p" and not isRepeat then
@@ -289,6 +293,29 @@ function MapController:update(deltaTime)
   -- Update orbs UI with mouse coordinates
   if s.orbsUI then
     s.orbsUI:update(deltaTime, s._mouseX, s._mouseY)
+  end
+
+  -- If orbs UI is open, prevent map movement and clear held-move state
+  if s._orbsUIOpen then
+    -- Clear held move state so repeat does not continue
+    if s._heldMoveKey then
+      s._heldMoveKey = nil
+      s._heldDirX, s._heldDirY = 0, 0
+      s._holdElapsed = 0
+      s._repeatElapsed = 0
+      s._hasFiredInitialRepeat = false
+    end
+    -- Keep camera following player
+    local cameraSpeed = config.map.cameraFollowSpeed
+    local dx = s.targetCameraX - s.cameraX
+    local dy = s.targetCameraY - s.cameraY
+    s.cameraX = s.cameraX + dx * cameraSpeed * deltaTime
+    s.cameraY = s.cameraY + dy * cameraSpeed * deltaTime
+    s.targetCameraX = s.playerWorldX
+    s.targetCameraY = s.playerWorldY
+    if s._clampCameraToMap then s:_clampCameraToMap(true) end
+    if s._clampCameraToMap then s:_clampCameraToMap(false) end
+    return nil
   end
 
   local cameraSpeed = config.map.cameraFollowSpeed
@@ -531,7 +558,7 @@ function MapController:update(deltaTime)
   end
 
   -- Controller/D-Pad navigation (edge-based, non-invasive)
-  if not s.isMoving and s.daySystem:canMove() then
+  if (not s._orbsUIOpen) and (not s.isMoving) and s.daySystem:canMove() then
     if InputManager.pressed("nav_up") then
       self:_attemptMoveBy(0, -1)
     elseif InputManager.pressed("nav_down") then

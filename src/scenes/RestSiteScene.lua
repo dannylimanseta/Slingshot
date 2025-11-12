@@ -49,6 +49,8 @@ function RestSiteScene:load()
   self._showOrbSelection = false
   self._selectedOrbIndex = nil
   self._selectedIndex = 1 -- Reset to first option
+  -- Grey out orbs icon on rest site screens
+  if self.topBar then self.topBar.disableOrbsIcon = true end
   
   -- Load background image
   local bgPath = "assets/images/rest/rest_bg_1.png"
@@ -157,6 +159,10 @@ function RestSiteScene:update(dt, mouseX, mouseY)
     -- Update back button hover
     if self.backButton then
       self.backButton:update(dt, self.mouseX, self.mouseY)
+      -- Tween hover progress for back button
+      local bhp = self.backButton._hoverProgress or 0
+      local btarget = (self.backButton._hovered and 1) or 0
+      self.backButton._hoverProgress = bhp + (btarget - bhp) * math.min(1, 10 * dt)
     end
     -- Update orb card hover states
     for i, bounds in ipairs(self._orbBounds) do
@@ -234,23 +240,28 @@ function RestSiteScene:update(dt, mouseX, mouseY)
     if not self._choiceMade then
       self.restButton:update(dt, self.mouseX, self.mouseY)
       self.removeOrbButton:update(dt, self.mouseX, self.mouseY)
-      -- Set hover state based on keyboard selection
+      -- Merge mouse hover with keyboard selection
       local restWasSelected = (self._prevSelectedIndex == 1 and self._selectedIndex ~= 1)
       local removeWasSelected = (self._prevSelectedIndex == 2 and self._selectedIndex ~= 2)
-      self.restButton._hovered = (self._selectedIndex == 1)
+      local restMouseHovered = self.restButton._hovered
+      local removeMouseHovered = self.removeOrbButton._hovered
+      local anyMouseHovered = (restMouseHovered == true) or (removeMouseHovered == true)
+      self.restButton._keySelected = (self._selectedIndex == 1)
+      self.removeOrbButton._keySelected = (self._selectedIndex == 2)
       self.restButton._wasSelected = restWasSelected
-      self.removeOrbButton._hovered = (self._selectedIndex == 2)
       self.removeOrbButton._wasSelected = removeWasSelected
-      if self.restButton._hovered then
-        self.restButton._scale = math.min(1.05, (self.restButton._scale or 1.0) + dt * 3)
-      else
-        self.restButton._scale = math.max(1.0, (self.restButton._scale or 1.0) - dt * 3)
-      end
-      if self.removeOrbButton._hovered then
-        self.removeOrbButton._scale = math.min(1.05, (self.removeOrbButton._scale or 1.0) + dt * 3)
-      else
-        self.removeOrbButton._scale = math.max(1.0, (self.removeOrbButton._scale or 1.0) - dt * 3)
-      end
+      -- Suppress key-selected highlight when any button is mouse-hovered
+      self.restButton._hovered = restMouseHovered or (self.restButton._keySelected and not anyMouseHovered)
+      self.removeOrbButton._hovered = removeMouseHovered or (self.removeOrbButton._keySelected and not anyMouseHovered)
+      -- Tween hover progress
+      local rhp = self.restButton._hoverProgress or 0
+      local rtarget = self.restButton._hovered and 1 or 0
+      self.restButton._hoverProgress = rhp + (rtarget - rhp) * math.min(1, 10 * dt)
+      local mhp = self.removeOrbButton._hoverProgress or 0
+      local mtarget = self.removeOrbButton._hovered and 1 or 0
+      self.removeOrbButton._hoverProgress = mhp + (mtarget - mhp) * math.min(1, 10 * dt)
+      self.restButton._scale = 1.0 + 0.05 * (self.restButton._hoverProgress or 0)
+      self.removeOrbButton._scale = 1.0 + 0.05 * (self.removeOrbButton._hoverProgress or 0)
     else
       self.restButton._hovered = false
       self.restButton._scale = 1.0
@@ -444,8 +455,8 @@ function RestSiteScene:_drawMainChoices(fadeAlpha)
     local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
     
     -- Draw multiple glow layers - smaller sizes
-    local glowFadeAlpha = self.restButton._wasSelected and self._prevGlowFadeAlpha or self._glowFadeAlpha
-    local baseAlpha = 0.15 * fadeAlpha * glowFadeAlpha -- Reduced opacity with fade
+    local glowFadeAlpha = self.restButton._wasSelected and self._prevGlowFadeAlpha or (self._glowFadeAlpha * (self.restButton._hoverProgress or 0))
+    local baseAlpha = 0.12 * fadeAlpha * glowFadeAlpha -- Reduced opacity with fade
     local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } }
     
     for _, layer in ipairs(layers) do
@@ -504,8 +515,8 @@ function RestSiteScene:_drawMainChoices(fadeAlpha)
     local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
     
     -- Draw multiple glow layers - smaller sizes
-    local glowFadeAlpha = self.removeOrbButton._wasSelected and self._prevGlowFadeAlpha or self._glowFadeAlpha
-    local baseAlpha = 0.15 * fadeAlpha * glowFadeAlpha -- Reduced opacity with fade
+    local glowFadeAlpha = self.removeOrbButton._wasSelected and self._prevGlowFadeAlpha or (self._glowFadeAlpha * (self.removeOrbButton._hoverProgress or 0))
+    local baseAlpha = 0.12 * fadeAlpha * glowFadeAlpha -- Reduced opacity with fade
     local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } }
     
     for _, layer in ipairs(layers) do
@@ -687,6 +698,35 @@ function RestSiteScene:_drawOrbSelection(fadeAlpha)
     self.backButton:setLayout(x, y, buttonW, buttonH)
     self.backButton.alpha = fadeAlpha
     self.backButton:draw()
+    -- Add glow on hover for back button
+    if self.backButton._hovered then
+      love.graphics.push()
+      local cx = self.backButton.x + self.backButton.w * 0.5
+      local cy = self.backButton.y + self.backButton.h * 0.5
+      local s = (self.backButton._scale or 1.0)
+      love.graphics.translate(cx, cy)
+      love.graphics.scale(s, s)
+      love.graphics.setBlendMode("add")
+      -- Pulsing animation (sine wave) - match others
+      local pulseSpeed = 1.0
+      local pulseAmount = 0.15
+      local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
+      -- Use tweened hover progress for intensity
+      local fadeMul = (self.backButton._hoverProgress or 0)
+      local baseAlpha = 0.12 * (self.backButton.alpha or fadeAlpha) * fadeMul
+      local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } }
+      for _, layer in ipairs(layers) do
+        local glowAlpha = baseAlpha * layer.alpha * pulse
+        local glowWidth = layer.width * pulse
+        love.graphics.setColor(1, 1, 1, glowAlpha)
+        love.graphics.setLineWidth(glowWidth)
+        love.graphics.rectangle("line", -self.backButton.w * 0.5 - glowWidth * 0.5, -self.backButton.h * 0.5 - glowWidth * 0.5, 
+                               self.backButton.w + glowWidth, self.backButton.h + glowWidth, 
+                               Button.defaults.cornerRadius + glowWidth * 0.5, Button.defaults.cornerRadius + glowWidth * 0.5)
+      end
+      love.graphics.setBlendMode("alpha")
+      love.graphics.pop()
+    end
   end
 end
 

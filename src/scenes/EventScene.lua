@@ -52,6 +52,8 @@ end
 function EventScene:load()
   self._fadeTimer = 0
   self._selectedIndex = 1 -- Reset to first option
+  -- Grey out orbs icon on event screens
+  if self.topBar then self.topBar.disableOrbsIcon = true end
   
   -- Load event data
 	self.event = events.get(self.eventId)
@@ -349,6 +351,17 @@ function EventScene:update(dt, mouseX, mouseY)
     self._prevGlowFadeAlpha = self._prevGlowFadeAlpha + prevDiff * math.min(1, self._glowFadeSpeed * dt)
   end
   
+  -- Detect if any button is mouse hovered (for suppressing default selected highlight)
+  local anyMouseHovered = false
+  do
+    local mx, my = self.mouseX or 0, self.mouseY or 0
+    for _, b in ipairs(self.choiceButtons) do
+      if mx >= b.x and mx <= b.x + b.w and my >= b.y and my <= b.y + b.h then
+        anyMouseHovered = true
+        break
+      end
+    end
+  end
   -- Update buttons (hover effects) - disable if choice already made
   for i, button in ipairs(self.choiceButtons) do
     -- Initialize scale if not set
@@ -364,15 +377,18 @@ function EventScene:update(dt, mouseX, mouseY)
       button._scale = 1.0
     else
       button:update(dt, self.mouseX, self.mouseY)
-      -- Set hover state based on keyboard selection
+      -- Merge mouse hover with keyboard selection; suppress selected highlight when any button hovered
       local wasSelected = (self._prevSelectedIndex == i and self._selectedIndex ~= i)
-      button._hovered = (self._selectedIndex == i)
+      local mouseHovered = button._hovered
+      button._keySelected = (self._selectedIndex == i)
       button._wasSelected = wasSelected -- Track if this was the previous selection
-      if button._hovered then
-        button._scale = math.min(1.05, (button._scale or 1.0) + dt * 3)
-      else
-        button._scale = math.max(1.0, (button._scale or 1.0) - dt * 3)
-      end
+      button._hovered = (mouseHovered or (button._keySelected and not anyMouseHovered)) and not self._choiceMade
+      -- Tween hover progress
+      local hp = button._hoverProgress or 0
+      local target = button._hovered and 1 or 0
+      button._hoverProgress = hp + (target - hp) * math.min(1, 10 * dt)
+      -- Scale with tweened hover
+      button._scale = 1.0 + 0.05 * (button._hoverProgress or 0)
     end
   end
   
@@ -554,8 +570,8 @@ function EventScene:draw()
       local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
       
       -- Draw multiple glow layers - smaller sizes
-      local glowFadeAlpha = button._wasSelected and self._prevGlowFadeAlpha or self._glowFadeAlpha
-      local baseAlpha = 0.15 * fadeAlpha * glowFadeAlpha -- Reduced opacity with fade
+      local glowFadeAlpha = button._wasSelected and self._prevGlowFadeAlpha or (self._glowFadeAlpha * (button._hoverProgress or 0))
+      local baseAlpha = 0.12 * fadeAlpha * glowFadeAlpha -- Reduced opacity with fade
       local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } } -- Smaller glow (was 6, 10, 14)
       
       for _, layer in ipairs(layers) do

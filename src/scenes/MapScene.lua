@@ -408,6 +408,11 @@ function MapScene:_attemptMoveBy(dx, dy)
 end
 
 function MapScene:keypressed(key, scancode, isRepeat)
+  -- If orbs inventory is open, forward to it and consume to avoid moving the player
+  if self._orbsUIOpen and self.orbsUI and self.orbsUI.keypressed then
+    local consumed = self.orbsUI:keypressed(key)
+    if consumed then return nil end
+  end
   if self.controller then 
     local result = self.controller:keypressed(key, scancode, isRepeat)
     if result then return result end
