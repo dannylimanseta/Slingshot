@@ -213,12 +213,17 @@ function MapScene:load()
   -- This ensures player position is correct when returning from events, battles, or rest sites
   -- Always recalculate from grid position to avoid position bugs when returning from scenes
     local px, py = self.mapManager:getPlayerWorldPosition(self.gridSize, self.offsetX, self.offsetY)
-    self.playerWorldX = px
-    self.playerWorldY = py
-    self.cameraX = px
-    self.cameraY = py
-    self.targetCameraX = px
-    self.targetCameraY = py
+    -- Prefer restoring the exact world position saved before leaving the map (avoids visual jumps on transition)
+    local restoreX = self._savedWorldX or px
+    local restoreY = self._savedWorldY or py
+    self.playerWorldX = restoreX
+    self.playerWorldY = restoreY
+    self.cameraX = restoreX
+    self.cameraY = restoreY
+    self.targetCameraX = restoreX
+    self.targetCameraY = restoreY
+    -- Clear saved world position after applying
+    self._savedWorldX, self._savedWorldY = nil, nil
   
   -- Clamp camera to map bounds on first frame
   self:_clampCameraToMap()

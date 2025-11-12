@@ -43,6 +43,11 @@ end
 
 -- Transition: Enter battle from map
 function SceneTransitionHandler:handleEnterBattle()
+  -- Save current map world position to restore precisely after transitions
+  if self.mapScene then
+    self.mapScene._savedWorldX = self.mapScene.playerWorldX
+    self.mapScene._savedWorldY = self.mapScene.playerWorldY
+  end
   self.previousScene = self.mapScene
   local battleScene = SplitScene.new()
   self.sceneManager:set(battleScene)
@@ -64,6 +69,8 @@ function SceneTransitionHandler:handleReturnToMap(data)
   if victory then
     -- Mark victory on map for any follow-up logic
     self.mapScene._battleVictory = true
+    -- Ensure we use a transition when coming back from Rewards to the map
+    self._pendingMapReturnWithTransition = true
     -- Show rewards scene before returning to map
     local rewardsScene = RewardsScene.new({ goldReward = goldReward })
     self.sceneManager:set(rewardsScene)
@@ -71,6 +78,11 @@ function SceneTransitionHandler:handleReturnToMap(data)
   else
     -- If skipTransition is explicitly false, use transition; otherwise skip for events/defeat
     -- Rest sites set skipTransition = false to enable transitions
+    -- If we previously set a pending flag (coming back from battle rewards), force transition
+    if self._pendingMapReturnWithTransition then
+      skipTransition = false
+      self._pendingMapReturnWithTransition = nil
+    end
     if skipTransition == false then
       -- Use transition (for rest sites)
       self.sceneManager:set(self.mapScene, false)
@@ -94,6 +106,11 @@ end
 -- Transition: Open orb reward scene
 function SceneTransitionHandler:handleOpenOrbReward(data)
   data = data or {}
+  -- Save current map world position before switching scenes
+  if self.mapScene then
+    self.mapScene._savedWorldX = self.mapScene.playerWorldX
+    self.mapScene._savedWorldY = self.mapScene.playerWorldY
+  end
   
   -- If RewardsScene indicates pending actions remain, remember it to return after orb pick
   if data.returnToRewards then
@@ -157,6 +174,11 @@ end
 
 -- Transition: Open encounter select
 function SceneTransitionHandler:handleOpenEncounterSelect()
+  -- Save current map world position before switching scenes
+  if self.mapScene then
+    self.mapScene._savedWorldX = self.mapScene.playerWorldX
+    self.mapScene._savedWorldY = self.mapScene.playerWorldY
+  end
   local selectScene = EncounterSelectScene.new()
   selectScene:setPreviousScene(self.sceneManager.currentScene)
   self.previousScene = self.sceneManager.currentScene
@@ -166,6 +188,11 @@ end
 
 -- Transition: Start battle
 function SceneTransitionHandler:handleStartBattle()
+  -- Save current map world position to restore precisely after transitions
+  if self.mapScene then
+    self.mapScene._savedWorldX = self.mapScene.playerWorldX
+    self.mapScene._savedWorldY = self.mapScene.playerWorldY
+  end
   self.previousScene = self.mapScene
   local battleScene = SplitScene.new()
   self.sceneManager:set(battleScene)
@@ -188,6 +215,11 @@ end
 function SceneTransitionHandler:handleOpenEvent(data)
   data = data or {}
   local eventId = data.eventId or "whispering_idol"  -- Default fallback
+  -- Save current map world position before switching scenes
+  if self.mapScene then
+    self.mapScene._savedWorldX = self.mapScene.playerWorldX
+    self.mapScene._savedWorldY = self.mapScene.playerWorldY
+  end
   self.previousScene = self.mapScene
   local eventScene = EventScene.new(eventId)
   self.sceneManager:set(eventScene)
@@ -196,6 +228,11 @@ end
 
 -- Transition: Open rest site scene
 function SceneTransitionHandler:handleOpenRestSite()
+  -- Save current map world position before switching scenes
+  if self.mapScene then
+    self.mapScene._savedWorldX = self.mapScene.playerWorldX
+    self.mapScene._savedWorldY = self.mapScene.playerWorldY
+  end
   self.previousScene = self.mapScene
   local restSiteScene = RestSiteScene.new()
   self.sceneManager:set(restSiteScene)
