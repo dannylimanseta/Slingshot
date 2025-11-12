@@ -1384,8 +1384,8 @@ end
 
 -- External API: show player turn indicator
 function BattleScene:showPlayerTurn()
-  -- Queue "PLAYER'S TURN" indicator with delay
-  self._pendingTurnIndicator = { text = "PLAYER'S TURN", t = 1.0 }
+  -- Queue "YOUR TURN" indicator with delay
+  self._pendingTurnIndicator = { text = "YOUR TURN", t = 1.0 }
   self.turnIndicatorDelay = 0.3
 end
 

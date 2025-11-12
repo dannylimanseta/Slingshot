@@ -170,7 +170,7 @@ function TurnManager:startPlayerTurn()
   if self.currentState == TurnManager.States.PLAYER_TURN_START then
     self:queueActions({
       { type = "wait", duration = 0.3 },
-      { type = "show_indicator", text = "PLAYER'S TURN" },
+      { type = "show_indicator", text = "YOUR TURN" },
       -- Ensure indicator has appeared on-screen before enabling shooter
       { type = "wait", duration = 0.5 },
       { type = "transition", state = TurnManager.States.PLAYER_TURN_ACTIVE },
@@ -182,7 +182,7 @@ function TurnManager:startPlayerTurn()
   return self:transitionTo(TurnManager.States.PLAYER_TURN_START, {
     actions = {
       { type = "wait", duration = 0.3 },
-      { type = "show_indicator", text = "PLAYER'S TURN" },
+      { type = "show_indicator", text = "YOUR TURN" },
       -- Ensure indicator has appeared on-screen before enabling shooter
       { type = "wait", duration = 0.5 },
       { type = "transition", state = TurnManager.States.PLAYER_TURN_ACTIVE },

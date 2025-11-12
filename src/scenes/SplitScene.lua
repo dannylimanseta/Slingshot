@@ -37,6 +37,11 @@ local SplitScene = {}
 SplitScene.__index = SplitScene
 
 function SplitScene.new()
+  -- Create small font for orb name (70% of base font size)
+  local nameFont = theme.fonts.base or theme.fonts.medium
+  local nameFontSize = (nameFont:getHeight() or 20) * 0.7
+  local smallFont = theme.newFont(nameFontSize)
+  
   return setmetatable({ 
     left = nil, 
     right = nil, 
@@ -58,6 +63,8 @@ function SplitScene.new()
     edgeGlowLeftY = 0, -- Y position of left edge bounce
     edgeGlowRightY = 0, -- Y position of right edge bounce
     edgeGlowDuration = 0.3, -- Duration of glow effect in seconds
+    -- Cached small font for orb name display
+    _smallFont = smallFont,
     -- Left boundary damage effect
     boundaryLeftDamageTimer = 0, -- Timer for left boundary fade-in when player takes damage
     boundaryLeftDamageDuration = 0.5, -- Duration of fade-in effect
@@ -624,7 +631,7 @@ function SplitScene:draw()
     local textW = font:getWidth(text)
     local centerRect = self.layoutManager:getCenterRect(w, h)
     local centerX = centerRect.x + centerRect.w * 0.5 -- Center of center area
-    local centerY = h * 0.5 - 50 -- Shifted up by 50px
+    local centerY = h * 0.5 - 20 -- Shifted up by 80px (was 130px, now shifted down by 50px)
     
     -- Spacing between decorative images and text
     local decorSpacing = 40
@@ -664,7 +671,52 @@ function SplitScene:draw()
     
     -- Draw text (no outline)
     love.graphics.setColor(1, 1, 1, alpha)
-    love.graphics.print(text, -textW * 0.5, -font:getHeight() * 0.5)
+    local textY = -font:getHeight() * 0.5
+    love.graphics.print(text, -textW * 0.5, textY)
+    
+    -- Draw orb sprite and name below text for player turn
+    if text == "YOUR TURN" then
+      -- Get current projectile ID from shooter
+      local ProjectileManager = require("managers.ProjectileManager")
+      local projectileId = "strike"
+      if self.left and self.left.shooter and self.left.shooter.getCurrentProjectileId then
+        projectileId = self.left.shooter:getCurrentProjectileId()
+      elseif self.currentProjectileId then
+        projectileId = self.currentProjectileId
+      end
+      
+      -- Get projectile data
+      local projectile = ProjectileManager.getProjectile(projectileId)
+      if projectile then
+        -- Spacing between text and orb sprite
+        local spriteSpacing = 30
+        local spriteY = textY + font:getHeight() * 0.5 + spriteSpacing + 50 -- Shifted down by 100px
+        
+        -- Draw orb sprite
+        if projectile.icon then
+          local ok, orbImg = pcall(love.graphics.newImage, projectile.icon)
+          if ok and orbImg then
+            local spriteSize = 64 -- Size of orb sprite
+            local spriteW, spriteH = orbImg:getWidth(), orbImg:getHeight()
+            local spriteScale = spriteSize / math.max(spriteW, spriteH)
+            
+            love.graphics.setColor(1, 1, 1, alpha)
+            love.graphics.draw(orbImg, 0, spriteY, 0, spriteScale, spriteScale, spriteW * 0.5, spriteH * 0.5)
+            
+            -- Draw orb name below sprite (in smaller font)
+            love.graphics.setFont(self._smallFont)
+            
+            local orbName = projectile.name or projectileId
+            local nameW = self._smallFont:getWidth(orbName)
+            local nameY = spriteY + spriteSize * 0.5 + 15 -- Spacing below sprite
+            
+            love.graphics.setColor(1, 1, 1, alpha)
+            love.graphics.print(orbName, -nameW * 0.5, nameY)
+          end
+        end
+      end
+    end
+    
     love.graphics.pop()
     
     love.graphics.setFont(theme.fonts.base)

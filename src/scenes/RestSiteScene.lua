@@ -16,6 +16,7 @@ function RestSiteScene.new()
     textFont = nil,
     restButton = nil,
     removeOrbButton = nil,
+    backButton = nil,
     topBar = TopBar.new(),
     mouseX = 0,
     mouseY = 0,
@@ -85,6 +86,21 @@ function RestSiteScene:load()
     end,
   })
   
+  -- Create Back button for orb removal screen (match OrbsUI close button style)
+  do
+    local baseFontSize = 24
+    local backFont = theme.newFont(baseFontSize * 0.8)
+    self.backButton = Button.new({
+      label = "BACK",
+      font = backFont,
+      align = "center",
+      onClick = function()
+        -- Return to rest choices
+        self._showOrbSelection = false
+      end,
+    })
+  end
+  
   -- Initialize scale for hover effect
   self.restButton._scale = 1.0
   self.removeOrbButton._scale = 1.0
@@ -126,6 +142,10 @@ function RestSiteScene:update(dt, mouseX, mouseY)
   self._fadeTimer = self._fadeTimer + dt
   
   if self._showOrbSelection then
+    -- Update back button hover
+    if self.backButton then
+      self.backButton:update(dt, self.mouseX, self.mouseY)
+    end
     -- Update orb card hover states
     for i, bounds in ipairs(self._orbBounds) do
       if self.mouseX >= bounds.x and self.mouseX <= bounds.x + bounds.w and
@@ -542,6 +562,26 @@ function RestSiteScene:_drawOrbSelection(fadeAlpha)
       love.graphics.print(text, (vw - textW) * 0.5, vh * 0.5)
     end
   end
+  
+  -- Draw Back button (top right, same placement as OrbsUI close)
+  if self.backButton then
+    local vw = config.video.virtualWidth
+    local buttonFont = self.backButton.font or theme.fonts.base
+    love.graphics.setFont(buttonFont)
+    local paddingX = 16
+    local paddingY = 6
+    local label = "BACK"
+    local textW = buttonFont:getWidth(label)
+    local textH = buttonFont:getHeight()
+    local buttonW = textW + paddingX * 2
+    local buttonH = textH + paddingY * 2
+    local margin = 20
+    local x = vw - buttonW - margin
+    local y = margin
+    self.backButton:setLayout(x, y, buttonW, buttonH)
+    self.backButton.alpha = fadeAlpha
+    self.backButton:draw()
+  end
 end
 
 function RestSiteScene:mousemoved(x, y, dx, dy, isTouch)
@@ -555,6 +595,10 @@ function RestSiteScene:mousepressed(x, y, button)
   if self._choiceMade then return nil end
   
   if self._showOrbSelection then
+    -- Back button
+    if self.backButton and self.backButton:mousepressed(x, y, button) then
+      return nil
+    end
     -- Check if an orb card was clicked
     for i, bounds in ipairs(self._orbBounds) do
       if x >= bounds.x and x <= bounds.x + bounds.w and
