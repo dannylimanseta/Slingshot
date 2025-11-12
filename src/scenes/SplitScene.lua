@@ -408,17 +408,6 @@ function SplitScene:resize(width, height)
 end
 
 
-local function withScissor(bounds, fn)
-  love.graphics.push("all")
-  -- Account for supersampling: scissor coordinates need to be scaled
-  local supersamplingFactor = _G.supersamplingFactor or 1
-  love.graphics.setScissor(bounds.x * supersamplingFactor, bounds.y * supersamplingFactor,
-                          bounds.w * supersamplingFactor, bounds.h * supersamplingFactor)
-  love.graphics.translate(bounds.x, bounds.y)
-  fn()
-  love.graphics.pop()
-end
-
 function SplitScene:draw()
   -- Always use virtual resolution from config (matches canvas size)
   local w = (config.video and config.video.virtualWidth) or 1280
@@ -534,10 +523,11 @@ function SplitScene:draw()
   
   love.graphics.pop()
 
-  -- Draw gameplay centered using scissor & local coordinates
-  withScissor({ x = centerX, y = 0, w = centerW, h = h }, function()
-    if self.left and self.left.draw then self.left:draw({ x = 0, y = 0, w = centerW, h = h }) end
-  end)
+  -- Draw gameplay centered (scissor removed, grid positioning preserved)
+  love.graphics.push()
+  love.graphics.translate(centerX, 0)
+  if self.left and self.left.draw then self.left:draw({ x = 0, y = 0, w = centerW, h = h }) end
+  love.graphics.pop()
   
   -- Draw calcify particles after blocks (highest z-order for particles)
   if self.right and self.right._drawCalcifyParticles then

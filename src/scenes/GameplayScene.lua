@@ -229,15 +229,15 @@ function GameplayScene:update(dt, bounds)
     local cfg = (config.gameplay and config.gameplay.blackHole) or {}
     local baseRadius = cfg.radius or 96
     local duration = cfg.duration or 1.8
-    local suckSpeed = cfg.suckSpeed or 220
-    local swirlBase = cfg.swirlSpeed or 240
+    local suckSpeed = (cfg.suckSpeed or 220) * 1.2 -- Increased by 20% for faster animation
+    local swirlBase = (cfg.swirlSpeed or 240) * 1.2 -- Increased by 20% for faster animation
     for _, hole in ipairs(self.blackHoles) do
       hole.t = (hole.t or 0) + dt
       -- Update rotation (anti-clockwise is negative in Love2D, 30% slower)
       hole.rotation = (hole.rotation or 0) - (math.pi * 2 * dt * 0.7)
-      -- Scale radius based on level: level 1 = 1.0x, level 5 = 1.5x (reduced from 2.0x by 50%)
+      -- Scale radius based on level: level 1 = 0.7x, level 5 = 1.05x (reduced by 30% across all levels)
       local level = hole.level or 1
-      local radiusScale = 1.0 + (level - 1) * 0.125 -- 1.0, 1.125, 1.25, 1.375, 1.5 for levels 1-5
+      local radiusScale = (1.0 + (level - 1) * 0.125) * 0.7 -- 0.7, 0.7875, 0.875, 0.9625, 1.05 for levels 1-5
       local radius = baseRadius * radiusScale
       -- Open (ease-out), hold, then close (ease-in) for longer block removal window
       local u = math.max(0, math.min(1, (hole.t or 0) / math.max(1e-6, duration)))

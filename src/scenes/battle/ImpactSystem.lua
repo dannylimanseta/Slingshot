@@ -374,35 +374,48 @@ function ImpactSystem.updateBlackHoleAttacks(scene, dt)
             -- 30% fast shards (explosive outer ring)
             speed = 350 + love.math.random() * 250
           end
-          local rotSpeed = (love.math.random() * 3 - 1.5) * math.pi -- Slower rotation
+          local rotSpeed = 0 -- No spinning, triangles just face target
           -- More varied shard sizes
           local baseSize = 4 + love.math.random() * 14 -- 4-18px
+          
+          -- Calculate target direction for elongation alignment
+          local offsetRadius = 60 -- Medium radius for spread
+          local offsetAngle = love.math.random() * math.pi * 2
+          local offsetDist = love.math.random() * offsetRadius
+          local targetX = enemyX + math.cos(offsetAngle) * offsetDist
+          local targetY = enemyY + math.sin(offsetAngle) * offsetDist
+          local targetDx = targetX - attack.x
+          local targetDy = targetY - attack.y
+          local targetDist = math.sqrt(targetDx * targetDx + targetDy * targetDy)
+          local targetDirection = targetDist > 0.1 and math.atan2(targetDy, targetDx) or angle
+          
           -- Create irregular shard shape (3 or 4 vertices for more varied shapes)
           local vertexCount = love.math.random() < 0.6 and 3 or 4 -- 60% triangular, 40% quadrilateral
           local shardVertices = {}
-          -- Random elongation for more jagged, shard-like appearance
-          local elongationAngle = love.math.random() * math.pi * 2
+          -- Create pointed edge at angle 0 (pointing right), then rotate to face target
+          -- Elongation along x-axis (angle 0) so pointed edge points right initially
+          local elongationAngle = 0 -- Pointed edge always at angle 0 (pointing right)
           local elongationFactor = 1.2 + love.math.random() * 1.8 -- 1.2-3.0x stretch for thinner shards
           -- Generate vertices in a roughly circular pattern with lots of variation
           for v = 1, vertexCount do
             local angle = (v / vertexCount) * math.pi * 2 + (love.math.random() - 0.5) * 0.8 -- Add angle jitter
             local radius = baseSize * (0.4 + love.math.random() * 0.8) -- Vary distance from center (40-120%)
-            -- Apply elongation in a random direction for jagged shard look
+            -- Apply elongation along x-axis (angle 0) to create pointed edge pointing right
             local vx = math.cos(angle) * radius
             local vy = math.sin(angle) * radius
-            -- Stretch vertices along elongation direction
+            -- Stretch vertices along x-axis (angle 0) to create pointed edge
             local dotProduct = vx * math.cos(elongationAngle) + vy * math.sin(elongationAngle)
             vx = vx + math.cos(elongationAngle) * dotProduct * (elongationFactor - 1)
             vy = vy + math.sin(elongationAngle) * dotProduct * (elongationFactor - 1)
             table.insert(shardVertices, vx)
             table.insert(shardVertices, vy)
           end
-          -- Random offset within medium radius around enemy center
-          local offsetRadius = 60 -- Medium radius for spread
-          local offsetAngle = love.math.random() * math.pi * 2
-          local offsetDist = love.math.random() * offsetRadius
-          local targetX = enemyX + math.cos(offsetAngle) * offsetDist
-          local targetY = enemyY + math.sin(offsetAngle) * offsetDist
+          -- Use already calculated target position and direction
+          -- Calculate initial direction toward target for proper orientation
+          local initialDx = targetX - attack.x
+          local initialDy = targetY - attack.y
+          local initialDist = math.sqrt(initialDx * initialDx + initialDy * initialDy)
+          local initialTargetAngle = initialDist > 0.1 and math.atan2(initialDy, initialDx) or targetDirection
           -- Vary homing speed by +/- 25% so shards hit at different times
           local homingSpeedVariance = 0.75 + love.math.random() * 0.5
           -- Add random angle variation to burst for more scatter
@@ -421,7 +434,7 @@ function ImpactSystem.updateBlackHoleAttacks(scene, dt)
             burstEndY = burstEndY,
             vx = math.cos(scatteredAngle) * speed,
             vy = math.sin(scatteredAngle) * speed + 150,
-            rotation = love.math.random() * math.pi * 2,
+            rotation = initialTargetAngle, -- Start facing toward target
             rotSpeed = rotSpeed,
             size = baseSize,
             alpha = 1.0,
@@ -455,7 +468,16 @@ function ImpactSystem.updateBlackHoleAttacks(scene, dt)
         shard.x = oneMinusT2 * shard.startX + bezierTerm * shard.burstEndX + t2 * shard.targetX
         shard.y = oneMinusT2 * shard.startY + bezierTerm * shard.burstEndY + t2 * shard.targetY
         
-        shard.rotation = shard.rotation + shard.rotSpeed * dt
+        -- Calculate direction toward target to orient pointed edge toward enemy
+        local dx = shard.targetX - shard.x
+        local dy = shard.targetY - shard.y
+        local distToTarget = math.sqrt(dx * dx + dy * dy)
+        if distToTarget > 0.1 then
+          -- Calculate angle toward target (pointed edge faces this direction)
+          -- No spinning, just face the target directly
+          shard.rotation = math.atan2(dy, dx)
+        end
+        -- If very close to target, keep last rotation (no change needed)
         -- Fade only in the last 30% of the animation
         local fadeStart = 0.7 -- Start fading at 70% of duration
         if shatterProgress < fadeStart then
