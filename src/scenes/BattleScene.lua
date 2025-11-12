@@ -147,6 +147,7 @@ function BattleScene.new()
     -- Impact animation
     impactAnimation = nil, -- Base animation instance
     impactInstances = {}, -- Array of active impact instances {anim, x, y, rotation, delay, offsetX, offsetY}
+    blackHoleAttacks = {}, -- Array of active black hole attack animations
     impactEffectsPlayed = false,
     splatterImage = nil, -- Splatter image for hit effects (backwards compatibility)
     splatterImages = {}, -- Array of splatter images for randomization
@@ -516,7 +517,7 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
   return sequence
 end
 
-function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE, blockHitSequence, baseDamage, orbBaseDamage, critCount, multiplierCount, isPierce)
+function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE, blockHitSequence, baseDamage, orbBaseDamage, critCount, multiplierCount, isPierce, isBlackHole)
   -- Check win/lose states via TurnManager
   local tmState = self.turnManager and self.turnManager:getState()
   if tmState == TurnManager.States.VICTORY or tmState == TurnManager.States.DEFEAT then return end
@@ -529,6 +530,7 @@ function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE, blockHitSequence, 
       armor = armor or 0,
       isAOE = isAOE or false, -- Store AOE flag
       isPierce = isPierce or false, -- Store pierce flag
+      isBlackHole = isBlackHole or false, -- Store black hole flag
       impactBlockCount = (self._pendingImpactParams and self._pendingImpactParams.blockCount) or 1,
       impactIsCrit = (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false,
       blockHitSequence = blockHitSequence or {}, -- Array of {damage, kind} for animated damage display
@@ -539,7 +541,9 @@ function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE, blockHitSequence, 
     }
     self._pendingImpactParams = nil -- Clear after merging
     -- Trigger player attack sequence after delay
-    self._playerAttackDelayTimer = (config.battle and config.battle.playerAttackDelay) or 0.5
+    -- Black hole attacks start immediately (no delay)
+    local isBlackHole = self._pendingPlayerAttackDamage.isBlackHole or false
+    self._playerAttackDelayTimer = isBlackHole and 0.05 or ((config.battle and config.battle.playerAttackDelay) or 0.5)
     
     -- Queue incoming armor for TurnManager to handle (this happens immediately, visual effects are delayed)
     self.pendingArmor = armor or 0
@@ -651,7 +655,7 @@ function BattleScene:update(dt, bounds)
       local hasCompletedDisintegration = (enemy.disintegrationTime or 0) >= duration
       
       if not hasCompletedDisintegration then
-        local impactsActive = (self.impactInstances and #self.impactInstances > 0)
+        local impactsActive = (self.impactInstances and #self.impactInstances > 0) or (self.blackHoleAttacks and #self.blackHoleAttacks > 0)
         local damagePopupActive = hasActiveDamagePopup(i)
         if impactsActive or damagePopupActive then
           -- Wait for impact animations or damage popup to finish
@@ -904,7 +908,7 @@ function BattleScene:update(dt, bounds)
   -- Check if pending disintegration enemies can now start disintegrating (popups finished)
   for i, enemy in ipairs(self.enemies or {}) do
     if enemy.pendingDisintegration and enemy.hp <= 0 then
-      local impactsActive = (self.impactInstances and #self.impactInstances > 0)
+      local impactsActive = (self.impactInstances and #self.impactInstances > 0) or (self.blackHoleAttacks and #self.blackHoleAttacks > 0)
       local damagePopupActive = hasActiveDamagePopup(i)
       if not impactsActive and not damagePopupActive then
         -- Popups and impacts finished, start disintegration
@@ -972,16 +976,29 @@ function BattleScene:update(dt, bounds)
   if self._enemyTurnDelay and self._enemyTurnDelay > 0 then
     self._enemyTurnDelay = self._enemyTurnDelay - dt
     
-    -- Check if player attack animation is still active
+    -- Check if player attack animation is still active (lunge or black hole)
     local playerAttackActive = (self.playerLungeTime and self.playerLungeTime > 0) or false
+    local blackHoleActive = (self.blackHoleAttacks and #self.blackHoleAttacks > 0) or false
     
-    if playerAttackActive and self._pendingEnemyTurnStart then
-      -- Player attack still playing, calculate remaining time
+    if (playerAttackActive or blackHoleActive) and self._pendingEnemyTurnStart then
+      -- Player attack or black hole still playing, calculate remaining time
+      local remainingTime = 0
+      
+      if playerAttackActive then
       local lungeD = (config.battle and config.battle.lungeDuration) or 0
       local lungeRD = (config.battle and config.battle.lungeReturnDuration) or 0
       local lungePause = (config.battle and config.battle.lungePauseDuration) or 0
       local totalLungeDuration = lungeD + lungePause + lungeRD
-      local remainingTime = totalLungeDuration - (self.playerLungeTime or 0)
+        remainingTime = math.max(remainingTime, totalLungeDuration - (self.playerLungeTime or 0))
+      end
+      
+      if blackHoleActive then
+        -- Calculate remaining black hole animation time
+        for _, attack in ipairs(self.blackHoleAttacks or {}) do
+          local attackRemaining = attack.duration - attack.t
+          remainingTime = math.max(remainingTime, attackRemaining)
+        end
+      end
       
       -- Reset delay to wait for remaining animation time + small buffer
       if remainingTime > 0 then
@@ -1089,13 +1106,14 @@ function BattleScene:update(dt, bounds)
         local armor = self._pendingPlayerAttackDamage.armor
         local isAOE = self._pendingPlayerAttackDamage.isAOE or false
         local isPierce = self._pendingPlayerAttackDamage.isPierce or false
+        local isBlackHole = self._pendingPlayerAttackDamage.isBlackHole or false
         local impactBlockCount = self._pendingPlayerAttackDamage.impactBlockCount or 1
         local impactIsCrit = self._pendingPlayerAttackDamage.impactIsCrit or false
         
         -- Create impact sprite animations first (before damage effects)
-        -- Pass AOE flag so impacts appear at all enemy positions
+        -- Pass AOE and pierce flags, and now black hole flag too
         if impactBlockCount and impactBlockCount > 0 then
-          self:_createImpactInstances(impactBlockCount, impactIsCrit, isAOE, isPierce)
+          self:_createImpactInstances(impactBlockCount, impactIsCrit, isAOE, isPierce, isBlackHole)
         end
         
         -- Build animated damage sequence
@@ -1159,7 +1177,7 @@ function BattleScene:update(dt, bounds)
                 
                 if not hasCompletedDisintegration then
                   -- Check if impact animations are still playing
-                  local impactsActive = (self.impactInstances and #self.impactInstances > 0)
+                  local impactsActive = (self.impactInstances and #self.impactInstances > 0) or (self.blackHoleAttacks and #self.blackHoleAttacks > 0)
                   -- Check if damage popup animation is still playing
                   local damagePopupActive = false
                   for _, popup in ipairs(self.popups or {}) do
@@ -1254,7 +1272,7 @@ function BattleScene:update(dt, bounds)
               
               if not hasCompletedDisintegration then
                 -- Check if impact animations are still playing
-                local impactsActive = (self.impactInstances and #self.impactInstances > 0)
+                local impactsActive = (self.impactInstances and #self.impactInstances > 0) or (self.blackHoleAttacks and #self.blackHoleAttacks > 0)
                 -- Check if damage popup animation is still playing
                 local damagePopupActive = false
                 for _, popup in ipairs(self.popups or {}) do
@@ -1868,12 +1886,26 @@ function BattleScene:setTurnManager(turnManager)
       local lungePause = (config.battle and config.battle.lungePauseDuration) or 0
       local totalLungeDuration = lungeD + lungePause + lungeRD
       
-      -- Check if player attack animation is still playing
+      -- Check if player attack animation is still playing (lunge or black hole)
       local playerAttackActive = (self.playerLungeTime and self.playerLungeTime > 0) or false
+      local blackHoleActive = (self.blackHoleAttacks and #self.blackHoleAttacks > 0) or false
+      
+      if playerAttackActive or blackHoleActive then
+        -- Player attack or black hole still playing, calculate remaining time
+        local remainingTime = 0
       
       if playerAttackActive then
-        -- Player attack still playing, calculate remaining time
-        local remainingTime = totalLungeDuration - (self.playerLungeTime or 0)
+          remainingTime = math.max(remainingTime, totalLungeDuration - (self.playerLungeTime or 0))
+        end
+        
+        if blackHoleActive then
+          -- Calculate remaining black hole animation time
+          for _, attack in ipairs(self.blackHoleAttacks or {}) do
+            local attackRemaining = attack.duration - attack.t
+            remainingTime = math.max(remainingTime, attackRemaining)
+          end
+        end
+        
         -- Add a small buffer to ensure animation fully completes
         local buffer = 0.1
         local delay = math.max(0, remainingTime + buffer)
@@ -1979,7 +2011,7 @@ function BattleScene:getPlayerCenterPivot(bounds)
     end
   end
   
-  local playerLunge = lungeOffset(self.playerLungeTime, (self.impactInstances and #self.impactInstances > 0))
+  local playerLunge = lungeOffset(self.playerLungeTime, (self.impactInstances and #self.impactInstances > 0) or (self.blackHoleAttacks and #self.blackHoleAttacks > 0))
   local playerKB = knockbackOffset(self.playerKnockbackTime)
   local curPlayerX = playerX + playerLunge - playerKB
   
@@ -2315,9 +2347,9 @@ function BattleScene:playImpact(blockCount, isCrit)
 end
 
 -- Internal helper to actually create impact instances (called after delay)
-function BattleScene:_createImpactInstances(blockCount, isCrit, isAOE, isPierce)
+function BattleScene:_createImpactInstances(blockCount, isCrit, isAOE, isPierce, isBlackHole)
   if not self.impactAnimation then return end
-  ImpactSystem.create(self, blockCount or 1, isCrit or false, isAOE or false, isPierce or false)
+  ImpactSystem.create(self, blockCount or 1, isCrit or false, isAOE or false, isPierce or false, isBlackHole or false)
 end
 
 -- Handle keyboard input for enemy selection
@@ -2339,7 +2371,7 @@ function BattleScene:_cheatDefeatAllEnemies()
 
   local anyDefeated = false
   local disintegrationCfg = (config.battle and config.battle.disintegration) or {}
-  local impactsActive = self.impactInstances and #self.impactInstances > 0
+  local impactsActive = (self.impactInstances and #self.impactInstances > 0) or (self.blackHoleAttacks and #self.blackHoleAttacks > 0)
 
   for index, enemy in ipairs(self.enemies or {}) do
     if enemy and (enemy.hp or 0) > 0 then

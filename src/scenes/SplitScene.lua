@@ -246,7 +246,8 @@ function SplitScene:setupTurnManagerEvents()
         turnData.orbBaseDamage or 0,
         turnData.critCount or 0,
         turnData.multiplierCount or 0,
-        turnData.isPierce or false
+        turnData.isPierce or false,
+        turnData.isBlackHole or false
       )
       -- Apply healing if any
       if turnData.heal and turnData.heal > 0 and self.right and self.right.applyHealing then
@@ -366,6 +367,7 @@ function SplitScene:endPlayerTurnWithTurnManager()
   local blocksDestroyed = self.left and self.left.destroyedThisTurn or 0
   local isAOE = (self.left and self.left.aoeThisTurn) or false
   local isPierce = (self.left and self.left.pierceThisTurn) or false
+  local isBlackHole = (self.left and self.left.blackHoleThisTurn) or false
   local blockHitSequence = (self.left and self.left.blockHitSequence) or {} -- Array of {damage, kind} for animated damage display
   local orbBaseDamage = (self.left and self.left.baseDamageThisTurn) or 0 -- Base damage from orb/projectile
   
@@ -378,6 +380,7 @@ function SplitScene:endPlayerTurnWithTurnManager()
     blocksDestroyed = blocksDestroyed,
     isAOE = isAOE,
     isPierce = isPierce,
+    isBlackHole = isBlackHole,
     blockHitSequence = blockHitSequence, -- Pass block hit sequence for animated damage display
     baseDamage = baseDamage, -- Store base damage before multipliers for animation
     orbBaseDamage = orbBaseDamage, -- Base damage from orb/projectile
@@ -999,7 +1002,21 @@ function SplitScene:update(dt)
   -- Turn ended: player turn active, shot was fired, and no balls remain
   local turnState = self.turnManager:getState()
   local shotWasFired = (canShoot == false) -- If canShoot is false, a shot was fired
-  if turnState == TurnManager.States.PLAYER_TURN_ACTIVE and shotWasFired and not hasBall then
+  
+  -- Check if black holes are still active (delay turn end until they finish)
+  local hasActiveBlackHoles = false
+  if self.left and self.left.blackHoles and #self.left.blackHoles > 0 then
+    local cfg = (config.gameplay and config.gameplay.blackHole) or {}
+    local duration = cfg.duration or 1.8
+    for _, hole in ipairs(self.left.blackHoles) do
+      if (hole.t or 0) < duration then
+        hasActiveBlackHoles = true
+        break
+      end
+    end
+  end
+  
+  if turnState == TurnManager.States.PLAYER_TURN_ACTIVE and shotWasFired and not hasBall and not hasActiveBlackHoles then
     -- Trigger impact VFX
     if self.right and self.right.playImpact then
       local blockCount = (self.left and self.left.blocksHitThisTurn) or 1

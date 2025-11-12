@@ -39,6 +39,7 @@ function GameplayScene.new()
     multiplierThisTurn = 0, -- count of multiplier blocks hit this turn
     aoeThisTurn = false, -- true if any AOE blocks were hit this turn
     pierceThisTurn = false, -- true if pierce orb was used this turn
+    blackHoleThisTurn = false, -- true if black hole orb was used this turn
     blockHitSequence = {}, -- Array of {damage, kind} for each block hit this turn (for animated damage display)
     baseDamageThisTurn = 0, -- Base damage from the orb/projectile at the start of the turn
     _prevCanShoot = true,
@@ -311,6 +312,43 @@ function GameplayScene:update(dt, bounds)
               end
               if dist <= 8 then
                 b._suckedByBlackHole = true -- suppress particle explosion
+                
+                -- Track damage for blocks destroyed by black hole (same logic as beginContact)
+                local perHit = (config.score and config.score.rewardPerHit) or 1
+                local hitReward = perHit
+                if b.kind == "crit" then
+                  self.critThisTurn = (self.critThisTurn or 0) + 1
+                elseif b.kind == "multiplier" then
+                  -- Multiplier block marks this turn for damage multiplier
+                  self.multiplierThisTurn = (self.multiplierThisTurn or 0) + 1
+                elseif b.kind == "aoe" then
+                  -- AOE block gives +3 bonus damage and marks attack as AOE
+                  local aoeReward = 3
+                  hitReward = hitReward + aoeReward
+                  self.aoeThisTurn = true
+                elseif b.kind == "armor" then
+                  -- Armor blocks don't add damage, only grant armor
+                  hitReward = 0
+                  local rewardByHp = (config.armor and config.armor.rewardByHp) or {}
+                  local hp = (b and b.hp) or 1
+                  local armorGain = rewardByHp[hp] or rewardByHp[1] or 3
+                  self.armorThisTurn = self.armorThisTurn + armorGain
+                elseif b.kind == "potion" then
+                  -- Potion blocks don't add damage, only heal
+                  hitReward = 0
+                  local healAmount = (config.heal and config.heal.potionHeal) or 8
+                  self.healThisTurn = self.healThisTurn + healAmount
+                end
+                self.score = self.score + hitReward
+                
+                -- Track block hit for animated damage display (only track damage-dealing blocks)
+                if b.kind == "damage" or b.kind == "attack" or b.kind == "crit" or b.kind == "multiplier" or b.kind == "aoe" then
+                  table.insert(self.blockHitSequence, {
+                    damage = hitReward,
+                    kind = b.kind
+                  })
+                end
+                
                 b:destroy()
               end
             end
@@ -989,6 +1027,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       self.multiplierThisTurn = 0
       self.aoeThisTurn = false
       self.pierceThisTurn = false
+      self.blackHoleThisTurn = false
       self.blocksHitThisTurn = 0
       self.blockHitSequence = {} -- Reset block hit sequence for animated damage display
       self.baseDamageThisTurn = 0 -- Reset base damage for this turn
@@ -1149,6 +1188,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       elseif projectileId == "black_hole" then
         -- Black Hole: single projectile, spawns a black hole on first block hit
         self.balls = {} -- Clear multiple balls
+        self.blackHoleThisTurn = true -- Mark that black hole was used this turn
         self.ball = Ball.new(self.world, self.aimStartX, self.aimStartY, ndx, ndy, {
           maxBounces = (effective and effective.maxBounces) or config.ball.maxBounces,
           spritePath = spritePath,
