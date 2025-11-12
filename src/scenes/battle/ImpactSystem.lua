@@ -42,14 +42,17 @@ end
 
 -- Create multiple staggered impact instances and schedule flash/knockback events
 -- isAOE: if true, create impacts at all enemy positions
-function ImpactSystem.create(scene, blockCount, isCrit, isAOE)
+-- isPierce: if true, create single horizontal slicing impact (left to right)
+function ImpactSystem.create(scene, blockCount, isCrit, isAOE, isPierce)
   if not scene or not scene.impactAnimation then return end
   blockCount = blockCount or 1
   isCrit = isCrit or false
   isAOE = isAOE or false
+  isPierce = isPierce or false
 
   -- If crit, always spawn 5 slashes; otherwise cap at 4 sprites max
-  local spriteCount = isCrit and 5 or math.min(blockCount, 4)
+  -- For pierce, use single impact
+  local spriteCount = isPierce and 1 or (isCrit and 5 or math.min(blockCount, 4))
 
   local w = (scene._lastBounds and scene._lastBounds.w) or love.graphics.getWidth()
   local h = (scene._lastBounds and scene._lastBounds.h) or love.graphics.getHeight()
@@ -75,7 +78,8 @@ function ImpactSystem.create(scene, blockCount, isCrit, isAOE)
   local staggerDelay = (config.battle and config.battle.impactStaggerDelay) or 0.05
   local fps = (config.battle and config.battle.impactFps) or 30
 
-  -- Reuse the base animation's image and quads
+  -- Reuse the base animation's image and quads from impact_1.png sprite sheet
+  -- baseImage is the impact_1.png sprite sheet image (not the orb sprite)
   local baseImage = scene.impactAnimation and scene.impactAnimation.image
   local baseQuads = scene.impactAnimation and scene.impactAnimation.quads
 
@@ -112,46 +116,75 @@ function ImpactSystem.create(scene, blockCount, isCrit, isAOE)
     createSplatter(scene, spriteCenterX, spriteCenterY)
 
   for i = 1, spriteCount do
-    local anim = {
-      image = baseImage,
-      quads = baseQuads,
-      frameW = 512,
-      frameH = 512,
-      fps = fps,
-      time = 0,
-      index = 1,
-      playing = false,
-      loop = false,
-      active = false,
-    }
-    setmetatable(anim, SpriteAnimation)
-
-      -- Stagger delay: start with delay based on hit point index, then sprite index within that
-      local baseDelay = (hitPointIdx - 1) * staggerDelay * 0.5 -- Small delay between enemies in AOE
-      local spriteDelay = (i - 1) * staggerDelay
-      local delay = baseDelay + spriteDelay
+    -- Stagger delay: start with delay based on hit point index, then sprite index within that
+    local baseDelay = (hitPointIdx - 1) * staggerDelay * 0.5 -- Small delay between enemies in AOE
+    local spriteDelay = (i - 1) * staggerDelay
+    local delay = baseDelay + spriteDelay
+    
+    if isPierce then
+      -- Pierce impact: single image, no rotation, horizontal movement left to right
+      -- Get enemy sprite width to determine start/end positions
+      local enemySpriteWidth = enemy.img and (enemy.img:getWidth() * enemyScale) or (r * 2)
+      local startX = hitX - enemySpriteWidth * 0.5 - 100 -- Start 100px to the left of enemy
+      local endX = hitX + enemySpriteWidth * 0.5 + 100 -- End 100px to the right of enemy
+      local pierceDuration = 0.3 -- Duration for pierce animation
       
-    local rotation = love.math.random() * 2 * math.pi
-    -- Random offset with slight leftward bias for better centering
-    local offsetX = (love.math.random() - 0.5) * 20
-    local offsetY = (love.math.random() - 0.5) * 20
+      -- Use 9th quad from impact_1.png sprite sheet (9th frame of impact animation)
+      local ninthQuad = baseQuads and baseQuads[9] or nil
+      
+      table.insert(scene.impactInstances, {
+        isPierce = true,
+        image = baseImage, -- Use impact_1.png sprite sheet image (not orb sprite)
+        quad = ninthQuad, -- Use 9th frame quad from impact sprite sheet
+        x = startX,
+        y = hitY,
+        startX = startX,
+        endX = endX,
+        rotation = 0, -- No rotation for pierce
+        delay = delay,
+        lifetime = 0,
+        duration = pierceDuration,
+        active = true,
+        enemyIndex = enemyIndex,
+      })
+    else
+      -- Regular impact: animation with rotation
+      local anim = {
+        image = baseImage,
+        quads = baseQuads,
+        frameW = 512,
+        frameH = 512,
+        fps = fps,
+        time = 0,
+        index = 1,
+        playing = false,
+        loop = false,
+        active = false,
+      }
+      setmetatable(anim, SpriteAnimation)
+      
+      local rotation = love.math.random() * 2 * math.pi
+      -- Random offset with slight leftward bias for better centering
+      local offsetX = (love.math.random() - 0.5) * 20
+      local offsetY = (love.math.random() - 0.5) * 20
 
-    table.insert(scene.impactInstances, {
-      anim = anim,
-      x = hitX,
-      y = hitY,
-      rotation = rotation,
-      delay = delay,
-      offsetX = offsetX,
-      offsetY = offsetY,
+      table.insert(scene.impactInstances, {
+        anim = anim,
+        x = hitX,
+        y = hitY,
+        rotation = rotation,
+        delay = delay,
+        offsetX = offsetX,
+        offsetY = offsetY,
         enemyIndex = enemyIndex, -- Store enemy index for flash/knockback events
-    })
-
-      -- Schedule per-sprite flash and knockback (store enemy index for AOE)
-    local flashDuration = (config.battle and config.battle.hitFlashDuration) or 0.5
-      table.insert(scene.enemyFlashEvents, { delay = delay, duration = flashDuration, enemyIndex = enemyIndex })
-      table.insert(scene.enemyKnockbackEvents, { delay = delay, startTime = nil, enemyIndex = enemyIndex })
+      })
     end
+
+    -- Schedule per-sprite flash and knockback (store enemy index for AOE)
+    local flashDuration = (config.battle and config.battle.hitFlashDuration) or 0.5
+    table.insert(scene.enemyFlashEvents, { delay = delay, duration = flashDuration, enemyIndex = enemyIndex })
+    table.insert(scene.enemyKnockbackEvents, { delay = delay, startTime = nil, enemyIndex = enemyIndex })
+  end
   end
 end
 
@@ -308,14 +341,28 @@ function ImpactSystem.update(scene, dt)
     for _, instance in ipairs(scene.impactInstances or {}) do
       instance.delay = math.max(0, instance.delay - dt)
       if instance.delay <= 0 then
-        if not instance.anim.playing and instance.anim.play then
-          instance.anim:play(false)
-        end
-        if instance.anim.update then
-          instance.anim:update(dt)
-        end
-        if instance.anim.active then
-          table.insert(activeInstances, instance)
+        if instance.isPierce then
+          -- Update pierce impact: move horizontally left to right
+          instance.lifetime = (instance.lifetime or 0) + dt
+          if instance.lifetime < instance.duration then
+            -- Interpolate position from startX to endX
+            local progress = instance.lifetime / instance.duration
+            -- Use ease-out for smoother animation
+            local easedProgress = 1 - (1 - progress) * (1 - progress) -- Quadratic ease-out
+            instance.x = instance.startX + (instance.endX - instance.startX) * easedProgress
+            table.insert(activeInstances, instance)
+          end
+        else
+          -- Regular impact animation
+          if not instance.anim.playing and instance.anim.play then
+            instance.anim:play(false)
+          end
+          if instance.anim.update then
+            instance.anim:update(dt)
+          end
+          if instance.anim.active then
+            table.insert(activeInstances, instance)
+          end
         end
       else
         table.insert(activeInstances, instance)
@@ -430,14 +477,54 @@ function ImpactSystem.draw(scene)
   love.graphics.setColor(1, 1, 1, 1)
   local scale = (config.battle and config.battle.impactScale) or 0.96
   for _, instance in ipairs(scene.impactInstances) do
-    if instance.delay <= 0 and instance.anim.active then
-      instance.anim:draw(
-        instance.x + (instance.offsetX or 0),
-        instance.y + (instance.offsetY or 0),
-        instance.rotation,
-        scale,
-        scale
-      )
+    if instance.delay <= 0 then
+      if instance.isPierce then
+        -- Draw pierce impact: single image, no rotation, horizontal movement
+        if instance.image then
+          local frameW = 512 -- Frame width from sprite sheet
+          local frameH = 512 -- Frame height from sprite sheet
+          local quad = instance.quad
+          if quad then
+            -- Draw using quad (9th frame from sprite sheet) at 2x size
+            local pierceScale = scale * 1.5
+            love.graphics.draw(
+              instance.image,
+              quad,
+              instance.x,
+              instance.y,
+              0, -- No rotation
+              pierceScale,
+              pierceScale,
+              frameW * 0.5, -- Center origin
+              frameH * 0.5
+            )
+          else
+            -- Fallback: draw whole image if no quad available (at 2x size)
+            local imgW = instance.image:getWidth()
+            local imgH = instance.image:getHeight()
+            local pierceScale = scale * 2 -- 2x size for pierce impact
+            love.graphics.draw(
+              instance.image,
+              instance.x,
+              instance.y,
+              0, -- No rotation
+              pierceScale,
+              pierceScale,
+              imgW * 0.5, -- Center origin
+              imgH * 0.5
+            )
+          end
+        end
+      elseif instance.anim and instance.anim.active then
+        -- Draw regular impact animation
+        instance.anim:draw(
+          instance.x + (instance.offsetX or 0),
+          instance.y + (instance.offsetY or 0),
+          instance.rotation,
+          scale,
+          scale
+        )
+      end
     end
   end
   love.graphics.pop()

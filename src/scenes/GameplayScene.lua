@@ -38,6 +38,7 @@ function GameplayScene.new()
     critThisTurn = 0, -- count of crit blocks hit this turn
     multiplierThisTurn = 0, -- count of multiplier blocks hit this turn
     aoeThisTurn = false, -- true if any AOE blocks were hit this turn
+    pierceThisTurn = false, -- true if pierce orb was used this turn
     blockHitSequence = {}, -- Array of {damage, kind} for each block hit this turn (for animated damage display)
     baseDamageThisTurn = 0, -- Base damage from the orb/projectile at the start of the turn
     _prevCanShoot = true,
@@ -604,51 +605,51 @@ function GameplayScene:draw(bounds)
       else
         -- Regular orbs: draw with bounce prediction
         local hitT, hx, hy, nx, ny = firstBounce(ox, oy, dirX, dirY)
-        local leg1 = remaining
-        if hitT and hitT > 0 then leg1 = math.min(remaining, hitT) end
+      local leg1 = remaining
+      if hitT and hitT > 0 then leg1 = math.min(remaining, hitT) end
 
-        -- Draw first leg dotted
-        do
-          local steps = math.floor(leg1 / spacing)
-          for i = 1, steps do
-            local t = i * spacing
+      -- Draw first leg dotted
+      do
+        local steps = math.floor(leg1 / spacing)
+        for i = 1, steps do
+          local t = i * spacing
             local px = ox + dirX * t
             local py = oy + dirY * t
-            local idx = drawnSteps + i
-            local alpha = 1
-            if fade then
-              local frac = idx / totalSteps
-              alpha = aStart + (aEnd - aStart) * math.min(1, math.max(0, frac))
-            end
-            alpha = alpha * (self.guideAlpha or 1)
-            love.graphics.setColor(1, 1, 1, alpha)
-            love.graphics.circle("fill", px, py, r)
+          local idx = drawnSteps + i
+          local alpha = 1
+          if fade then
+            local frac = idx / totalSteps
+            alpha = aStart + (aEnd - aStart) * math.min(1, math.max(0, frac))
           end
-          drawnSteps = drawnSteps + steps
+          alpha = alpha * (self.guideAlpha or 1)
+          love.graphics.setColor(1, 1, 1, alpha)
+          love.graphics.circle("fill", px, py, r)
         end
-        remaining = math.max(0, remaining - leg1)
+        drawnSteps = drawnSteps + steps
+      end
+      remaining = math.max(0, remaining - leg1)
 
-        -- Draw reflected second leg if we hit a wall and have remaining length
-        if hitT and remaining > 0 then
+      -- Draw reflected second leg if we hit a wall and have remaining length
+      if hitT and remaining > 0 then
           local rx, ry = dirX, dirY
-          -- Reflect direction across normal: r = v - 2*(v·n)*n
-          local dot = rx * nx + ry * ny
-          rx = rx - 2 * dot * nx
-          ry = ry - 2 * dot * ny
-          local steps = math.floor(remaining / spacing)
-          for i = 1, steps do
-            local t = i * spacing
-            local px = hx + rx * t
-            local py = hy + ry * t
-            local idx = drawnSteps + i
-            local alpha = 1
-            if fade then
-              local frac = idx / totalSteps
-              alpha = aStart + (aEnd - aStart) * math.min(1, math.max(0, frac))
-            end
-            alpha = alpha * (self.guideAlpha or 1)
-            love.graphics.setColor(1, 1, 1, alpha)
-            love.graphics.circle("fill", px, py, r)
+        -- Reflect direction across normal: r = v - 2*(v·n)*n
+        local dot = rx * nx + ry * ny
+        rx = rx - 2 * dot * nx
+        ry = ry - 2 * dot * ny
+        local steps = math.floor(remaining / spacing)
+        for i = 1, steps do
+          local t = i * spacing
+          local px = hx + rx * t
+          local py = hy + ry * t
+          local idx = drawnSteps + i
+          local alpha = 1
+          if fade then
+            local frac = idx / totalSteps
+            alpha = aStart + (aEnd - aStart) * math.min(1, math.max(0, frac))
+          end
+          alpha = alpha * (self.guideAlpha or 1)
+          love.graphics.setColor(1, 1, 1, alpha)
+          love.graphics.circle("fill", px, py, r)
           end
         end
       end
@@ -846,6 +847,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       self.critThisTurn = 0
       self.multiplierThisTurn = 0
       self.aoeThisTurn = false
+      self.pierceThisTurn = false
       self.blocksHitThisTurn = 0
       self.blockHitSequence = {} -- Reset block hit sequence for animated damage display
       self.baseDamageThisTurn = 0 -- Reset base damage for this turn
@@ -978,6 +980,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       elseif projectileId == "pierce" then
         -- Pierce: single projectile that pierces through blocks
         self.balls = {} -- Clear multiple balls
+        self.pierceThisTurn = true -- Track that pierce orb was used this turn
         local maxPierce = (effective and effective.maxPierce) or 6
         -- Pierce orbs are 2x larger
         local pierceRadiusScale = 2.0
@@ -1194,12 +1197,12 @@ function GameplayScene:beginContact(fixA, fixB, contact)
       end
     else
       -- Regular orbs: normal bounce (restitution handles it)
-      ball:onBounce()
-      -- Trigger edge glow effect for left/right walls
-      if wallData and wallData.side and self.onEdgeHit then
-        local x, y = contact:getPositions()
+    ball:onBounce()
+    -- Trigger edge glow effect for left/right walls
+    if wallData and wallData.side and self.onEdgeHit then
+      local x, y = contact:getPositions()
         local bounceY = y or -200
-        pcall(function() self.onEdgeHit(wallData.side, bounceY) end)
+      pcall(function() self.onEdgeHit(wallData.side, bounceY) end)
       end
     end
   end
@@ -1209,7 +1212,7 @@ function GameplayScene:beginContact(fixA, fixB, contact)
       -- Block already destroyed or already processed this frame, skip all processing
       -- Pierce orbs don't bounce, so skip bounce call for them
       if not ball.pierce then
-        ball:onBounce()
+      ball:onBounce()
       end
       return
     end
@@ -1260,7 +1263,7 @@ function GameplayScene:beginContact(fixA, fixB, contact)
       ball:onPierce()
     else
       -- Regular orb: bounce off the block
-      ball:onBounce()
+    ball:onBounce()
     end
     -- Award rewards: per-hit for all blocks. Crit sets a turn multiplier (2x total damage), Soul sets a turn multiplier (4x total damage)
     local perHit = (config.score and config.score.rewardPerHit) or 1

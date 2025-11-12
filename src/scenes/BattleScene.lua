@@ -516,7 +516,7 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
   return sequence
 end
 
-function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE, blockHitSequence, baseDamage, orbBaseDamage, critCount, multiplierCount)
+function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE, blockHitSequence, baseDamage, orbBaseDamage, critCount, multiplierCount, isPierce)
   -- Check win/lose states via TurnManager
   local tmState = self.turnManager and self.turnManager:getState()
   if tmState == TurnManager.States.VICTORY or tmState == TurnManager.States.DEFEAT then return end
@@ -528,6 +528,7 @@ function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE, blockHitSequence, 
       damage = dmg,
       armor = armor or 0,
       isAOE = isAOE or false, -- Store AOE flag
+      isPierce = isPierce or false, -- Store pierce flag
       impactBlockCount = (self._pendingImpactParams and self._pendingImpactParams.blockCount) or 1,
       impactIsCrit = (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false,
       blockHitSequence = blockHitSequence or {}, -- Array of {damage, kind} for animated damage display
@@ -1087,13 +1088,14 @@ function BattleScene:update(dt, bounds)
         local dmg = self._pendingPlayerAttackDamage.damage
         local armor = self._pendingPlayerAttackDamage.armor
         local isAOE = self._pendingPlayerAttackDamage.isAOE or false
+        local isPierce = self._pendingPlayerAttackDamage.isPierce or false
         local impactBlockCount = self._pendingPlayerAttackDamage.impactBlockCount or 1
         local impactIsCrit = self._pendingPlayerAttackDamage.impactIsCrit or false
         
         -- Create impact sprite animations first (before damage effects)
         -- Pass AOE flag so impacts appear at all enemy positions
         if impactBlockCount and impactBlockCount > 0 then
-          self:_createImpactInstances(impactBlockCount, impactIsCrit, isAOE)
+          self:_createImpactInstances(impactBlockCount, impactIsCrit, isAOE, isPierce)
         end
         
         -- Build animated damage sequence
@@ -2313,9 +2315,9 @@ function BattleScene:playImpact(blockCount, isCrit)
 end
 
 -- Internal helper to actually create impact instances (called after delay)
-function BattleScene:_createImpactInstances(blockCount, isCrit, isAOE)
+function BattleScene:_createImpactInstances(blockCount, isCrit, isAOE, isPierce)
   if not self.impactAnimation then return end
-  ImpactSystem.create(self, blockCount or 1, isCrit or false, isAOE or false)
+  ImpactSystem.create(self, blockCount or 1, isCrit or false, isAOE or false, isPierce or false)
 end
 
 -- Handle keyboard input for enemy selection

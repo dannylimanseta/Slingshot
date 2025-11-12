@@ -142,9 +142,9 @@ function Ball:update(dt, world)
   else
     -- Regular orbs normalize current velocity (allows bouncing)
     nx, ny = math2d.normalize(vx, vy)
-    if nx ~= nx or ny ~= ny or (nx == 0 and ny == 0) then
-      -- If direction invalid, nudge upwards
-      nx, ny = 0, -1
+  if nx ~= nx or ny ~= ny or (nx == 0 and ny == 0) then
+    -- If direction invalid, nudge upwards
+    nx, ny = 0, -1
     end
   end
   self.body:setLinearVelocity(nx * self.speed, ny * self.speed)
