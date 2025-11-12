@@ -27,7 +27,7 @@ projectiles.data = {
     id = "strike",
     name = "Strike",
     rarity = projectiles.Rarity.COMMON,
-    level = 3,
+    level = 1,
     baseDamage = 3,
     levels = {
       [1] = { baseDamage = 4, maxBounces = 5 },
@@ -43,7 +43,7 @@ projectiles.data = {
     id = "multi_strike",
     name = "Multi Strike",
     rarity = projectiles.Rarity.UNCOMMON,
-    level = 3,
+    level = 1,
     baseDamage = 2,
     levels = {
       [1] = { baseDamage = 2, count = 3, maxBounces = 3 },
@@ -59,7 +59,7 @@ projectiles.data = {
     id = "twin_strike",
     name = "Twin Strike",
     rarity = projectiles.Rarity.RARE,
-    level = 3,
+    level = 1,
     baseDamage = 4,
     levels = {
       [1] = { baseDamage = 4, count = 2, maxBounces = 5 },
@@ -75,17 +75,17 @@ projectiles.data = {
     id = "pierce",
     name = "Pierce",
     rarity = projectiles.Rarity.UNCOMMON,
-    level = 5,
+    level = 1,
     baseDamage = 3,
     levels = {
-      [1] = { baseDamage = 3, maxPierce = 6 },
-      [2] = { baseDamage = 4, maxPierce = 7 },
-      [3] = { baseDamage = 5, maxPierce = 8 },
-      [4] = { baseDamage = 6, maxPierce = 9 },
-      [5] = { baseDamage = 8, maxPierce = 10 },
+      [1] = { baseDamage = 3, maxPierce = 4 },
+      [2] = { baseDamage = 4, maxPierce = 5 },
+      [3] = { baseDamage = 5, maxPierce = 6 },
+      [4] = { baseDamage = 6, maxPierce = 7 },
+      [5] = { baseDamage = 8, maxPierce = 8 },
     },
     icon = "assets/images/orb_pierce.png",
-    description = "Doesn't bounce, pierces through up to 6 blocks."
+    description = "Doesn't bounce, pierces through up to 4 blocks."
   },
 }
 

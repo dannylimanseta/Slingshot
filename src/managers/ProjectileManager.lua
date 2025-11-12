@@ -71,18 +71,29 @@ function ProjectileManager.upgradeLevel(id)
 end
 
 -- Add a projectile to the player's equipped list if not already present
+-- Sets the projectile's level to 1 when adding as a new orb
 function ProjectileManager.addToEquipped(id)
   local config = require("config")
   local eq = (config.player and config.player.equippedProjectiles)
   if not eq then
     config.player = config.player or {}
     config.player.equippedProjectiles = { id }
+    -- Set level to 1 for new orb
+    local p = projectiles.getById(id)
+    if p then
+      p.level = 1
+    end
     return true
   end
   for _, x in ipairs(eq) do
     if x == id then return false end
   end
   table.insert(eq, id)
+  -- Set level to 1 for new orb
+  local p = projectiles.getById(id)
+  if p then
+    p.level = 1
+  end
   return true
 end
 
