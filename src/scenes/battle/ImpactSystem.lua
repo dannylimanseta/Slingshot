@@ -132,6 +132,11 @@ function ImpactSystem.create(scene, blockCount, isCrit, isAOE, isPierce)
       -- Use 9th quad from impact_1.png sprite sheet (9th frame of impact animation)
       local ninthQuad = baseQuads and baseQuads[9] or nil
       
+      -- Random scale variation: base 1.5x with +/- 20% variation
+      local baseScale = 2.0
+      local scaleVariation = 0.8 + love.math.random() * 0.4 -- Random between 0.8 and 1.2
+      local impactScale = baseScale * scaleVariation
+      
       table.insert(scene.impactInstances, {
         isPierce = true,
         image = baseImage, -- Use impact_1.png sprite sheet image (not orb sprite)
@@ -146,6 +151,7 @@ function ImpactSystem.create(scene, blockCount, isCrit, isAOE, isPierce)
         duration = pierceDuration,
         active = true,
         enemyIndex = enemyIndex,
+        impactScale = impactScale, -- Store scale variation for this instance
       })
     else
       -- Regular impact: animation with rotation
@@ -167,6 +173,11 @@ function ImpactSystem.create(scene, blockCount, isCrit, isAOE, isPierce)
       -- Random offset with slight leftward bias for better centering
       local offsetX = (love.math.random() - 0.5) * 20
       local offsetY = (love.math.random() - 0.5) * 20
+      
+      -- Random scale variation: base 1.5x with +/- 20% variation
+      local baseScale = 1.5
+      local scaleVariation = 0.8 + love.math.random() * 0.4 -- Random between 0.8 and 1.2
+      local impactScale = baseScale * scaleVariation
 
       table.insert(scene.impactInstances, {
         anim = anim,
@@ -177,6 +188,7 @@ function ImpactSystem.create(scene, blockCount, isCrit, isAOE, isPierce)
         offsetX = offsetX,
         offsetY = offsetY,
         enemyIndex = enemyIndex, -- Store enemy index for flash/knockback events
+        impactScale = impactScale, -- Store scale variation for this instance
       })
     end
 
@@ -475,9 +487,13 @@ function ImpactSystem.draw(scene)
   love.graphics.push("all")
   love.graphics.setBlendMode("add")
   love.graphics.setColor(1, 1, 1, 1)
-  local scale = (config.battle and config.battle.impactScale) or 0.96
+  local baseScale = (config.battle and config.battle.impactScale) or 0.96
   for _, instance in ipairs(scene.impactInstances) do
     if instance.delay <= 0 then
+      -- Use instance-specific scale variation (1.5x base with +/- 20% variation)
+      local impactScale = instance.impactScale or 1.5
+      local finalScale = baseScale * impactScale
+      
       if instance.isPierce then
         -- Draw pierce impact: single image, no rotation, horizontal movement
         if instance.image then
@@ -485,44 +501,42 @@ function ImpactSystem.draw(scene)
           local frameH = 512 -- Frame height from sprite sheet
           local quad = instance.quad
           if quad then
-            -- Draw using quad (9th frame from sprite sheet) at 2x size
-            local pierceScale = scale * 1.5
+            -- Draw using quad (9th frame from sprite sheet) with scale variation
             love.graphics.draw(
               instance.image,
               quad,
               instance.x,
               instance.y,
               0, -- No rotation
-              pierceScale,
-              pierceScale,
+              finalScale,
+              finalScale,
               frameW * 0.5, -- Center origin
               frameH * 0.5
             )
           else
-            -- Fallback: draw whole image if no quad available (at 2x size)
+            -- Fallback: draw whole image if no quad available
             local imgW = instance.image:getWidth()
             local imgH = instance.image:getHeight()
-            local pierceScale = scale * 2 -- 2x size for pierce impact
             love.graphics.draw(
               instance.image,
               instance.x,
               instance.y,
               0, -- No rotation
-              pierceScale,
-              pierceScale,
+              finalScale,
+              finalScale,
               imgW * 0.5, -- Center origin
               imgH * 0.5
             )
           end
         end
       elseif instance.anim and instance.anim.active then
-        -- Draw regular impact animation
+        -- Draw regular impact animation with scale variation
         instance.anim:draw(
           instance.x + (instance.offsetX or 0),
           instance.y + (instance.offsetY or 0),
           instance.rotation,
-          scale,
-          scale
+          finalScale,
+          finalScale
         )
       end
     end
