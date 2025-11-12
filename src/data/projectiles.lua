@@ -90,8 +90,8 @@ projectiles.data = {
   {
     id = "black_hole",
     name = "Black Hole",
-    rarity = projectiles.Rarity.RARE,
-    level = 5, -- Testing level 5
+    rarity = projectiles.Rarity.EPIC,
+    level = 1,
     baseDamage = 0,
     levels = {
       [1] = { baseDamage = 0 },

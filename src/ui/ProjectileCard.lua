@@ -16,6 +16,12 @@ local RARITY_COLORS = {
 
 -- Word wrap text to fit within maxWidth
 local function wrapText(text, font, maxWidth)
+  -- Safety check: ensure maxWidth is reasonable
+  if not maxWidth or maxWidth <= 0 then
+    -- Fallback: return text as single line if maxWidth is invalid
+    return { text }
+  end
+  
   local words = {}
   for word in text:gmatch("%S+") do
     table.insert(words, word)
@@ -28,10 +34,12 @@ local function wrapText(text, font, maxWidth)
     local testLine = currentLine == "" and word or currentLine .. " " .. word
     local width = font:getWidth(testLine)
     
+    -- If adding this word would exceed maxWidth and we already have content, start a new line
     if width > maxWidth and currentLine ~= "" then
       table.insert(lines, currentLine)
       currentLine = word
     else
+      -- Otherwise, add the word to current line (even if it's wider than maxWidth - better than breaking mid-word)
       currentLine = testLine
     end
   end
@@ -50,7 +58,14 @@ local function buildDynamicStats(projectile, effective, maxWidth, font)
   if id == "black_hole" then
     -- Black hole: show description with word wrapping
     if projectile.description then
-      local wrappedLines = wrapText(projectile.description, font, maxWidth)
+      -- Use the full available width (don't artificially limit it)
+      -- maxWidth should be around 220px based on card layout
+      local safeMaxWidth = maxWidth or 220
+      -- Only enforce minimum if maxWidth seems invalid, otherwise trust the calculation
+      if safeMaxWidth < 100 then
+        safeMaxWidth = 220 -- Fallback to expected width
+      end
+      local wrappedLines = wrapText(projectile.description, font, safeMaxWidth)
       for _, line in ipairs(wrappedLines) do
         table.insert(lines, line)
       end
@@ -246,7 +261,9 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   theme.drawTextWithOutline(levelText, levelX, nameY, 1, 1, 1, alpha, 1)
   
   -- Stats (below name, dynamic based on content) - apply alpha
+  -- Use full available width for text (accounting for icon and padding)
   local textW = cardW - textStartX - padding
+  -- For black hole descriptions, ensure we use the full width available
   local stats = buildDynamicStats(projectile, effective, textW, self.statFont)
   local statsStartY = nameY + nameFontH + 4
   love.graphics.setColor(1, 1, 1, 0.9 * alpha)

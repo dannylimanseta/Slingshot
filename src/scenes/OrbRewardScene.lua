@@ -503,6 +503,18 @@ function OrbRewardScene:draw()
     -- Draw glow for hovered/highlighted option
     local hp = self._hoverProgress[i] or 0
     if hp > 0 then
+      -- Fade glow away when option is selected
+      local glowFade = 1.0
+      if self.selectedIndex and self.pendingChoice then
+        if self.selectedIndex == i then
+          -- Fade selected glow as selection animation plays
+          local t = math.min(1, (self.selectionTimer or 0) / (self.selectionDuration or 0.4))
+          glowFade = 1.0 - t
+        else
+          -- Immediately fade non-selected glows
+          glowFade = 0.0
+        end
+      end
       love.graphics.push()
       love.graphics.translate(cx, cy + yOffset)
       love.graphics.scale(scale * extraScale, scale * extraScale)
@@ -510,7 +522,7 @@ function OrbRewardScene:draw()
       local pulseSpeed = 1.0
       local pulseAmount = 0.15
       local pulse = 1.0 + math.sin((self._glowTime or 0) * pulseSpeed * math.pi * 2) * pulseAmount
-      local baseAlpha = 0.12 * a * hp
+      local baseAlpha = 0.12 * a * hp * glowFade
       local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } }
       for _, layer in ipairs(layers) do
         local glowAlpha = baseAlpha * layer.alpha * pulse

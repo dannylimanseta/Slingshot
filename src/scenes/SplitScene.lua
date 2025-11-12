@@ -526,7 +526,7 @@ function SplitScene:draw()
   -- Draw gameplay centered (scissor removed, grid positioning preserved)
   love.graphics.push()
   love.graphics.translate(centerX, 0)
-  if self.left and self.left.draw then self.left:draw({ x = 0, y = 0, w = centerW, h = h }) end
+    if self.left and self.left.draw then self.left:draw({ x = 0, y = 0, w = centerW, h = h }) end
   love.graphics.pop()
   
   -- Draw calcify particles after blocks (highest z-order for particles)
