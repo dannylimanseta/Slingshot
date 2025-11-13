@@ -37,6 +37,9 @@ function OrbsUI.new()
     _dragStartY = 0, -- Mouse Y when drag started
     _dragOffsetX = 0, -- Offset from card center when dragging started
     _dragOffsetY = 0,
+    _dragTweenX = 0, -- Tweened X position for smooth dragging
+    _dragTweenY = 0, -- Tweened Y position for smooth dragging
+    _dragTweenSpeed = 20, -- Speed of drag tweening (higher = faster)
     _cardBounds = {}, -- Store card bounds for hit testing { [index] = {x, y, w, h} }
     _mouseX = 0, -- Current mouse X position
     _mouseY = 0, -- Current mouse Y position
@@ -52,6 +55,8 @@ function OrbsUI:setVisible(visible)
     self.scrollVelocity = 0
     -- Reset drag state
     self._draggedIndex = nil
+    self._dragTweenX = 0
+    self._dragTweenY = 0
     -- Reset selection
     self._selectedIndex = 1
   else
@@ -112,6 +117,18 @@ function OrbsUI:update(dt, mouseX, mouseY)
     local target = (self.closeButton._hovered and 1) or 0
     self.closeButton._hoverProgress = hp + (target - hp) * math.min(1, 10 * dt)
   end
+  
+  -- Update drag tween position
+  if self._draggedIndex and mouseX and mouseY then
+    local targetX = mouseX
+    local targetY = mouseY
+    local currentX = self._dragTweenX or targetX
+    local currentY = self._dragTweenY or targetY
+    local tweenSpeed = self._dragTweenSpeed or 20
+    -- Smoothly tween toward target position
+    self._dragTweenX = currentX + (targetX - currentX) * math.min(1, tweenSpeed * dt)
+    self._dragTweenY = currentY + (targetY - currentY) * math.min(1, tweenSpeed * dt)
+  end
 end
  
 -- Keyboard navigation for inventory cards
@@ -166,6 +183,9 @@ function OrbsUI:mousepressed(x, y, button)
         self._dragStartY = y
         self._dragOffsetX = x - (bounds.x + bounds.w * 0.5)
         self._dragOffsetY = y - (bounds.y + bounds.h * 0.5)
+        -- Initialize tween position to current mouse position for instant start
+        self._dragTweenX = x
+        self._dragTweenY = y
         return false -- Don't consume event, but mark as dragging
       end
     end
@@ -197,11 +217,15 @@ function OrbsUI:mousereleased(x, y, button)
       
       -- Return true to indicate order was changed (so parent can reload shooter)
       self._draggedIndex = nil
+      self._dragTweenX = 0
+      self._dragTweenY = 0
       return true
     end
     
     -- End dragging
     self._draggedIndex = nil
+    self._dragTweenX = 0
+    self._dragTweenY = 0
   end
   
   return false
@@ -289,6 +313,18 @@ function OrbsUI:draw()
   local titleX = (vw - titleW) * 0.5
   local titleY = 15 -- shifted down by 6px from 10
   theme.drawTextWithOutline(titleText, titleX, titleY, 1, 1, 1, self.fadeAlpha, 2)
+  
+  -- Draw instruction text (using regular font, not bold)
+  local instructionText = "Drag orbs to reorder"
+  local regularFont = theme.newFont(24, "assets/fonts/BarlowCondensed-Regular.ttf")
+  love.graphics.setFont(regularFont)
+  local instructionW = regularFont:getWidth(instructionText)
+  local instructionX = (vw - instructionW) * 0.5
+  local instructionY = titleY + theme.fonts.base:getHeight() + 8
+  local instructionAlpha = 0.7 * self.fadeAlpha
+  theme.drawTextWithOutline(instructionText, instructionX, instructionY, 1, 1, 1, instructionAlpha, 2)
+  -- Reset font to base font
+  love.graphics.setFont(theme.fonts.base)
   
   -- Set up scissor for clipping cards to visible area
   -- Account for supersampling: scissor coordinates need to be scaled
@@ -385,14 +421,15 @@ function OrbsUI:draw()
       love.graphics.setColor(1, 1, 1, self.fadeAlpha * 0.3)
       self.card:draw(cardX, cardY, projectileId, self.fadeAlpha * 0.3)
       
-      -- Draw dragged card at mouse position
-      local dragX = virtualMouseX - self._dragOffsetX
-      local dragY = virtualMouseY - self._dragOffsetY
+      -- Draw dragged card centered at tweened mouse position
+      -- Use tweened position for smooth following
+      local dragCenterX = self._dragTweenX or virtualMouseX
+      local dragCenterY = self._dragTweenY or virtualMouseY
+      -- Position card so its center is at the tweened cursor position
+      local dragX = dragCenterX - baseCardW * 0.5
+      local dragY = dragCenterY - dynamicCardH * 0.5
       love.graphics.setColor(1, 1, 1, self.fadeAlpha)
-      love.graphics.push()
-      love.graphics.translate(dragX - cardX, dragY - cardY)
-      self.card:draw(cardX, cardY, projectileId, self.fadeAlpha)
-      love.graphics.pop()
+      self.card:draw(dragX, dragY, projectileId, self.fadeAlpha)
     else
       -- Normal drawing
       love.graphics.setColor(1, 1, 1, self.fadeAlpha)
