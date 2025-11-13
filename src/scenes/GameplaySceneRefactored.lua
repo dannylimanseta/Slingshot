@@ -29,10 +29,6 @@ function GameplayScene.new()
     particles = nil,
     shooter = nil,
     topBar = TopBar.new(),
-    -- Legacy references (for compatibility with SplitScene and other systems)
-    ball = nil,
-    balls = {},
-    blackHoles = {},
     
     -- Turn state
     turnManager = nil,
@@ -81,7 +77,6 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
   
   -- Store reference to GameplayScene in projectile effects
   self.projectileEffects.scene = self
-  self.blackHoles = self.projectileEffects.blackHoles or {}
   
   -- Initialize blocks
   self.blocks = BlockManager.new()
@@ -112,11 +107,6 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
   
   -- Initialize ball manager
   self.ballManager = BallManager.new(self.physics:getWorld(), self.shooter)
-  if self.ballManager then
-    self.ballManager:setCanShoot(self.canShoot)
-    self.ball = self.ballManager.ball
-    self.balls = self.ballManager.balls
-  end
   
   -- Set collision callbacks
   self.physics.onBeginContact = function(a, b, contact) self:beginContact(a, b, contact) end
@@ -142,18 +132,9 @@ function GameplayScene:update(dt, bounds)
   
   -- Update ball manager
   self.ballManager:update(dt, bounds)
-  -- Ensure legacy references stay in sync (other systems read these directly)
-  self.ball = self.ballManager.ball
-  self.balls = self.ballManager.balls
   
   -- Update projectile effects (pierce, lightning, black hole)
   self.projectileEffects:update(dt, self.ballManager)
-  self.blackHoles = self.projectileEffects.blackHoles or {}
-
-  -- Keep BallManager's shooting state in sync with GameplayScene.canShoot
-  if self.ballManager then
-    self.ballManager:setCanShoot(self.canShoot)
-  end
   
   -- Update blocks
   if self.blocks and self.blocks.update then
@@ -206,14 +187,11 @@ function GameplayScene:draw(bounds)
   love.graphics.push()
   self.visualEffects:applyScreenshake()
   
-  -- Draw projectile effects that sit below block layer
-  self.projectileEffects:drawBlackHoles()
-
-  -- Draw blocks (lightning streaks should appear above this layer)
+  -- Draw projectile effects (black holes, lightning streaks)
+  self.projectileEffects:draw(self.ballManager)
+  
+  -- Draw blocks
   self.blocks:draw()
-
-  -- Draw lightning streaks above blocks for clarity
-  self.projectileEffects:drawLightningStreaks(self.ballManager)
   
   -- Draw balls
   self.ballManager:draw()
