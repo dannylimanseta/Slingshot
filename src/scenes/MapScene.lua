@@ -196,6 +196,8 @@ function MapScene:load()
     })
     -- Clear enemy tile tracking
     self._enemyTileX, self._enemyTileY = nil, nil
+    -- Clear any stale return position so future scene exits don't snap backwards
+    self._returnGridX, self._returnGridY = nil, nil
     self._battleVictory = false
   elseif self._returnGridX and self._returnGridY then
     -- Defeat: restore player to return position
