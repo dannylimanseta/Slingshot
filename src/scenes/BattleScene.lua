@@ -495,22 +495,32 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
     table.insert(sequence, { text = tostring(cumulative), duration = 0.1 })
   end
   
+  -- Ensure cumulative reflects actual pre-multiplier damage (covers bonuses that aren't in blockHitSequence)
+  local expectedBase = baseDamage or cumulative
+  if expectedBase > cumulative then
+    -- Add a step for the jump so players see the total before multipliers
+    table.insert(sequence, { text = tostring(expectedBase), duration = 0.1 })
+  end
+  cumulative = expectedBase
+  
   -- Apply crit multiplier if any
   local mult = (config.score and config.score.critMultiplier) or 2
   if critCount > 0 then
     local critMultiplier = mult ^ critCount
-    local afterCrit = cumulative * critMultiplier
-    -- Show multiplier step (e.g., "8x2") - mark as multiplier step, longer duration for visibility
-    table.insert(sequence, { text = tostring(cumulative) .. "x" .. tostring(critMultiplier), duration = 0.4, isMultiplier = true })
+    local beforeCrit = cumulative
+    local afterCrit = beforeCrit * critMultiplier
+    -- Show multiplier step (e.g., "64x2") - mark as multiplier step, longer duration for visibility
+    table.insert(sequence, { text = tostring(beforeCrit) .. "x" .. tostring(critMultiplier), duration = 0.4, isMultiplier = true })
     cumulative = afterCrit
   end
   
   -- Apply damage multiplier if any
   if multiplierCount > 0 then
     local dmgMult = (config.score and config.score.powerCritMultiplier) or 4
-    local afterMult = cumulative * dmgMult
-    -- Show multiplier step (e.g., "16x4") - mark as multiplier step, longer duration for visibility
-    table.insert(sequence, { text = tostring(cumulative) .. "x" .. tostring(dmgMult), duration = 0.4, isMultiplier = true })
+    local beforeMult = cumulative
+    local afterMult = beforeMult * dmgMult
+    -- Show multiplier step (e.g., "128x4") - mark as multiplier step, longer duration for visibility
+    table.insert(sequence, { text = tostring(beforeMult) .. "x" .. tostring(dmgMult), duration = 0.4, isMultiplier = true })
     cumulative = afterMult
   end
   
