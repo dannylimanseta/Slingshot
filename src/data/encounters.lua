@@ -551,6 +551,12 @@ local ENCOUNTERS = {
                               kind = "aoe",
                               x = 0.216,
                               y = 0.262
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.784,
+                              y = 0.621
                             }
                   },
             type = "predefined"

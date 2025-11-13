@@ -8,6 +8,7 @@ local BlockManager = require("managers.BlockManager")
 local Shooter = require("entities.Shooter")
 local ParticleManager = require("managers.ParticleManager")
 local TopBar = require("ui.TopBar")
+local BattleState = require("core.BattleState")
 
 -- New managers (extracted from GameplayScene)
 local PhysicsManager = require("battle.PhysicsManager")
@@ -29,6 +30,7 @@ function GameplayScene.new()
     particles = nil,
     shooter = nil,
     topBar = TopBar.new(),
+    state = nil,
     -- Legacy references (for compatibility with SplitScene and other systems)
     ball = nil,
     balls = {},
@@ -81,7 +83,24 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
   
   -- Store reference to GameplayScene in projectile effects
   self.projectileEffects.scene = self
+  -- Initialize shared battle state
+  self.state = BattleState.new({ profile = battleProfile })
+  BattleState.setCanShoot(true)
+  BattleState.resetTurnRewards()
+  BattleState.resetBlocksDestroyedThisTurn()
   self.blackHoles = self.projectileEffects.blackHoles or {}
+  self.canShoot = self.state.flags.canShoot
+  self.score = self.state.rewards.score
+  self.displayScore = self.state.rewards.score
+  self.armorThisTurn = self.state.rewards.armorThisTurn
+  self.healThisTurn = self.state.rewards.healThisTurn
+  self.blocksHitThisTurn = #self.state.rewards.blockHitSequence
+  self.critThisTurn = self.state.rewards.critCount
+  self.multiplierThisTurn = self.state.rewards.multiplierCount
+  self.aoeThisTurn = self.state.rewards.aoeFlag
+  self.blockHitSequence = self.state.rewards.blockHitSequence
+  self.baseDamageThisTurn = self.state.rewards.baseDamage
+  self.destroyedThisTurn = self.state.blocks.destroyedThisTurn or 0
   
   -- Initialize blocks
   self.blocks = BlockManager.new()
@@ -100,7 +119,8 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
         end
         self.particles:emitExplosion(b.cx, b.cy, blockColor)
       end
-      self.destroyedThisTurn = (self.destroyedThisTurn or 0) + 1
+      BattleState.registerBlockHit(b, { destroyed = true, kind = b.kind })
+      self.destroyedThisTurn = (BattleState.get().blocks.destroyedThisTurn or 0)
     end
   end
   
@@ -145,14 +165,33 @@ function GameplayScene:update(dt, bounds)
   -- Ensure legacy references stay in sync (other systems read these directly)
   self.ball = self.ballManager.ball
   self.balls = self.ballManager.balls
+  -- Update BattleState ball metrics
+  local aliveCount = 0
+  if self.ballManager.ball and self.ballManager.ball.alive then aliveCount = aliveCount + 1 end
+  if self.ballManager.balls then
+    for _, ball in ipairs(self.ballManager.balls) do
+      if ball and ball.alive then
+        aliveCount = aliveCount + 1
+      end
+    end
+  end
+  BattleState.setBallsInFlight(aliveCount)
   
   -- Update projectile effects (pierce, lightning, black hole)
   self.projectileEffects:update(dt, self.ballManager)
   self.blackHoles = self.projectileEffects.blackHoles or {}
-
-  -- Keep BallManager's shooting state in sync with GameplayScene.canShoot
-  if self.ballManager then
-    self.ballManager:setCanShoot(self.canShoot)
+  BattleState.setBlackHoles(self.blackHoles)
+  
+  -- Sync canShoot state
+  local state = self.state or BattleState.get()
+  if state then
+    self.state = state
+    if self.canShoot ~= state.flags.canShoot then
+      self.canShoot = state.flags.canShoot
+      if self.ballManager then
+        self.ballManager:setCanShoot(self.canShoot)
+      end
+    end
   end
   
   -- Update blocks
@@ -186,15 +225,32 @@ function GameplayScene:update(dt, bounds)
     self.particles:update(dt)
   end
   
-  -- Update combo timeout
-  if self.comboTimeout > 0 then
-    self.comboTimeout = self.comboTimeout - dt
-    if self.comboTimeout <= 0 then
-      self.comboCount = 0
+  -- Update combo timeout via BattleState
+  if state then
+    local combo = state.player and state.player.combo
+    if combo and combo.timeout > 0 then
+      local newTimeout = math.max(0, combo.timeout - dt)
+      local newCount = combo.count
+      if newTimeout == 0 and combo.count ~= 0 then
+        newCount = 0
+      end
+      if newTimeout ~= combo.timeout or newCount ~= combo.count then
+        BattleState.updateCombo(newCount, newTimeout, combo.lastHitAt)
+      end
     end
+    -- Update cached reward/state values for external consumers
+    self.score = state.rewards.score
+    self.displayScore = state.rewards.score
+    self.armorThisTurn = state.rewards.armorThisTurn
+    self.healThisTurn = state.rewards.healThisTurn
+    self.blocksHitThisTurn = #state.rewards.blockHitSequence
+    self.critThisTurn = state.rewards.critCount
+    self.multiplierThisTurn = state.rewards.multiplierCount
+    self.aoeThisTurn = state.rewards.aoeFlag
+    self.blockHitSequence = state.rewards.blockHitSequence
+    self.baseDamageThisTurn = state.rewards.baseDamage
+    self.destroyedThisTurn = state.blocks.destroyedThisTurn or 0
   end
-  
-  self._prevCanShoot = self.canShoot
 end
 
 function GameplayScene:draw(bounds)
@@ -282,30 +338,20 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       projectileId = self.projectileId or "strike"
     end
     
-    -- Reset turn state
-    self.score = 0
-    self.displayScore = 0
-    self.armorThisTurn = 0
-    self.healThisTurn = 0
-    self.critThisTurn = 0
-    self.multiplierThisTurn = 0
-    self.aoeThisTurn = false
-    self.blocksHitThisTurn = 0
-    self.blockHitSequence = {}
-    self.baseDamageThisTurn = 0
-    self.comboCount = 0
-    self.comboTimeout = 0
-    self.lastHitTime = 0
+    -- Reset turn state via BattleState
+    BattleState.resetTurnRewards()
+    BattleState.setBaseDamage(0)
+    BattleState.updateCombo(0, 0, love.timer.getTime())
+    BattleState.setLastProjectile(projectileId)
     
     -- Shoot projectile
     local result = self.ballManager:shoot(dx, dy, projectileId)
     if result then
-      self.score = result.baseDamage
-      self.baseDamageThisTurn = result.baseDamage
+      BattleState.setBaseDamage(result.baseDamage or 0)
       
       -- Spend the turn
+      BattleState.setCanShoot(false)
       self.canShoot = false
-      self.turnsTaken = self.turnsTaken + 1
     end
     
     self.ballManager:stopAiming()
@@ -454,27 +500,27 @@ function GameplayScene:handleBallBlockCollision(ball, block, contact)
   -- Mark block as hit
   self._blocksHitThisFrame[block] = true
   block:hit()
-  self.blocksHitThisTurn = (self.blocksHitThisTurn or 0) + 1
   
-  -- Combo tracking
+  -- Combo tracking via BattleState
   local currentTime = love.timer.getTime()
   local comboWindow = (config.gameplay and config.gameplay.comboWindow) or 0.5
-  if currentTime - (self.lastHitTime or 0) < comboWindow then
-    self.comboCount = (self.comboCount or 0) + 1
+  local comboCount = 1
+  local comboState = self.state and self.state.player and self.state.player.combo
+  if comboState and currentTime - (comboState.lastHitAt or 0) < comboWindow then
+    comboCount = (comboState.count or 0) + 1
   else
-    self.comboCount = 1
+    comboCount = 1
   end
-  self.lastHitTime = currentTime
-  self.comboTimeout = comboWindow
+  BattleState.updateCombo(comboCount, comboWindow, currentTime)
   
   -- Trigger screenshake for combos
-  if self.comboCount >= 2 then
+  if comboCount >= 2 then
     local comboShake = config.gameplay and config.gameplay.comboShake or {}
     local baseMag = comboShake.baseMagnitude or 2
     local scalePerCombo = comboShake.scalePerCombo or 0.5
     local maxMagnitude = comboShake.maxMagnitude or 8
     local duration = comboShake.duration or 0.15
-    local magnitude = math.min(maxMagnitude, baseMag + (self.comboCount - 2) * scalePerCombo)
+    local magnitude = math.min(maxMagnitude, baseMag + (comboCount - 2) * scalePerCombo)
     self.visualEffects:triggerShake(magnitude, duration)
   end
   
@@ -540,36 +586,34 @@ end
 function GameplayScene:awardBlockReward(block)
   local perHit = (config.score and config.score.rewardPerHit) or 1
   local hitReward = perHit
-  
-  if block.kind == "crit" then
-    self.critThisTurn = (self.critThisTurn or 0) + 1
-  elseif block.kind == "multiplier" then
-    self.multiplierThisTurn = (self.multiplierThisTurn or 0) + 1
-  elseif block.kind == "aoe" then
+  local kind = block.kind or "damage"
+  local rewardData = { kind = kind, damage = hitReward, destroyed = false }
+
+  if kind == "crit" then
+    BattleState.trackDamage("crit", hitReward)
+  elseif kind == "multiplier" then
+    BattleState.trackDamage("multiplier", hitReward)
+  elseif kind == "aoe" then
     hitReward = hitReward + 3
-    self.aoeThisTurn = true
-  elseif block.kind == "armor" then
+    rewardData.damage = hitReward
+    BattleState.trackDamage("aoe", hitReward)
+  elseif kind == "armor" then
     hitReward = 0
     local rewardByHp = (config.armor and config.armor.rewardByHp) or {}
     local hp = (block and block.hp) or 1
     local armorGain = rewardByHp[hp] or rewardByHp[1] or 3
-    self.armorThisTurn = self.armorThisTurn + armorGain
-  elseif block.kind == "potion" then
+    rewardData.armorGain = armorGain
+    BattleState.trackDamage("armor", armorGain)
+  elseif kind == "potion" then
     hitReward = 0
     local healAmount = (config.heal and config.heal.potionHeal) or 8
-    self.healThisTurn = self.healThisTurn + healAmount
+    rewardData.healAmount = healAmount
+    BattleState.trackDamage("heal", healAmount)
+  else
+    BattleState.trackDamage(kind, hitReward)
   end
-  
-  self.score = self.score + hitReward
-  
-  -- Track for animated damage display
-  if block.kind == "damage" or block.kind == "attack" or block.kind == "crit" or 
-     block.kind == "multiplier" or block.kind == "aoe" then
-    table.insert(self.blockHitSequence, {
-      damage = hitReward,
-      kind = block.kind
-    })
-  end
+
+  BattleState.registerBlockHit(block, rewardData)
 end
 
 -- ============================================================================
@@ -615,9 +659,11 @@ function GameplayScene:respawnDestroyedBlocks(bounds, count)
         end
         self.particles:emitExplosion(nb.cx, nb.cy, blockColor)
       end
-      self.destroyedThisTurn = (self.destroyedThisTurn or 0) + 1
+      BattleState.registerBlockHit(nb, { destroyed = true, kind = nb.kind })
+      self.destroyedThisTurn = BattleState.get().blocks.destroyedThisTurn or 0
     end
   end
+  BattleState.resetBlocksDestroyedThisTurn()
   self.destroyedThisTurn = 0
 end
 

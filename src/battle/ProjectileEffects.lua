@@ -111,32 +111,12 @@ function ProjectileEffects:updateLightningSequence(ball, dt)
     if target.block and target.block.alive and not self.scene._blocksHitThisFrame[target.block] then
       self.scene._blocksHitThisFrame[target.block] = true
       target.block:hit()
-      self.scene.blocksHitThisTurn = (self.scene.blocksHitThisTurn or 0) + 1
-      
       if self.scene.particles then
         self.scene.particles:emitSpark(target.x, target.y)
       end
       
-      -- Award rewards
-      local perHit = (config.score and config.score.rewardPerHit) or 1
-      local hitReward = perHit
-      if target.block.kind == "crit" then
-        self.scene.critThisTurn = (self.scene.critThisTurn or 0) + 1
-      elseif target.block.kind == "multiplier" then
-        self.scene.multiplierThisTurn = (self.scene.multiplierThisTurn or 0) + 1
-      elseif target.block.kind == "aoe" then
-        hitReward = hitReward + 3
-        self.scene.aoeThisTurn = true
-      elseif target.block.kind == "armor" or target.block.kind == "potion" then
-        hitReward = 0
-      end
-      self.scene.score = self.scene.score + hitReward
-      
-      if target.block.kind == "damage" or target.block.kind == "attack" or target.block.kind == "crit" or target.block.kind == "multiplier" or target.block.kind == "aoe" then
-        table.insert(self.scene.blockHitSequence, {
-          damage = hitReward,
-          kind = target.block.kind
-        })
+      if self.scene and self.scene.awardBlockReward then
+        self.scene:awardBlockReward(target.block)
       end
     end
     

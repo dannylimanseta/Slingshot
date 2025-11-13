@@ -1,6 +1,7 @@
 local theme = require("theme")
 local config = require("config")
 local PlayerState = require("core.PlayerState")
+local BattleState = require("core.BattleState")
 
 local TopBar = {}
 TopBar.__index = TopBar
@@ -40,8 +41,16 @@ function TopBar:draw()
   
   -- Get player state
   local playerState = PlayerState.getInstance()
-  local health = playerState:getHealth()
-  local maxHealth = playerState:getMaxHealth()
+  local battleState = BattleState.get and BattleState.get()
+  local health
+  local maxHealth
+  if battleState and battleState.player then
+    health = battleState.player.hp or battleState.player.displayHP or 0
+    maxHealth = battleState.player.maxHP or health
+  else
+    health = playerState:getHealth()
+    maxHealth = playerState:getMaxHealth()
+  end
   local gold = (self.overrideGold ~= nil) and self.overrideGold or playerState:getGold()
   
   -- Draw top bar background (darkened, 0.8 alpha)

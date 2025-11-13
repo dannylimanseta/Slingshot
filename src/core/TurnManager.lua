@@ -1,6 +1,8 @@
 -- Scalable Turn Management System
 -- Combines State Machine + Event System + Action Queue
 
+local BattleState = require("core.BattleState")
+
 local TurnManager = {}
 TurnManager.__index = TurnManager
 
@@ -123,6 +125,16 @@ function TurnManager:transitionTo(newState, options)
   self.previousState = self.currentState
   self.currentState = newState
   
+  -- Sync BattleState turn phase
+  if BattleState.get() then
+    BattleState.setTurnPhase(newState, { turnNumber = self.turnNumber })
+    if newState == TurnManager.States.PLAYER_TURN_ACTIVE then
+      BattleState.setCanShoot(true)
+    elseif newState ~= TurnManager.States.PLAYER_TURN_ACTIVE then
+      BattleState.setCanShoot(false)
+    end
+  end
+  
   -- Queue actions if provided
   if options.actions then
     self:queueActions(options.actions)
@@ -158,13 +170,19 @@ end
 -- Turn lifecycle
 function TurnManager:startPlayerTurn()
   -- Increment turn number and reset turn data
-  self.turnNumber = self.turnNumber + 1
-  self.turnData = {
-    score = 0,
-    armor = 0,
-    crits = 0,
-    blocksDestroyed = 0,
-  }
+  local state = BattleState.get()
+  if state then
+    BattleState.incrementTurnNumber()
+    state = BattleState.get()
+    self.turnNumber = state.turn.number
+    self.turnData = {}
+    BattleState.resetTurnRewards()
+    BattleState.resetBlocksDestroyedThisTurn()
+    BattleState.setCanShoot(false)
+  else
+    self.turnNumber = self.turnNumber + 1
+    self.turnData = {}
+  end
   
   -- If already in PLAYER_TURN_START, just queue the actions without transitioning
   if self.currentState == TurnManager.States.PLAYER_TURN_START then
@@ -191,14 +209,24 @@ function TurnManager:startPlayerTurn()
 end
 
 function TurnManager:endPlayerTurn(turnData)
-  -- Merge turn data
-  for k, v in pairs(turnData or {}) do
-    self.turnData[k] = v
-  end
+  local state = BattleState.get()
+  local rewards = state and state.rewards or {}
+  local blocksDestroyed = (state and state.blocks and state.blocks.destroyedThisTurn) or 0
+  self.turnData = {
+    score = rewards.score or (turnData and turnData.score) or 0,
+    armor = rewards.armorThisTurn or (turnData and turnData.armor) or 0,
+    crits = rewards.critCount or (turnData and turnData.crits) or 0,
+    blocksDestroyed = blocksDestroyed or (turnData and turnData.blocksDestroyed) or 0,
+    isAOE = rewards.aoeFlag or (turnData and turnData.isAOE) or false,
+    blockHitSequence = rewards.blockHitSequence or (turnData and turnData.blockHitSequence) or {},
+    baseDamage = rewards.baseDamage or (turnData and turnData.baseDamage) or rewards.score or 0,
+    heal = rewards.healThisTurn or (turnData and turnData.heal) or 0,
+    projectileId = rewards.projectileId or (turnData and turnData.projectileId) or "strike",
+  }
   
   self:transitionTo(TurnManager.States.PLAYER_TURN_RESOLVING, {
     actions = {
-      { type = "apply_damage", target = "enemy", amount = turnData.score },
+      { type = "apply_damage", target = "enemy", amount = self.turnData.score },
       { type = "check_victory" },
       -- Transition to enemy turn will be triggered after armor popup (if any) or immediately
       { type = "transition_to_enemy_turn" },
@@ -248,6 +276,10 @@ function TurnManager:startEnemyTurn()
       { type = "start_player_turn" },
     }
   })
+  
+  if success and BattleState.get() then
+    BattleState.resetBlocksDestroyedThisTurn()
+  end
   
   return success
 end

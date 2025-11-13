@@ -14,6 +14,7 @@ local PlayerState = require("core.PlayerState")
 local battle_profiles = require("data.battle_profiles")
 local ParticleManager = require("managers.ParticleManager")
 local Trail = require("utils.trail")
+local BattleState = require("core.BattleState")
 
 local BattleScene = {}
 BattleScene.__index = BattleScene
@@ -86,6 +87,7 @@ function BattleScene:calculateEnemyIntents()
       
       -- Initialize fade timer for intent (starts at 0, fades in)
       enemy.intentFadeTime = 0
+      self:_registerEnemyIntent(i, enemy.intent)
       
       -- TODO: Add support for armor-gaining moves and skill/buff moves
       -- Example for future:
@@ -98,6 +100,7 @@ function BattleScene:calculateEnemyIntents()
       -- Dead or disintegrating enemies have no intent
       enemy.intent = nil
       enemy.intentFadeTime = nil
+      self:_registerEnemyIntent(i, nil)
     end
   end
 end
@@ -176,6 +179,127 @@ function BattleScene.new()
   }, BattleScene)
 end
 
+function BattleScene:_ensureBattleState(battleProfile)
+  if not self.battleState then
+    self.battleState = BattleState.get()
+  end
+  if not self.battleState then
+    self.battleState = BattleState.new({ profile = battleProfile })
+  end
+  return self.battleState
+end
+
+function BattleScene:_syncPlayerFromState()
+  local state = self.battleState or BattleState.get()
+  if not state or not state.player then return end
+  self.playerHP = state.player.hp or self.playerHP
+  self.displayPlayerHP = self.displayPlayerHP or self.playerHP
+  self.playerArmor = state.player.armor or self.playerArmor or 0
+  self.battleState = state
+end
+
+function BattleScene:_syncEnemiesFromState()
+  local state = self.battleState or BattleState.get()
+  if not state or not state.enemies then return end
+  for i, enemy in ipairs(self.enemies or {}) do
+    local stateEnemy = state.enemies[i]
+    if not stateEnemy then
+      stateEnemy = {
+        id = enemy.id or ("enemy_" .. i),
+        index = i,
+        name = enemy.name,
+        hp = enemy.hp,
+        maxHP = enemy.maxHP,
+        armor = enemy.armor or 0,
+        damageMin = enemy.damageMin,
+        damageMax = enemy.damageMax,
+        intent = enemy.intent,
+        status = {
+          disintegrating = enemy.disintegrating,
+          pendingDisintegration = enemy.pendingDisintegration,
+          buffs = {},
+          debuffs = {},
+        },
+        timers = {
+          flash = enemy.flash,
+          knockback = enemy.knockbackTime,
+          lunge = enemy.lungeTime,
+          jump = enemy.jumpTime,
+        },
+        visuals = {
+          pulseTime = enemy.pulseTime,
+        },
+      }
+      state.enemies[i] = stateEnemy
+    else
+      enemy.hp = stateEnemy.hp or enemy.hp
+      enemy.maxHP = stateEnemy.maxHP or enemy.maxHP
+      enemy.armor = stateEnemy.armor or enemy.armor
+      enemy.intent = stateEnemy.intent or enemy.intent
+      stateEnemy.damageMin = stateEnemy.damageMin or enemy.damageMin
+      stateEnemy.damageMax = stateEnemy.damageMax or enemy.damageMax
+    end
+    enemy.stateRef = stateEnemy
+  end
+  self.battleState = state
+end
+
+function BattleScene:_applyPlayerDamage(amount)
+  local state = self.battleState or BattleState.get()
+  if not state then return 0, 0 end
+  local armorBefore = state.player.armor or 0
+  local hpBefore = state.player.hp or 0
+  BattleState.applyPlayerDamage(amount)
+  self:_syncPlayerFromState()
+  self.prevPlayerArmor = self.playerArmor or 0
+  local armorAfter = state.player.armor or 0
+  local hpAfter = state.player.hp or 0
+  return armorBefore - armorAfter, hpBefore - hpAfter
+end
+
+function BattleScene:_applyPlayerHeal(amount)
+  if not amount or amount <= 0 then return end
+  BattleState.applyPlayerHeal(amount)
+  self:_syncPlayerFromState()
+end
+
+function BattleScene:_setPlayerArmor(value)
+  BattleState.setPlayerArmor(value)
+  self:_syncPlayerFromState()
+  self.prevPlayerArmor = self.playerArmor or 0
+end
+
+function BattleScene:_addPlayerArmor(amount)
+  if not amount or amount == 0 then return end
+  BattleState.addPlayerArmor(amount)
+  self:_syncPlayerFromState()
+  self.prevPlayerArmor = self.playerArmor or 0
+end
+
+function BattleScene:_applyEnemyDamage(index, amount)
+  if not amount or amount <= 0 then return end
+  BattleState.applyEnemyDamage(index, amount)
+  local state = self.battleState or BattleState.get()
+  if not state or not state.enemies then return end
+  local stateEnemy = state.enemies[index]
+  local enemy = self.enemies and self.enemies[index]
+  if enemy and stateEnemy then
+    enemy.hp = stateEnemy.hp or enemy.hp
+    enemy.armor = stateEnemy.armor or enemy.armor
+    enemy.intent = stateEnemy.intent or enemy.intent
+  end
+end
+
+function BattleScene:_registerEnemyIntent(index, intent)
+  BattleState.registerEnemyIntent(index, intent)
+  local state = self.battleState or BattleState.get()
+  if state and state.enemies and state.enemies[index] then
+    state.enemies[index].intent = intent
+  end
+  local enemy = self.enemies and self.enemies[index]
+  if enemy then enemy.intent = intent end
+end
+
 function BattleScene:load(bounds, battleProfile)
   -- Get battle profile (use provided or default)
   battleProfile = battleProfile or battle_profiles.getProfile(battle_profiles.Types.DEFAULT)
@@ -207,13 +331,17 @@ function BattleScene:load(bounds, battleProfile)
       end
     end
   end
+
+  self:_ensureBattleState(battleProfile)
+  self:_syncEnemiesFromState()
+  self:_syncPlayerFromState()
   
   -- Initialize BattleScene's HP from PlayerState (preserve HP between battles)
   local playerState = PlayerState.getInstance()
-  self.playerHP = playerState:getHealth()
   self.displayPlayerHP = self.playerHP
   -- Ensure max health is set correctly
   playerState:setMaxHealth(config.battle.playerMaxHP)
+  playerState:setHealth(self.playerHP)
   
   -- Load player sprite
   local playerPath = (config.assets and config.assets.images and config.assets.images.player) or nil
@@ -490,7 +618,8 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
   
   -- Calculate cumulative damage from block hits (add to base)
   for i, hit in ipairs(blockHitSequence) do
-    cumulative = cumulative + hit.damage
+    local hitAmount = (type(hit) == "table" and (hit.damage or hit.amount)) or 0
+    cumulative = cumulative + hitAmount
     -- Show each increment (e.g., 4, 5, 6, 7, 8) - doubled duration
     table.insert(sequence, { text = tostring(cumulative), duration = 0.1 })
   end
@@ -592,9 +721,8 @@ end
 
 function BattleScene:applyHealing(amount)
   if not amount or amount <= 0 then return end
-  -- Heal player (clamp to max HP)
-  local maxHP = config.battle.playerMaxHP
-  self.playerHP = math.min(maxHP, self.playerHP + amount)
+  -- Heal player via BattleState
+  self:_applyPlayerHeal(amount)
   
   -- Show healing popup
   table.insert(self.popups, { x = 0, y = 0, kind = "heal", value = amount, t = config.battle.popupLifetime, who = "player" })
@@ -603,6 +731,9 @@ end
 function BattleScene:update(dt, bounds)
   -- Cache latest bounds for positioning helper usage from other methods
   self._lastBounds = bounds or self._lastBounds
+  self.battleState = self.battleState or BattleState.get()
+  self:_syncPlayerFromState()
+  self:_syncEnemiesFromState()
 
   -- Update enemy flash timers
   for _, enemy in ipairs(self.enemies or {}) do
@@ -858,7 +989,7 @@ function BattleScene:update(dt, bounds)
             if p.who == "enemy" and p.enemyIndex then
               local enemy = self.enemies and self.enemies[p.enemyIndex]
               if enemy and enemy.pendingDamage and enemy.pendingDamage > 0 then
-                enemy.hp = math.max(0, enemy.hp - enemy.pendingDamage)
+                self:_applyEnemyDamage(p.enemyIndex, enemy.pendingDamage)
                 enemy.pendingDamage = 0
               end
             end
@@ -1131,10 +1262,7 @@ function BattleScene:update(dt, bounds)
               dmg = love.math.random(enemy.damageMin, enemy.damageMax)
             end
             
-            local blocked = math.min(self.playerArmor or 0, dmg)
-            local net = dmg - blocked
-            self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
-            self.playerHP = math.max(0, self.playerHP - net)
+            local blocked, net = self:_applyPlayerDamage(dmg)
             
             if net <= 0 then
               self.armorIconFlashTimer = 0.5
@@ -1218,7 +1346,7 @@ function BattleScene:update(dt, bounds)
               if behavior.delayHPReduction then
                 enemy.pendingDamage = (enemy.pendingDamage or 0) + dmg
               else
-                enemy.hp = math.max(0, enemy.hp - dmg)
+                self:_applyEnemyDamage(i, dmg)
               end
               
               -- Trigger enemy hit visual effects (flash, knockback, animated popup)
@@ -1334,7 +1462,7 @@ function BattleScene:update(dt, bounds)
             if behavior.delayHPReduction then
               selectedEnemy.pendingDamage = (selectedEnemy.pendingDamage or 0) + dmg
             else
-              selectedEnemy.hp = math.max(0, selectedEnemy.hp - dmg)
+              self:_applyEnemyDamage(i, dmg)
             end
         
             -- Trigger enemy hit visual effects (flash, knockback, animated popup)
@@ -1578,10 +1706,7 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
             dmg = love.math.random(enemy.damageMin, enemy.damageMax)
           end
           
-          local blocked = math.min(self.playerArmor or 0, dmg)
-          local net = dmg - blocked
-          self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
-          self.playerHP = math.max(0, self.playerHP - net)
+          local blocked, net = self:_applyPlayerDamage(dmg)
           
           -- If damage is fully blocked, show armor icon popup and flash icon
           if net <= 0 then
@@ -1909,10 +2034,7 @@ function BattleScene:_updateShockwaveSequence(dt)
     -- Deal 6 damage to player
     if seq.timer >= damageDelay then
       local dmg = 6
-      local blocked = math.min(self.playerArmor or 0, dmg)
-      local net = dmg - blocked
-      self.playerArmor = math.max(0, (self.playerArmor or 0) - blocked)
-      self.playerHP = math.max(0, self.playerHP - net)
+      local blocked, net = self:_applyPlayerDamage(dmg)
       
       -- Show damage popup
       if net <= 0 then
@@ -2035,7 +2157,7 @@ function BattleScene:setTurnManager(turnManager)
         -- Queue enemy turn start after player attack completes
         if (self.pendingArmor or 0) > 0 and not self.armorPopupShown then
           -- Show armor popup first, then wait for player attack + delay
-          self.playerArmor = self.pendingArmor
+          self:_addPlayerArmor(self.pendingArmor)
           table.insert(self.popups, { x = 0, y = 0, kind = "armor", value = self.pendingArmor, t = config.battle.popupLifetime, who = "player" })
           self.armorPopupShown = true
           -- Wait for player attack + armor popup duration + post-armor delay
@@ -2048,7 +2170,7 @@ function BattleScene:setTurnManager(turnManager)
       else
         -- Player attack already complete, proceed normally
         if (self.pendingArmor or 0) > 0 and not self.armorPopupShown then
-          self.playerArmor = self.pendingArmor
+          self:_addPlayerArmor(self.pendingArmor)
           table.insert(self.popups, { x = 0, y = 0, kind = "armor", value = self.pendingArmor, t = config.battle.popupLifetime, who = "player" })
           self.armorPopupShown = true
           -- Queue enemy turn start after armor popup duration + delay
@@ -2065,7 +2187,7 @@ function BattleScene:setTurnManager(turnManager)
     turnManager:on("state_enter", function(newState, previousState)
       if newState == TurnManager.States.ENEMY_TURN_RESOLVING then
         -- After enemy turn resolves, reset armor and spawn blocks
-        self.playerArmor = 0
+        self:_setPlayerArmor(0)
         self.pendingArmor = 0
         self.armorPopupShown = false
       elseif newState == TurnManager.States.PLAYER_TURN_START then
@@ -2507,7 +2629,7 @@ function BattleScene:_cheatDefeatAllEnemies()
 
   for index, enemy in ipairs(self.enemies or {}) do
     if enemy and (enemy.hp or 0) > 0 then
-      enemy.hp = 0
+      self:_applyEnemyDamage(index, enemy.hp or 0)
       enemy.displayHP = 0
       enemy.flash = 0
       enemy.knockbackTime = 0

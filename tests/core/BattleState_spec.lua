@@ -1,0 +1,47 @@
+local BattleState = require("core.BattleState")
+
+describe("BattleState core", function()
+  before_each(function()
+    BattleState.new({ profileId = nil, rngSeed = 12345, battleId = "test-battle" })
+  end)
+
+  it("initializes player stats from PlayerState defaults", function()
+    local state = BattleState.get()
+    assert.is_not_nil(state)
+    assert.is_table(state.player)
+    assert.is_number(state.player.hp)
+    assert.is_number(state.player.maxHP)
+    assert.is_number(state.player.armor)
+  end)
+
+  it("tracks balls in flight", function()
+    BattleState.registerBall({ id = "b1" })
+    local state = BattleState.get()
+    assert.equals(1, state.flags.ballsInFlight)
+    assert.equals(1, #state.projectiles.balls)
+
+    BattleState.removeBall(function(ball) return ball.id == "b1" end)
+    assert.equals(0, state.flags.ballsInFlight)
+    assert.equals(0, #state.projectiles.balls)
+  end)
+
+  it("applies player damage with armor absorption", function()
+    local state = BattleState.get()
+    BattleState.setPlayerArmor(5)
+    BattleState.applyPlayerDamage(3)
+    assert.equals(2, state.player.armor)
+    local hpAfter = state.player.hp
+    BattleState.applyPlayerDamage(4)
+    assert.equals(hpAfter - 2, state.player.hp)
+  end)
+
+  it("tracks turn rewards", function()
+    BattleState.resetTurnRewards()
+    BattleState.trackDamage("crit", 3)
+    local state = BattleState.get()
+    assert.equals(3, state.rewards.score)
+    assert.equals(1, state.rewards.critCount)
+    assert.is_true(#state.rewards.blockHitSequence > 0)
+  end)
+end)
+
