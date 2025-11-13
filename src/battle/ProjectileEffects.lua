@@ -107,19 +107,17 @@ function ProjectileEffects:updateLightningSequence(ball, dt)
       self.scene.particles:emitLightningSpark(target.x, target.y)
     end
     
-    -- Hit the block
+    -- Hit the block (with small delay for streak animation)
     if target.block and target.block.alive and not self.scene._blocksHitThisFrame[target.block] then
       self.scene._blocksHitThisFrame[target.block] = true
-      target.block:hit()
+      -- Small delay to match lightning streak animation timing
+      local lcfg = (config.ball and config.ball.lightning) or {}
+      local streakAnimDuration = lcfg.streakAnimDuration or 0.18
+      target.block._lightningHitDelay = streakAnimDuration * 0.5 -- Half the animation duration for subtle delay
+      target.block._lightningHitPending = true
+      target.block._lightningHitRewardPending = true
       if self.scene.particles then
         self.scene.particles:emitSpark(target.x, target.y)
-      end
-      
-      if self.scene and self.scene.awardBlockReward then
-        self.scene:awardBlockReward(target.block)
-      end
-      if self.scene and self.scene.blocks and self.scene.blocks.flashBlock then
-        self.scene.blocks:flashBlock(target.block)
       end
     end
     

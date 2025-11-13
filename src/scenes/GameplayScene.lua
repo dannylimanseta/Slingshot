@@ -199,6 +199,29 @@ function GameplayScene:update(dt, bounds)
     self.blocks:update(dt)
   end
   
+  -- Process delayed lightning hits (small delay to match streak animation)
+  if self.blocks and self.blocks.blocks then
+    for _, block in ipairs(self.blocks.blocks) do
+      if block and block.alive and block._lightningHitPending then
+        block._lightningHitDelay = (block._lightningHitDelay or 0) - dt
+        if block._lightningHitDelay <= 0 then
+          block._lightningHitPending = false
+          block._lightningHitDelay = nil
+          -- Now actually hit the block
+          if not block.hitThisFrame and not self._blocksHitThisFrame[block] then
+            self._blocksHitThisFrame[block] = true
+            block:hit()
+            -- Award rewards for the delayed hit
+            if block._lightningHitRewardPending then
+              self:awardBlockReward(block)
+              block._lightningHitRewardPending = nil
+            end
+          end
+        end
+      end
+    end
+  end
+  
   -- Update aim guide alpha
   local width = (bounds and bounds.w) or love.graphics.getWidth()
   local height = (bounds and bounds.h) or love.graphics.getHeight()
@@ -499,7 +522,19 @@ function GameplayScene:handleBallBlockCollision(ball, block, contact)
   
   -- Mark block as hit
   self._blocksHitThisFrame[block] = true
-  block:hit()
+  
+  -- For lightning, add a small delay so block stays visible until streak reaches it
+  local lightningFirstHit = false
+  if ball.lightning and ball.alive and not ball._lightningHidden then
+    lightningFirstHit = true
+    -- Small delay to match lightning streak animation timing
+    local lcfg = config.ball.lightning or {}
+    local streakAnimDuration = lcfg.streakAnimDuration or 0.18
+    block._lightningHitDelay = streakAnimDuration * 0.5 -- Half the animation duration for subtle delay
+    block._lightningHitPending = true
+  else
+    block:hit()
+  end
   
   -- Combo tracking via BattleState
   local currentTime = love.timer.getTime()
@@ -566,6 +601,7 @@ function GameplayScene:handleBallBlockCollision(ball, block, contact)
     if ball.fixture then
       ball.fixture:setSensor(true)
     end
+    -- Don't award rewards immediately for lightning first hit - will be awarded when delayed hit processes
   elseif ball.pierce then
     -- Pierce: pass through
     ball:onPierce()
@@ -574,8 +610,10 @@ function GameplayScene:handleBallBlockCollision(ball, block, contact)
     ball:onBounce()
   end
   
-  -- Award rewards
-  self:awardBlockReward(block)
+  -- Award rewards (skip for lightning hits - handled in delayed hit processing)
+  if not lightningFirstHit then
+    self:awardBlockReward(block)
+  end
   
   if destroyBallAfter and ball and ball.alive then
     ball:destroy()
@@ -720,7 +758,7 @@ function GameplayScene:triggerBlockShakeAndDrop()
   
   if #aliveBlocks == 0 then return end
   
-  local count = love.math.random(4, 6)
+  local count = 3
   count = math.min(count, #aliveBlocks)
   
   local indices = {}
