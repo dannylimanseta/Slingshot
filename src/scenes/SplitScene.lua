@@ -344,9 +344,14 @@ function SplitScene:endPlayerTurnWithTurnManager()
   local state = self.turnManager:getState()
   if state ~= TurnManager.States.PLAYER_TURN_ACTIVE then return false end
   
-  -- Collect turn data
-  local blockHitSequence = (self.left and self.left.blockHitSequence) or {} -- Array of {damage, kind} for animated damage display
-  local orbBaseDamage = (self.left and self.left.baseDamageThisTurn) or 0 -- Base damage from orb/projectile
+  -- Read data directly from BattleState to avoid timing/sync issues
+  local BattleState = require("core.BattleState")
+  local battleState = BattleState.get()
+  local rewards = battleState and battleState.rewards or {}
+  
+  -- Collect turn data - prioritize BattleState as source of truth
+  local blockHitSequence = rewards.blockHitSequence or (self.left and self.left.blockHitSequence) or {} -- Array of {damage, kind} for animated damage display
+  local orbBaseDamage = rewards.baseDamage or (self.left and self.left.baseDamageThisTurn) or 0 -- Base damage from orb/projectile
   
   -- Calculate base damage by summing only non-crit, non-multiplier blocks
   -- Crit and multiplier blocks should NOT contribute to base damage - they only trigger multipliers
@@ -361,8 +366,8 @@ function SplitScene:endPlayerTurnWithTurnManager()
   end
   
   local mult = (config.score and config.score.critMultiplier) or 2
-  local critCount = (self.left and self.left.critThisTurn) or 0
-  local multiplierCount = (self.left and self.left.multiplierThisTurn) or 0
+  local critCount = rewards.critCount or (self.left and self.left.critThisTurn) or 0
+  local multiplierCount = rewards.multiplierCount or (self.left and self.left.multiplierThisTurn) or 0
   
   -- Apply crit multiplier (2x per crit)
   local turnScore = baseDamage
