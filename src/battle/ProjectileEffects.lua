@@ -118,6 +118,9 @@ function ProjectileEffects:updateLightningSequence(ball, dt)
       if self.scene and self.scene.awardBlockReward then
         self.scene:awardBlockReward(target.block)
       end
+      if self.scene and self.scene.blocks and self.scene.blocks.flashBlock then
+        self.scene.blocks:flashBlock(target.block)
+      end
     end
     
     seq.currentIndex = seq.currentIndex + 1
