@@ -336,7 +336,8 @@ function ImpactSystem.updateBlackHoleAttacks(scene, dt)
     
     -- Phase 1 (0-0.4): Open with ease-in-out
     -- Phase 2 (0.4-0.5): Hold open
-    -- Phase 3 (0.5-1.0): Shatter into triangles (longer phase, slower fade)
+    -- Phase 3 (0.5-0.65): Expand quickly before shattering
+    -- Phase 4 (0.65-1.0): Shatter into triangles
     if progress < 0.4 then
       -- Opening phase: ease-in-out (sine wave)
       local t = progress / 0.4
@@ -347,9 +348,16 @@ function ImpactSystem.updateBlackHoleAttacks(scene, dt)
       -- Hold phase
       attack.currentRadius = attack.maxRadius
       attack.phase = "hold"
+    elseif progress < 0.65 then
+      -- Expansion phase: quickly expand before shattering
+      local expandT = (progress - 0.5) / 0.15
+      attack.currentRadius = attack.maxRadius * (1.0 + expandT * 0.5) -- Expand 50% larger
+      attack.phase = "expanding"
     elseif progress < 1.0 then
-      -- Shatter phase (longer for slower fade)
+      -- Shatter phase
       attack.phase = "shatter"
+      -- Keep expanded radius during shatter
+      attack.currentRadius = attack.maxRadius * 1.5
       -- Generate shards on first frame of shatter
       if #attack.shards == 0 then
         -- Get target enemies (for AOE, this will be 2-3 enemies; for single target, just one)
@@ -460,11 +468,18 @@ function ImpactSystem.updateBlackHoleAttacks(scene, dt)
           local burstDist = 120 + love.math.random() * 100 -- Larger burst distance 120-220px for stronger curve
           local burstEndX = attack.x + math.cos(scatteredAngle) * burstDist
           local burstEndY = attack.y + math.sin(scatteredAngle) * burstDist + 200 * 0.3 -- More downward drift for arc
+          
+          -- Spawn shards from random positions within the black hole radius
+          local spawnAngle = love.math.random() * math.pi * 2
+          local spawnDist = love.math.random() * attack.currentRadius * 0.9 -- Spawn within 90% of radius
+          local shardStartX = attack.x + math.cos(spawnAngle) * spawnDist
+          local shardStartY = attack.y + math.sin(spawnAngle) * spawnDist
+          
           table.insert(attack.shards, {
-            x = attack.x,
-            y = attack.y,
-            startX = attack.x, -- Store start position for bezier
-            startY = attack.y,
+            x = shardStartX,
+            y = shardStartY,
+            startX = shardStartX, -- Store start position for bezier
+            startY = shardStartY,
             burstEndX = burstEndX, -- Burst endpoint (control point)
             burstEndY = burstEndY,
             vx = math.cos(scatteredAngle) * speed,
@@ -475,33 +490,51 @@ function ImpactSystem.updateBlackHoleAttacks(scene, dt)
             alpha = 1.0,
             targetX = targetX, -- Final target (enemy position)
             targetY = targetY,
+            enemyIndex = targetPos.enemyIndex, -- Store enemy index for flash triggering
             progress = 0, -- Overall progress through animation (0 to 1)
             homingSpeedMul = homingSpeedVariance,
+            flashTriggered = false, -- Track if flash was triggered
             -- Irregular shard shape
             vertices = shardVertices
           })
         end
       end
-      -- Update shards: smooth bezier curve from start -> burst endpoint -> target
-      local shatterProgress = (progress - 0.5) / 0.5 -- Shatter phase (0.5-1.0)
+      -- Update shards: two-phase animation (explosion then homing)
+      local shatterProgress = (progress - 0.65) / 0.35 -- Shatter phase (0.65-1.0)
       for _, shard in ipairs(attack.shards) do
         -- Update progress based on shard's individual speed
-        local progressSpeed = 1.2 * (shard.homingSpeedMul or 1) -- Speed affects how fast shard completes its path
+        local progressSpeed = 1.2 * (shard.homingSpeedMul or 1)
         shard.progress = math.min(1, shard.progress + dt * progressSpeed)
         
-        -- Apply ease-in-cubic for acceleration (shards speed up as they approach enemies)
+        -- Two-phase animation:
+        -- Phase 1 (0-0.3): Explode outward from black hole
+        -- Phase 2 (0.3-1.0): Curve toward target enemy
         local linearProgress = shard.progress
-        local t = linearProgress * linearProgress * linearProgress -- Cubic ease-in for strong acceleration
         
-        -- Quadratic bezier curve: P(t) = (1-t)²·P0 + 2(1-t)t·P1 + t²·P2
-        -- P0 = start (black hole), P1 = burst endpoint (control point), P2 = target (enemy)
-        local oneMinusT = 1 - t
-        local oneMinusT2 = oneMinusT * oneMinusT
-        local t2 = t * t
-        local bezierTerm = 2 * oneMinusT * t
-        
-        shard.x = oneMinusT2 * shard.startX + bezierTerm * shard.burstEndX + t2 * shard.targetX
-        shard.y = oneMinusT2 * shard.startY + bezierTerm * shard.burstEndY + t2 * shard.targetY
+        if linearProgress < 0.3 then
+          -- Explosion phase: fly outward from spawn position
+          local explosionT = linearProgress / 0.3
+          -- Ease-out for slowing down at the end of explosion
+          local easeOut = 1 - (1 - explosionT) * (1 - explosionT)
+          
+          -- Calculate direction away from black hole center
+          local dx = shard.burstEndX - shard.startX
+          local dy = shard.burstEndY - shard.startY
+          
+          shard.x = shard.startX + dx * easeOut
+          shard.y = shard.startY + dy * easeOut
+        else
+          -- Homing phase: curve toward target
+          local homingT = (linearProgress - 0.3) / 0.7
+          -- Ease-in-cubic for acceleration toward target
+          local t = homingT * homingT * homingT
+          
+          -- Bezier from burst endpoint to target
+          local oneMinusT = 1 - t
+          
+          shard.x = oneMinusT * shard.burstEndX + t * shard.targetX
+          shard.y = oneMinusT * shard.burstEndY + t * shard.targetY
+        end
         
         -- Calculate direction toward target to orient pointed edge toward enemy
         local dx = shard.targetX - shard.x
@@ -512,14 +545,56 @@ function ImpactSystem.updateBlackHoleAttacks(scene, dt)
           -- No spinning, just face the target directly
           shard.rotation = math.atan2(dy, dx)
         end
+        
+        -- Trigger flash and splatter when shard gets close to enemy (70% progress)
+        if not shard.flashTriggered and linearProgress >= 0.7 then
+          shard.flashTriggered = true
+          -- Find the enemy index for this shard's target
+          local enemyIndex = shard.enemyIndex
+          if enemyIndex then
+            local blinkDuration = 0.08
+            table.insert(scene.enemyFlashEvents, { delay = 0, duration = blinkDuration, enemyIndex = enemyIndex })
+            -- No knockback for black hole - shards pull enemies in, don't push them
+            
+            -- Create splatter and particle effects when shard hits (only once per enemy)
+            attack.splatterCreated = attack.splatterCreated or {}
+            if not attack.splatterCreated[enemyIndex] then
+              attack.splatterCreated[enemyIndex] = true
+              local enemy = scene.enemies and scene.enemies[enemyIndex]
+              if enemy and shard.targetX and shard.targetY then
+                -- Get enemy sprite center for splatter
+                local bounds = scene._lastBounds
+                local h = (bounds and bounds.h) or love.graphics.getHeight()
+                local r = 24
+                local yOffset = (config.battle and config.battle.positionOffsetY) or 0
+                local baselineY = h * 0.55 + r + yOffset
+                local enemyScaleCfg = enemy.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
+                local enemyScale = 1
+                if enemy.img then
+                  local ih = enemy.img:getHeight()
+                  enemyScale = ((2 * r) / math.max(1, ih)) * enemyScaleCfg * (enemy.scaleMul or 1)
+                end
+                local enemySpriteHeight = enemy.img and (enemy.img:getHeight() * enemyScale) or (r * 2)
+                local spriteCenterY = baselineY - enemySpriteHeight * 0.5
+                createSplatter(scene, shard.targetX, spriteCenterY)
+                
+                -- Emit hit burst particles at enemy position
+                if scene.particles then
+                  scene.particles:emitHitBurst(shard.targetX, spriteCenterY, nil, false)
+                end
+              end
+            end
+          end
+        end
+        
         -- If very close to target, keep last rotation (no change needed)
-        -- Fade only in the last 30% of the animation
-        local fadeStart = 0.7 -- Start fading at 70% of duration
-        if shatterProgress < fadeStart then
+        -- Stay fully visible until last 10%, then fade to 0.0
+        local fadeStart = 0.9 -- Start fading at 90% of shard animation
+        if linearProgress < fadeStart then
           shard.alpha = 1.0 -- Fully visible
         else
-          -- Fade in last 30%
-          local fadeProgress = (shatterProgress - fadeStart) / (1.0 - fadeStart)
+          -- Fade to 0.0 in last 10%
+          local fadeProgress = (linearProgress - fadeStart) / (1.0 - fadeStart)
           shard.alpha = 1.0 - fadeProgress
         end
       end
@@ -781,23 +856,31 @@ function ImpactSystem.drawLightningStrikes(scene)
           love.graphics.circle("fill", endPoint.x, endPoint.y, 5)
         end
         
-        -- Big cyan-white glow at the origin (start of lightning)
+        -- Big cyan-white glow at the origin (start of lightning) - MASSIVE and dramatic
         local startPoint = points[1]
-        -- Large outer glow (cyan)
-        love.graphics.setColor(0.3, 0.7, 1.0, 0.25 * alpha)
-        love.graphics.circle("fill", startPoint.x, startPoint.y, 45)
-        love.graphics.setColor(0.4, 0.8, 1.0, 0.35 * alpha)
+        -- Huge outer glow (soft cyan)
+        love.graphics.setColor(0.3, 0.7, 1.0, 0.2 * alpha)
+        love.graphics.circle("fill", startPoint.x, startPoint.y, 70)
+        love.graphics.setColor(0.3, 0.7, 1.0, 0.3 * alpha)
+        love.graphics.circle("fill", startPoint.x, startPoint.y, 55)
+        -- Large cyan glow
+        love.graphics.setColor(0.4, 0.8, 1.0, 0.4 * alpha)
+        love.graphics.circle("fill", startPoint.x, startPoint.y, 42)
+        love.graphics.setColor(0.5, 0.85, 1.0, 0.5 * alpha)
         love.graphics.circle("fill", startPoint.x, startPoint.y, 32)
-        -- Medium bright glow (white-cyan)
-        love.graphics.setColor(0.7, 0.9, 1.0, 0.5 * alpha)
-        love.graphics.circle("fill", startPoint.x, startPoint.y, 22)
-        love.graphics.setColor(0.9, 0.95, 1.0, 0.7 * alpha)
-        love.graphics.circle("fill", startPoint.x, startPoint.y, 14)
-        -- Bright white core
-        love.graphics.setColor(1.0, 1.0, 1.0, 0.85 * alpha)
-        love.graphics.circle("fill", startPoint.x, startPoint.y, 8)
+        -- Medium bright glow (white-cyan blend)
+        love.graphics.setColor(0.7, 0.9, 1.0, 0.6 * alpha)
+        love.graphics.circle("fill", startPoint.x, startPoint.y, 24)
+        love.graphics.setColor(0.85, 0.95, 1.0, 0.75 * alpha)
+        love.graphics.circle("fill", startPoint.x, startPoint.y, 16)
+        -- Bright white-cyan core
+        love.graphics.setColor(0.95, 0.98, 1.0, 0.85 * alpha)
+        love.graphics.circle("fill", startPoint.x, startPoint.y, 10)
+        love.graphics.setColor(1.0, 1.0, 1.0, 0.95 * alpha)
+        love.graphics.circle("fill", startPoint.x, startPoint.y, 6)
+        -- Pure white center
         love.graphics.setColor(1.0, 1.0, 1.0, alpha)
-        love.graphics.circle("fill", startPoint.x, startPoint.y, 4)
+        love.graphics.circle("fill", startPoint.x, startPoint.y, 3)
       end
     end
   end
@@ -811,7 +894,7 @@ function ImpactSystem.drawBlackHoleAttacks(scene)
   if not scene or not scene.blackHoleAttacks then return end
   
   for _, attack in ipairs(scene.blackHoleAttacks) do
-    if attack.phase == "opening" or attack.phase == "hold" then
+    if attack.phase == "opening" or attack.phase == "hold" or attack.phase == "expanding" then
       -- Draw black hole
       love.graphics.push("all")
       love.graphics.setBlendMode("alpha")
@@ -1085,33 +1168,7 @@ function ImpactSystem.createBlackHoleAttack(scene, isAOE)
     -- Position giant black hole higher above center
     local holeY = avgY - 400 -- Even higher for giant hole
     
-    -- Create splatters at each target enemy center
-    for _, enemyIndex in ipairs(targetEnemyIndices) do
-      local enemy = scene.enemies and scene.enemies[enemyIndex]
-      if enemy then
-        -- Find hit point for this enemy
-        local hitPoint = hitPoints[1] -- Default fallback
-        for _, hp in ipairs(hitPoints) do
-          if hp.enemyIndex == enemyIndex then
-            hitPoint = hp
-            break
-          end
-        end
-        local spriteCenterX = hitPoint.x
-        local r = 24
-        local yOffset = (config.battle and config.battle.positionOffsetY) or 0
-        local baselineY = h * 0.55 + r + yOffset
-        local enemyScaleCfg = enemy.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
-        local enemyScale = 1
-        if enemy.img then
-          local ih = enemy.img:getHeight()
-          enemyScale = ((2 * r) / math.max(1, ih)) * enemyScaleCfg * (enemy.scaleMul or 1)
-        end
-        local enemySpriteHeight = enemy.img and (enemy.img:getHeight() * enemyScale) or (r * 2)
-        local spriteCenterY = baselineY - enemySpriteHeight * 0.5
-        createSplatter(scene, spriteCenterX, spriteCenterY)
-      end
-    end
+    -- Don't create splatters immediately - will be created when shards hit
     
     -- Create single giant black hole
     table.insert(scene.blackHoleAttacks, {
@@ -1126,16 +1183,8 @@ function ImpactSystem.createBlackHoleAttack(scene, isAOE)
       shards = {} -- Will be populated during shatter phase
     })
     
-    -- Schedule flashes for all target enemies
-    local blinkDuration = 0.08
-    for _, enemyIndex in ipairs(targetEnemyIndices) do
-      table.insert(scene.enemyFlashEvents, { delay = 1.25, duration = blinkDuration, enemyIndex = enemyIndex })
-      table.insert(scene.enemyKnockbackEvents, { delay = 1.25, startTime = nil, enemyIndex = enemyIndex })
-      table.insert(scene.enemyFlashEvents, { delay = 1.4, duration = blinkDuration, enemyIndex = enemyIndex })
-      table.insert(scene.enemyKnockbackEvents, { delay = 1.4, startTime = nil, enemyIndex = enemyIndex })
-      table.insert(scene.enemyFlashEvents, { delay = 1.55, duration = blinkDuration, enemyIndex = enemyIndex })
-      table.insert(scene.enemyKnockbackEvents, { delay = 1.55, startTime = nil, enemyIndex = enemyIndex })
-    end
+    -- Don't schedule pre-timed flashes - let shards trigger flashes when they hit
+    -- (Flash will be triggered by shard collision detection or timing in update)
   else
     -- Single target: Create one black hole per enemy hit (original behavior)
     local hitPoints = {}
@@ -1152,23 +1201,7 @@ function ImpactSystem.createBlackHoleAttack(scene, isAOE)
       -- Position hole even higher above enemy
       local holeY = hitY - 350
       
-      -- Create splatter at enemy center
-      local enemy = scene.enemies and scene.enemies[enemyIndex]
-      if enemy then
-        local spriteCenterX = hitX
-        local r = 24
-        local yOffset = (config.battle and config.battle.positionOffsetY) or 0
-        local baselineY = h * 0.55 + r + yOffset
-        local enemyScaleCfg = enemy.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
-        local enemyScale = 1
-        if enemy.img then
-          local ih = enemy.img:getHeight()
-          enemyScale = ((2 * r) / math.max(1, ih)) * enemyScaleCfg * (enemy.scaleMul or 1)
-        end
-        local enemySpriteHeight = enemy.img and (enemy.img:getHeight() * enemyScale) or (r * 2)
-        local spriteCenterY = baselineY - enemySpriteHeight * 0.5
-        createSplatter(scene, spriteCenterX, spriteCenterY)
-      end
+      -- Don't create splatter immediately - will be created when shards hit
       
       table.insert(scene.blackHoleAttacks, {
         x = hitX,
@@ -1182,17 +1215,7 @@ function ImpactSystem.createBlackHoleAttack(scene, isAOE)
         shards = {} -- Will be populated during shatter phase
       })
       
-      -- Schedule multiple enemy flashes as shards hit (3 quick, separated blinks)
-      local blinkDuration = 0.08 -- Very short blink duration
-      -- First blink: early shards arrive (later timing)
-      table.insert(scene.enemyFlashEvents, { delay = 1.25, duration = blinkDuration, enemyIndex = enemyIndex })
-      table.insert(scene.enemyKnockbackEvents, { delay = 1.25, startTime = nil, enemyIndex = enemyIndex })
-      -- Second blink: main group arrives
-      table.insert(scene.enemyFlashEvents, { delay = 1.4, duration = blinkDuration, enemyIndex = enemyIndex })
-      table.insert(scene.enemyKnockbackEvents, { delay = 1.4, startTime = nil, enemyIndex = enemyIndex })
-      -- Third blink: late shards arrive
-      table.insert(scene.enemyFlashEvents, { delay = 1.55, duration = blinkDuration, enemyIndex = enemyIndex })
-      table.insert(scene.enemyKnockbackEvents, { delay = 1.55, startTime = nil, enemyIndex = enemyIndex })
+      -- Don't schedule pre-timed flashes - let shards trigger flashes when they hit
     end
   end
 end

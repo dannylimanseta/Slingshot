@@ -560,9 +560,10 @@ function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE, blockHitSequence, 
     }
     self._pendingImpactParams = nil -- Clear after merging
     -- Trigger player attack sequence after delay
-    -- Black hole attacks start immediately (no delay)
+    -- Black hole and lightning attacks start much faster
     local isBlackHole = self._pendingPlayerAttackDamage.isBlackHole or false
-    self._playerAttackDelayTimer = isBlackHole and 0.05 or ((config.battle and config.battle.playerAttackDelay) or 0.5)
+    local isLightning = self._pendingPlayerAttackDamage.isLightning or false
+    self._playerAttackDelayTimer = isBlackHole and 0.05 or (isLightning and 0.05 or ((config.battle and config.battle.playerAttackDelay) or 0.5))
     
     -- Queue incoming armor for TurnManager to handle (this happens immediately, visual effects are delayed)
     self.pendingArmor = armor or 0
@@ -785,6 +786,19 @@ function BattleScene:update(dt, bounds)
   -- Popups
   local alive = {}
   for _, p in ipairs(self.popups) do
+    -- Handle start delay (for black hole attacks)
+    if p.startDelay and p.startDelay > 0 then
+      p.startDelay = p.startDelay - dt
+      if p.startDelay > 0 then
+        -- Still in delay, keep popup but don't update it yet
+        table.insert(alive, p)
+        goto continue
+      else
+        -- Delay finished, popup can now start showing
+        p.startDelay = nil
+      end
+    end
+    
     -- Update animated damage sequence first
     local sequenceCompleted = false
     if p.kind == "animated_damage" and p.sequence and #p.sequence > 0 then
@@ -937,6 +951,8 @@ function BattleScene:update(dt, bounds)
     if p.t > 0 then 
       table.insert(alive, p) 
     end
+    
+    ::continue::
   end
   self.popups = alive
   
@@ -1168,8 +1184,11 @@ function BattleScene:update(dt, bounds)
               enemy.hp = math.max(0, enemy.hp - dmg)
               
               -- Trigger enemy hit visual effects (flash, knockback, animated popup)
-              enemy.flash = config.battle.hitFlashDuration
-              enemy.knockbackTime = 1e-6
+              -- Skip initial flash for black hole (shards will trigger it)
+              if not isBlackHole then
+                enemy.flash = config.battle.hitFlashDuration
+                enemy.knockbackTime = 1e-6
+              end
               -- Calculate total animation duration + linger + disintegration time
               -- IMPORTANT: Sum ALL step durations to ensure we wait for the complete sequence
               local totalSequenceDuration = 0
@@ -1186,6 +1205,9 @@ function BattleScene:update(dt, bounds)
               local safetyBuffer = 0.5 -- Extra time to ensure sequence never times out prematurely
               local totalPopupLifetime = totalSequenceDuration + lingerTime + disintegrationDisplayTime + safetyBuffer
               
+              -- For black hole attacks, delay popup until shards appear (0.65 * 1.6s = ~1.04s)
+              local popupStartDelay = isBlackHole and 1.04 or 0
+              
               table.insert(self.popups, { 
                 x = 0, 
                 y = 0, 
@@ -1197,10 +1219,11 @@ function BattleScene:update(dt, bounds)
                 t = totalPopupLifetime, -- Long enough to cover animation + disintegration
                 originalLifetime = totalPopupLifetime, -- Store original lifetime for progress calculation
                 who = "enemy", 
-                enemyIndex = i 
+                enemyIndex = i,
+                startDelay = popupStartDelay -- Delay before popup becomes visible
               })
-              -- Emit hit burst particles from enemy center
-              if self.particles then
+              -- Emit hit burst particles from enemy center (skip for black hole - shards will trigger it)
+              if self.particles and not isBlackHole then
                 local ex, ey = self:getEnemyCenterPivot(i, self._lastBounds)
                 if ex and ey then
                   self.particles:emitHitBurst(ex, ey, nil, impactIsCrit) -- Uses default colors, crit mode if applicable
@@ -1270,8 +1293,11 @@ function BattleScene:update(dt, bounds)
             selectedEnemy.hp = math.max(0, selectedEnemy.hp - dmg)
         
             -- Trigger enemy hit visual effects (flash, knockback, animated popup)
-            selectedEnemy.flash = config.battle.hitFlashDuration
-            selectedEnemy.knockbackTime = 1e-6
+            -- Skip initial flash for black hole (shards will trigger it)
+            if not isBlackHole then
+              selectedEnemy.flash = config.battle.hitFlashDuration
+              selectedEnemy.knockbackTime = 1e-6
+            end
             -- Calculate total animation duration + linger + disintegration time
             -- IMPORTANT: Sum ALL step durations to ensure we wait for the complete sequence
             local totalSequenceDuration = 0
@@ -1284,6 +1310,9 @@ function BattleScene:update(dt, bounds)
             local safetyBuffer = 0.5 -- Extra time to ensure sequence never times out prematurely
             local totalPopupLifetime = totalSequenceDuration + lingerTime + disintegrationDuration + safetyBuffer
             
+            -- For black hole attacks, delay popup until shards appear (0.65 * 1.6s = ~1.04s)
+            local popupStartDelay = isBlackHole and 1.04 or 0
+            
             table.insert(self.popups, { 
               x = 0, 
               y = 0, 
@@ -1295,10 +1324,11 @@ function BattleScene:update(dt, bounds)
               t = totalPopupLifetime, -- Long enough to cover animation + disintegration
               originalLifetime = totalPopupLifetime, -- Store original lifetime for progress calculation
               who = "enemy", 
-              enemyIndex = i 
+              enemyIndex = i,
+              startDelay = popupStartDelay -- Delay before popup becomes visible
             })
-            -- Emit hit burst particles from enemy center
-            if self.particles then
+            -- Emit hit burst particles from enemy center (skip for black hole - shards will trigger it)
+            if self.particles and not isBlackHole then
               local ex, ey = self:getEnemyCenterPivot(i, self._lastBounds)
               if ex and ey then
                 self.particles:emitHitBurst(ex, ey, nil, impactIsCrit) -- Uses default colors, crit mode if applicable

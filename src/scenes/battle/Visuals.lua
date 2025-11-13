@@ -771,6 +771,11 @@ function Visuals.draw(scene, bounds)
     return 1 + c3 * (u * u * u) + c1 * (u * u)
   end
   for _, p in ipairs(scene.popups or {}) do
+    -- Skip drawing popups that are still in start delay (for black hole attacks)
+    if p.startDelay and p.startDelay > 0 then
+      goto skip_popup
+    end
+    
     -- For animated damage popups, use the actual lifetime stored in t, otherwise use default
     local life = math.max(0.0001, p.kind == "animated_damage" and (p.originalLifetime or p.t) or config.battle.popupLifetime)
     local prog = 1 - math.max(0, p.t / life)
@@ -1003,6 +1008,8 @@ function Visuals.draw(scene, bounds)
     else
       theme.printfWithOutline(p.text or "", x - 40, y - 40, 80, "center", r1, g1, b1, alpha, 2)
     end
+    
+    ::skip_popup::
   end
   love.graphics.setFont(theme.fonts.base)
 

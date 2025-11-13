@@ -369,7 +369,9 @@ config.player = {
   -- Order matters: this is the sequence they rotate through
   equippedProjectiles = {
     "lightning",     -- Lightning Orb (Level 1) - 1st slot
-    "strike",        -- Strike (Level 1)
+    "pierce",        -- Pierce (Level 1)
+    "black_hole",    -- Black Hole (Level 1)
+    "twin_strike",   -- Twin Strike (Level 1)
   },
 }
 
