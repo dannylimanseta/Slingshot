@@ -1404,7 +1404,9 @@ function BattleScene:update(dt, bounds)
           for _, hit in ipairs(blockHitSequence) do
             local kind = (type(hit) == "table" and hit.kind) or "damage"
             local amount = (type(hit) == "table" and (hit.damage or hit.amount)) or 0
-            if kind ~= "crit" and kind ~= "multiplier" then
+            -- Only add damage from blocks that actually deal damage
+            -- Exclude crit/multiplier (they are multipliers) and armor/heal/potion (non-damage effects)
+            if kind ~= "crit" and kind ~= "multiplier" and kind ~= "armor" and kind ~= "heal" and kind ~= "potion" then
               baseDamage = baseDamage + amount
             end
           end
