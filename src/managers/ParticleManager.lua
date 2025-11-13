@@ -199,6 +199,27 @@ function ParticleManager:emitHitBurst(x, y, color, isCrit)
   table.insert(self.systems, makeHitBurst(self.circleImg, x, y, color, isCrit))
 end
 
+-- Emit lightning spark particles (bright white glow)
+function ParticleManager:emitLightningSpark(x, y)
+  local ps = love.graphics.newParticleSystem(self.circleImg, 16)
+  ps:setParticleLifetime(0.2, 0.4)
+  ps:setEmissionRate(0)
+  ps:setSizes(0.4, 0.5, 0.05) -- Start medium, stay bright, shrink at end
+  ps:setSpeed(100, 200) -- Medium-fast particles
+  ps:setSpread(2 * math.pi) -- Full 360 spread
+  ps:setLinearAcceleration(-400, -400, 400, 400) -- Spread outward
+  -- Bright white to cyan-blue
+  ps:setColors(
+    1.0, 1.0, 1.0, 1.0,      -- Start: pure white
+    0.9, 0.95, 1.0, 1.0,     -- Mid: slight blue tint
+    0.3, 0.7, 1.0, 0.8,      -- End: cyan-blue, fading
+    0.3, 0.7, 1.0, 0.0       -- Final: cyan-blue, transparent
+  )
+  ps:moveTo(x, y)
+  ps:emit(12) -- 12 particles per spark
+  table.insert(self.systems, ps)
+end
+
 function ParticleManager:update(dt)
   local alive = {}
   for _, ps in ipairs(self.systems) do

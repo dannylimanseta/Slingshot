@@ -1440,13 +1440,11 @@ end
 -- Update lightning sequence (handles delayed bounces)
 function GameplayScene:_updateLightningSequence(ball, dt)
   if not ball._lightningSequence then 
-    print("No lightning sequence found!")
     return 
   end
   
   local seq = ball._lightningSequence
   seq.timer = seq.timer - dt
-  print(string.format("Lightning update: timer=%.2f, index=%d/%d", seq.timer, seq.currentIndex, #seq.targets))
   
   if seq.timer <= 0 and seq.currentIndex <= #seq.targets then
     -- Execute next bounce
@@ -1454,12 +1452,10 @@ function GameplayScene:_updateLightningSequence(ball, dt)
     
     -- Skip if target block was destroyed
     if not target.block or not target.block.alive then
-      print(string.format("Lightning bounce %d/%d skipped (block destroyed)", seq.currentIndex, #seq.targets))
       seq.currentIndex = seq.currentIndex + 1
       seq.timer = seq.bounceDelay
       
       if seq.currentIndex > #seq.targets then
-        print("Lightning sequence complete (with skips), destroying ball")
         if ball.fixture then
           ball.fixture:setSensor(false) -- Re-enable collisions before destroying
         end
@@ -1478,6 +1474,11 @@ function GameplayScene:_updateLightningSequence(ball, dt)
       y = target.y,
       time = love.timer.getTime()
     })
+    
+    -- Emit bright spark particles at target
+    if self.particles then
+      self.particles:emitLightningSpark(target.x, target.y)
+    end
     
     -- Hit the block
     if target.block and target.block.alive and not self._blocksHitThisFrame[target.block] then
@@ -1512,15 +1513,11 @@ function GameplayScene:_updateLightningSequence(ball, dt)
       end
     end
     
-    print(string.format("Lightning bounce %d/%d at (%.1f, %.1f)", 
-      seq.currentIndex, #seq.targets, target.x, target.y))
-    
     seq.currentIndex = seq.currentIndex + 1
     seq.timer = seq.bounceDelay
     
     if seq.currentIndex > #seq.targets then
       -- Sequence complete, destroy ball
-      print("Lightning sequence complete, destroying ball")
       if ball.fixture then
         ball.fixture:setSensor(false) -- Re-enable collisions before destroying
       end
@@ -1601,7 +1598,6 @@ function GameplayScene:_buildLightningSequence(ball, startBlock)
     end
     
     if #candidates == 0 then
-      print(string.format("Lightning chain ended at bounce %d/%d (no targets)", bounce, maxBounces))
       break
     end
     
@@ -1614,10 +1610,7 @@ function GameplayScene:_buildLightningSequence(ball, startBlock)
       block = targetBlock
     })
     currentBlock = targetBlock
-    print(string.format("  Chain planning bounce %d: found %d candidates", bounce, #candidates))
   end
-  
-  print(string.format("Lightning built chain with %d bounces", #targets))
   
   if #targets == 0 then
     -- No chain, destroy ball
@@ -1645,12 +1638,20 @@ function GameplayScene:_drawLightningStreaks()
   love.graphics.push("all")
   love.graphics.setBlendMode("add")
   
-  -- Helper function to draw a jagged lightning streak between two points
-  local function drawLightningStreak(x1, y1, x2, y2, alpha, seed)
+  -- Helper function to draw a jagged lightning streak between two points with animation
+  local function drawLightningStreak(x1, y1, x2, y2, alpha, seed, progress)
+    progress = progress or 1.0 -- Default to fully drawn
+    
     local dx = x2 - x1
     local dy = y2 - y1
     local dist = math.sqrt(dx * dx + dy * dy)
     if dist < 1 then return end
+    
+    -- Animate endpoint based on progress
+    local animX2 = x1 + dx * progress
+    local animY2 = y1 + dy * progress
+    local animDx = animX2 - x1
+    local animDy = animY2 - y1
     
     -- Number of segments (more segments = smoother but more jagged)
     local numSegments = math.max(3, math.floor(dist / 15))
@@ -1667,50 +1668,99 @@ function GameplayScene:_drawLightningStreaks()
       return (n % 2000) / 2000.0 -- Normalize to 0-1
     end
     
-    -- Create jagged path
+    -- Create jagged path (only up to animated endpoint)
     local points = {}
     table.insert(points, {x = x1, y = y1})
     
     for i = 1, numSegments - 1 do
       local t = i / numSegments
-      local baseX = x1 + dx * t
-      local baseY = y1 + dy * t
-      
-      -- Add consistent random offset perpendicular to the line (jagged effect)
-      local offsetAmount = (hash(i) * 2 - 1) * 8 -- Offset up to 8 pixels
-      local offsetX = perpX * offsetAmount
-      local offsetY = perpY * offsetAmount
-      
-      table.insert(points, {x = baseX + offsetX, y = baseY + offsetY})
+      if t <= progress then
+        local baseX = x1 + dx * t
+        local baseY = y1 + dy * t
+        
+        -- Add consistent random offset perpendicular to the line (jagged effect)
+        local offsetAmount = (hash(i) * 2 - 1) * 8 -- Offset up to 8 pixels
+        local offsetX = perpX * offsetAmount
+        local offsetY = perpY * offsetAmount
+        
+        table.insert(points, {x = baseX + offsetX, y = baseY + offsetY})
+      end
     end
     
-    table.insert(points, {x = x2, y = y2})
+    -- Add animated endpoint
+    if progress >= 1.0 then
+      table.insert(points, {x = x2, y = y2})
+    else
+      table.insert(points, {x = animX2, y = animY2})
+    end
     
     -- Draw the lightning streak with glow effect
     local lcfg = (config.ball and config.ball.lightning) or {}
     
-    -- Outer glow (softer, wider)
-    local outerAlpha = (lcfg.streakOuterAlpha or 0.45) * alpha
-    love.graphics.setColor(0.3, 0.7, 1.0, outerAlpha)
-    love.graphics.setLineWidth(lcfg.streakOuterWidth or 12)
-    for i = 1, #points - 1 do
-      love.graphics.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y)
+    -- Draw multi-layer streak with tapered ends for sharpness
+    local layers = {
+      {width = lcfg.streakOuterWidth or 12, color = {0.3, 0.7, 1.0}, alpha = (lcfg.streakOuterAlpha or 0.45) * alpha},
+      {width = lcfg.streakMainWidth or 6, color = {0.5, 0.9, 1.0}, alpha = (lcfg.streakMainAlpha or 0.9) * alpha},
+      {width = lcfg.streakCoreWidth or 3, color = {1.0, 1.0, 1.0}, alpha = (lcfg.streakCoreAlpha or 1.0) * alpha},
+    }
+    
+    for _, layer in ipairs(layers) do
+      -- Draw main segments with tapering from thick (start) to thin (end)
+      for i = 1, #points - 1 do
+        local p1 = points[i]
+        local p2 = points[i + 1]
+        
+        -- Calculate position along the streak (0 = start, 1 = end)
+        local totalSegs = #points - 1
+        local segmentPos = i / totalSegs
+        
+        -- Taper from thick to thin along the entire length
+        -- Start at full width, taper to 15% at the end
+        local taperFactor = 1.0 - (segmentPos * 0.85) -- 1.0 at start, 0.15 at end
+        local segmentWidth = layer.width * taperFactor
+        
+        -- Extra sharp taper at the very end during animation
+        if progress < 1.0 and i >= totalSegs - 1 then
+          segmentWidth = segmentWidth * 0.3 -- Make last segment extra thin
+        end
+        
+        love.graphics.setColor(layer.color[1], layer.color[2], layer.color[3], layer.alpha)
+        love.graphics.setLineWidth(math.max(0.5, segmentWidth)) -- Minimum width
+        love.graphics.line(p1.x, p1.y, p2.x, p2.y)
+      end
+      
+      -- Add sharp point at the animated endpoint
+      if progress < 1.0 and #points > 0 then
+        local endPoint = points[#points]
+        -- Draw a small, bright point
+        love.graphics.setColor(layer.color[1], layer.color[2], layer.color[3], layer.alpha * 1.2)
+        love.graphics.circle("fill", endPoint.x, endPoint.y, layer.width * 0.15)
+      end
     end
     
-    -- Main streak (brighter, thinner)
-    local mainAlpha = (lcfg.streakMainAlpha or 0.9) * alpha
-    love.graphics.setColor(0.5, 0.9, 1.0, mainAlpha)
-    love.graphics.setLineWidth(lcfg.streakMainWidth or 6)
-    for i = 1, #points - 1 do
-      love.graphics.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y)
-    end
-    
-    -- Core streak (brightest, thinnest)
-    local coreAlpha = (lcfg.streakCoreAlpha or 1.0) * alpha
-    love.graphics.setColor(1.0, 1.0, 1.0, coreAlpha)
-    love.graphics.setLineWidth(lcfg.streakCoreWidth or 3)
-    for i = 1, #points - 1 do
-      love.graphics.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y)
+    -- Add bright white glow at the endpoint during animation
+    if progress < 1.0 and #points > 0 then
+      local endPoint = points[#points]
+      
+      -- Outer soft glow (very large, very soft)
+      love.graphics.setColor(1.0, 1.0, 1.0, 0.3 * alpha)
+      love.graphics.circle("fill", endPoint.x, endPoint.y, 20)
+      
+      -- Large soft white glow
+      love.graphics.setColor(1.0, 1.0, 1.0, 0.6 * alpha)
+      love.graphics.circle("fill", endPoint.x, endPoint.y, 12)
+      
+      -- Medium bright glow
+      love.graphics.setColor(1.0, 1.0, 1.0, 0.9 * alpha)
+      love.graphics.circle("fill", endPoint.x, endPoint.y, 7)
+      
+      -- White circle core (bright and solid)
+      love.graphics.setColor(1.0, 1.0, 1.0, alpha)
+      love.graphics.circle("fill", endPoint.x, endPoint.y, 4)
+      
+      -- Intense bright center
+      love.graphics.setColor(1.0, 1.0, 1.0, alpha)
+      love.graphics.circle("fill", endPoint.x, endPoint.y, 2)
     end
   end
   
@@ -1722,15 +1772,27 @@ function GameplayScene:_drawLightningStreaks()
     local streakLifetime = lcfg.streakLifetime or 1.2 -- How long streaks stay visible
     
     for i = 1, #path - 1 do
-      -- Use the newer of the two points' time for streak lifetime
+      -- Use the newer of the two points' time for streak lifetime and animation
       local streakTime = math.max(path[i].time, path[i + 1].time)
       local age = currentTime - streakTime
+      
+      -- Calculate animation progress (0 to 1 over animDuration)
+      local animDuration = lcfg.streakAnimDuration or 0.15
+      local progress = 1.0
+      if age < animDuration then
+        progress = age / animDuration
+      end
+      
       if age < streakLifetime then
-        local alpha = 1.0 - (age / streakLifetime) -- Fade out over time
+        -- Fade out over time (starts after animation completes)
+        local fadeAge = math.max(0, age - animDuration)
+        local fadeLifetime = streakLifetime - animDuration
+        local alpha = 1.0 - (fadeAge / fadeLifetime)
         alpha = math.max(0, math.min(1, alpha))
+        
         -- Use path index as seed for consistent randomness
         local seed = (path[i].x * 1000 + path[i].y * 1000 + i) % 1000000
-        drawLightningStreak(path[i].x, path[i].y, path[i + 1].x, path[i + 1].y, alpha, seed)
+        drawLightningStreak(path[i].x, path[i].y, path[i + 1].x, path[i + 1].y, alpha, seed, progress)
       end
     end
   end
@@ -1745,15 +1807,27 @@ function GameplayScene:_drawLightningStreaks()
         local streakLifetime = lcfg.streakLifetime or 1.2
         
         for i = 1, #path - 1 do
-          -- Use the newer of the two points' time for streak lifetime
+          -- Use the newer of the two points' time for streak lifetime and animation
           local streakTime = math.max(path[i].time, path[i + 1].time)
           local age = currentTime - streakTime
+          
+          -- Calculate animation progress (0 to 1 over animDuration)
+          local animDuration = lcfg.streakAnimDuration or 0.15
+          local progress = 1.0
+          if age < animDuration then
+            progress = age / animDuration
+          end
+          
           if age < streakLifetime then
-            local alpha = 1.0 - (age / streakLifetime)
+            -- Fade out over time (starts after animation completes)
+            local fadeAge = math.max(0, age - animDuration)
+            local fadeLifetime = streakLifetime - animDuration
+            local alpha = 1.0 - (fadeAge / fadeLifetime)
             alpha = math.max(0, math.min(1, alpha))
+            
             -- Use path index as seed for consistent randomness
             local seed = (path[i].x * 1000 + path[i].y * 1000 + i) % 1000000
-            drawLightningStreak(path[i].x, path[i].y, path[i + 1].x, path[i + 1].y, alpha, seed)
+            drawLightningStreak(path[i].x, path[i].y, path[i + 1].x, path[i + 1].y, alpha, seed, progress)
           end
         end
       end
@@ -1938,19 +2012,27 @@ function GameplayScene:beginContact(fixA, fixB, contact)
     
     -- Lightning orb: build chain sequence on first hit
     if ball.lightning and ball.alive and not ball._lightningHidden then
-      print("Lightning orb hit FIRST block, building sequence")
       -- Stop the ball immediately to prevent drilling through
       ball.body:setLinearVelocity(0, 0)
       
       -- Hide the orb and initialize
       ball._lightningHidden = true
       ball._lightningPath = {}
+      
+      local blockX = block.cx or (x or 0)
+      local blockY = block.cy or (y or 0)
+      
       -- Add first block position
       table.insert(ball._lightningPath, {
-        x = block.cx or (x or 0),
-        y = block.cy or (y or 0),
+        x = blockX,
+        y = blockY,
         time = love.timer.getTime()
       })
+      
+      -- Emit bright spark particles at first block
+      if self.particles then
+        self.particles:emitLightningSpark(blockX, blockY)
+      end
       
       -- Build the entire chain sequence
       self:_buildLightningSequence(ball, block)

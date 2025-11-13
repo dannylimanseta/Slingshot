@@ -94,14 +94,15 @@ config.ball = {
       invert = true,
     },
     gridJumpDistance = 3, -- number of grid spaces to jump between blocks
-    bounceDelay = 0.4, -- delay in seconds between each bounce/teleport (increased for better visibility)
+    bounceDelay = 0.2, -- delay in seconds between each bounce/teleport
     -- Lightning streak visual settings
-    streakLifetime = 2.5, -- How long streaks stay visible (seconds) - increased to show all bounces
-    streakOuterWidth = 12, -- Outer glow width
-    streakMainWidth = 6, -- Main streak width
-    streakCoreWidth = 3, -- Core streak width
-    streakOuterAlpha = 0.45, -- Outer glow alpha
-    streakMainAlpha = 0.9, -- Main streak alpha
+    streakLifetime = 0.8, -- How long streaks stay visible (seconds) - faster fade
+    streakAnimDuration = 0.18, -- How long the streak takes to animate from start to end - slower glow
+    streakOuterWidth = 12, -- Outer glow width (50% thicker)
+    streakMainWidth = 6, -- Main streak width (50% thicker)
+    streakCoreWidth = 3, -- Core streak width (50% thicker)
+    streakOuterAlpha = 0.4, -- Outer glow alpha
+    streakMainAlpha = 0.85, -- Main streak alpha
     streakCoreAlpha = 1.0, -- Core streak alpha
   },
   easing = {
