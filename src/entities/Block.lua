@@ -579,7 +579,7 @@ function Block:draw()
     local baseTextHeight = baseFont:getHeight()
     local textScale = 0.7
     local textHeight = baseTextHeight * textScale
-    local iconSize = textHeight * 0.9 * 0.85 * 0.85
+    local iconSize = textHeight * 0.9 * 0.85 * 0.85 * 1.2
     local iconW, iconH = iconToUse:getDimensions()
     local iconScale = iconSize / math.max(iconW, iconH)
     -- Center icon horizontally; keep slight vertical lift (armor a touch higher)
