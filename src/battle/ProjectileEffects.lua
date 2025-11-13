@@ -526,6 +526,11 @@ function ProjectileEffects:destroyBlockByBlackHole(block)
   
   BattleState.registerBlockHit(block, rewardData)
   
+  -- Show damage number before destroying block
+  if self.scene and self.scene.showDamageNumber then
+    self.scene:showDamageNumber(block)
+  end
+  
   block:destroy()
 end
 

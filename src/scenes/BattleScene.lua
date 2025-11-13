@@ -587,15 +587,26 @@ end
 
 -- Helper function to build animated damage sequence
 -- Returns array of {text, duration} for the animation sequence
+-- Simplified to show only final damage number (no incrementing animation)
 local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBaseDamage, critCount, multiplierCount, finalDamage)
   local sequence = {}
   local config = require("config")
   
-  -- Start cumulative from orb's base damage
-  local cumulative = orbBaseDamage or 0
-  
   -- Track if we have any multipliers
   local hasMultiplier = (critCount > 0) or (multiplierCount > 0)
+  
+  -- Just show the final damage number directly (no incrementing animation)
+  local finalText = tostring(finalDamage)
+  if hasMultiplier then
+    finalText = finalText .. "!"
+  end
+  table.insert(sequence, { text = finalText, duration = 0.3, isMultiplier = hasMultiplier })
+  return sequence
+  
+  -- OLD CODE BELOW - kept for reference but not used
+  --[[
+  -- Start cumulative from orb's base damage
+  local cumulative = orbBaseDamage or 0
   
   -- If no block hit sequence, just show final damage (but still start from base if applicable)
   if not blockHitSequence or #blockHitSequence == 0 then
@@ -683,6 +694,7 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
   table.insert(sequence, { text = finalText, duration = 0.1, isMultiplier = hasMultiplier })
   
   return sequence
+  --]]
 end
 
 function BattleScene:onPlayerTurnEnd(turnData)

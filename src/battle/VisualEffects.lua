@@ -18,6 +18,9 @@ function VisualEffects.new()
     -- Popups
     popups = {},
     
+    -- Damage numbers (per block)
+    damageNumbers = {}, -- { [block] = { damage = 0, x = 0, y = 0, t = 0, ... } }
+    
     -- Tooltips
     hoveredBlock = nil,
     hoverTime = 0,
@@ -80,6 +83,141 @@ function VisualEffects:applyScreenshake()
     local oy = (love.math.random() * 2 - 1) * mag
     love.graphics.translate(ox, oy)
   end
+end
+
+-- ============================================================================
+-- DAMAGE NUMBERS
+-- ============================================================================
+
+function VisualEffects:addDamageNumber(block, totalDamage)
+  if not block or not block.alive then return end
+  
+  -- Get block position
+  local x, y, w, h = block:getAABB()
+  local blockX = x + w * 0.5
+  local blockY = y
+  
+  -- Check if we already have a damage number for this block
+  local existing = self.damageNumbers[block]
+  if existing then
+    -- Update existing damage number with latest total (don't accumulate, replace)
+      existing.damage = totalDamage
+      existing.t = (config.score and config.score.damageNumberLifetime) or 2.5 -- Reset timer
+      existing.startY = blockY -- Update position
+      existing.x = blockX
+      existing.y = blockY
+      existing.bounceScale = 1.0 -- Reset bounce
+      existing.bounceVelocity = -300 -- Reset bounce velocity (faster)
+      existing.hasLanded = false -- Reset landing state
+  else
+    -- Create new damage number
+    self.damageNumbers[block] = {
+      damage = totalDamage,
+      x = blockX,
+      y = blockY,
+      startY = blockY,
+      t = (config.score and config.score.damageNumberLifetime) or 2.5,
+      bounceScale = 1.0,
+      bounceVelocity = -300, -- Faster initial upward velocity
+      gravity = 1000, -- Increased gravity for faster fall
+      hasLanded = false, -- Track if number has hit the ground
+    }
+  end
+end
+
+function VisualEffects:updateDamageNumbers(dt)
+  local toRemove = {}
+  for block, num in pairs(self.damageNumbers) do
+    -- Continue updating even if block is destroyed - let fade complete naturally
+    if not block then
+      table.insert(toRemove, block)
+    else
+      num.t = num.t - dt
+      
+      -- Update fall physics (no bounce - just fall and stop)
+      if num.bounceVelocity < 0 then
+        num.bounceVelocity = num.bounceVelocity + num.gravity * dt
+        num.y = num.y + num.bounceVelocity * dt
+        
+        -- Stop when hitting ground (no bounce)
+        if num.y >= num.startY then
+          num.y = num.startY
+          num.bounceVelocity = 0
+          num.hasLanded = true
+        end
+      end
+      
+      -- Remove immediately when landing - no fade animation
+      if num.hasLanded and not num._removing then
+        num._removing = true
+        table.insert(toRemove, block)
+      end
+      
+      -- Update bounce scale (for pop effect)
+      if num.t > 0 then
+        local lifetime = (config.score and config.score.damageNumberLifetime) or 2.5
+        local prog = 1 - (num.t / lifetime)
+        -- Scale up then down for pop effect
+        if prog < 0.2 then
+          num.bounceScale = 1.0 + (prog / 0.2) * 0.3 -- Scale up to 1.3
+        else
+          num.bounceScale = 1.3 - ((prog - 0.2) / 0.8) * 0.3 -- Scale down to 1.0
+        end
+      end
+      
+      -- Remove if expired (only remove when timer runs out, not when block is destroyed)
+      if num.t <= 0 then
+        table.insert(toRemove, block)
+      end
+    end
+  end
+  
+  -- Clean up removed blocks
+  for _, block in ipairs(toRemove) do
+    self.damageNumbers[block] = nil
+  end
+end
+
+function VisualEffects:drawDamageNumbers()
+  if not self.damageNumbers then return end
+  
+  local font = theme.fonts.popup or theme.fonts.base
+  love.graphics.setFont(font)
+  
+  for block, num in pairs(self.damageNumbers) do
+    -- Draw even if block is destroyed - let fade complete visually
+    if block and num.t > 0 then
+      local text = tostring(num.damage)
+      local textW = font:getWidth(text)
+      local textH = font:getHeight()
+      
+      -- Calculate fade - fade only while falling (numbers removed immediately on landing)
+      -- Reduce fade duration by 60% (fade 2.5x faster)
+      local lifetime = (config.score and config.score.damageNumberLifetime) or 2.5
+      local prog = 1 - (num.t / lifetime)
+      -- Speed up fade by 2.5x (60% reduction = 40% of original time)
+      prog = math.min(1.0, prog * 2.5) -- Clamp to 1.0 max
+      -- Faster fade - use exponential curve to fade to 0 faster
+      local alpha = math.max(0, 1 - (prog * prog * 1.5)) -- Quadratic fade, faster than linear
+      
+      -- Calculate position with bounce
+      local drawX = math.floor(num.x - textW * 0.5)
+      local drawY = math.floor(num.y - textH - 20) -- Offset above block
+      
+      -- Apply bounce scale
+      love.graphics.push()
+      love.graphics.translate(num.x, drawY)
+      love.graphics.scale(num.bounceScale, num.bounceScale)
+      love.graphics.translate(-num.x, -drawY)
+      
+      -- Draw with outline
+      theme.drawTextWithOutline(text, drawX, drawY, 1, 1, 1, alpha, 2)
+      
+      love.graphics.pop()
+    end
+  end
+  
+  love.graphics.setColor(1, 1, 1, 1)
 end
 
 -- ============================================================================
@@ -561,6 +699,7 @@ end
 function VisualEffects:update(dt, canShoot, blocks, bounds)
   self:updateScreenshake(dt)
   self:updatePopups(dt)
+  self:updateDamageNumbers(dt)
   self:updateTooltips(dt, blocks, bounds)
   self:updateAimGuide(dt, canShoot)
 end
@@ -571,6 +710,7 @@ function VisualEffects:draw(shooter, blocks, gridStartX, gridEndX, width, height
   self:applyScreenshake()
   
   self:drawPopups()
+  self:drawDamageNumbers()
   self:drawAimGuide(shooter, blocks, gridStartX, gridEndX, width, height)
   
   love.graphics.pop()

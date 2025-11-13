@@ -214,6 +214,7 @@ function GameplayScene:update(dt, bounds)
             -- Award rewards for the delayed hit
             if block._lightningHitRewardPending then
               self:awardBlockReward(block)
+              self:showDamageNumber(block)
               block._lightningHitRewardPending = nil
             end
           end
@@ -307,8 +308,9 @@ function GameplayScene:draw(bounds)
     self.particles:draw()
   end
   
-  -- Draw visual effects (popups, aim guide)
+  -- Draw visual effects (popups, damage numbers, aim guide)
   self.visualEffects:drawPopups()
+  self.visualEffects:drawDamageNumbers()
   self.visualEffects:drawAimGuide(self.shooter, self.blocks, gridStartX, gridEndX, width, height)
   
   love.graphics.pop()
@@ -614,6 +616,8 @@ function GameplayScene:handleBallBlockCollision(ball, block, contact)
   -- Award rewards (skip for lightning hits - handled in delayed hit processing)
   if not lightningFirstHit then
     self:awardBlockReward(block)
+    -- Show damage number with latest damage tally
+    self:showDamageNumber(block)
   end
   
   if destroyBallAfter and ball and ball.alive then
@@ -653,6 +657,44 @@ function GameplayScene:awardBlockReward(block)
   end
 
   BattleState.registerBlockHit(block, rewardData)
+end
+
+-- Show damage number above block with latest damage tally
+function GameplayScene:showDamageNumber(block)
+  if not self.visualEffects or not block then return end
+  
+  -- Calculate current total damage from BattleState
+  local state = self.state or BattleState.get()
+  if not state or not state.rewards then return end
+  
+  local blockHitSequence = state.rewards.blockHitSequence or {}
+  local orbBaseDamage = state.rewards.baseDamage or 0
+  
+  -- Calculate cumulative damage (excluding crit/multiplier blocks from base)
+  local cumulative = orbBaseDamage
+  for _, hit in ipairs(blockHitSequence) do
+    local kind = (type(hit) == "table" and hit.kind) or "damage"
+    local amount = (type(hit) == "table" and (hit.damage or hit.amount)) or 0
+    -- Only add damage from blocks that aren't crit or multiplier
+    if kind ~= "crit" and kind ~= "multiplier" then
+      cumulative = cumulative + amount
+    end
+  end
+  
+  -- Apply multipliers if any
+  local critCount = state.rewards.critCount or 0
+  local multiplierCount = state.rewards.multiplierCount or 0
+  if critCount > 0 then
+    local mult = (config.score and config.score.critMultiplier) or 2
+    cumulative = cumulative * (mult ^ critCount)
+  end
+  if multiplierCount > 0 then
+    local dmgMult = (config.score and config.score.powerCritMultiplier) or 4
+    cumulative = cumulative * dmgMult
+  end
+  
+  -- Show damage number (will accumulate if block already has one)
+  self.visualEffects:addDamageNumber(block, cumulative)
 end
 
 -- ============================================================================
