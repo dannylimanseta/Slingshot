@@ -509,6 +509,24 @@ function Visuals.draw(scene, bounds)
           brightnessMultiplier = 1 + math.sin(enemy.pulseTime or 0) * variation
         end
         
+        -- Update selector alpha based on turn phase (fade out during enemy turn)
+        do
+          local turnManager = scene.turnManager
+          local tmState = turnManager and turnManager:getState() or nil
+          local isEnemyTurn = tmState == TurnManager.States.ENEMY_TURN_START
+            or tmState == TurnManager.States.ENEMY_TURN_ACTIVE
+            or tmState == TurnManager.States.ENEMY_TURN_RESOLVING
+          local targetAlpha = isEnemyTurn and 0.0 or 1.0
+          local now = love.timer.getTime()
+          local last = scene._selectorAlphaTime or now
+          local dtAlpha = math.min(0.05, now - last)
+          scene._selectorAlphaTime = now
+          local speed = 6.0
+          scene._selectorAlpha = scene._selectorAlpha or 1.0
+          local delta = targetAlpha - scene._selectorAlpha
+          scene._selectorAlpha = scene._selectorAlpha + delta * math.min(1, speed * dtAlpha)
+        end
+        
         -- Draw glow behind selected enemy (before any transformations)
         local enemyY = pos.curY or pos.y -- Use curY if available (for jump animation)
         if scene.selectedEnemyIndex == i and scene.glowSelectedImg then
@@ -519,6 +537,8 @@ function Visuals.draw(scene, bounds)
             local progress = math.min(1, (enemy.disintegrationTime or 0) / duration)
             glowAlpha = math.max(0, 1.0 - (progress / 0.7))
           end
+          -- Apply selector fade alpha (during enemy turn)
+          glowAlpha = glowAlpha * (scene._selectorAlpha or 1.0)
           
           if glowAlpha > 0 then
             local glowImg = scene.glowSelectedImg
@@ -756,6 +776,8 @@ function Visuals.draw(scene, bounds)
         end
         
         if barAlpha > 0 then
+          -- Apply selector fade alpha (during enemy turn)
+          barAlpha = barAlpha * (scene._selectorAlpha or 1.0)
           local indicatorImg = scene.selectedIndicatorImg
           local indicatorW, indicatorH = indicatorImg:getWidth(), indicatorImg:getHeight()
           -- Use constant width instead of scaling based on enemy sprite size
