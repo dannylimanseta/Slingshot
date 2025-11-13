@@ -76,9 +76,14 @@ local function buildBattleProfileFromEncounter(enc)
 	}
 	-- Resolve enemies
 	if enc.enemies and type(enc.enemies) == "table" then
+		local Progress = require("core.Progress")
 		for i = 1, #enc.enemies do
-			local e = resolveEnemyRef(enc.enemies[i])
-			if e then table.insert(profile.enemies, e) end
+			local base = resolveEnemyRef(enc.enemies[i])
+			if base then
+				-- Increment difficulty progression, but do not modify or annotate enemy stats
+				Progress.assignDifficultyForNextEnemy()
+				table.insert(profile.enemies, base)
+			end
 		end
 	end
 	-- Optional clamp on enemyCount (default to length of enemies list)
