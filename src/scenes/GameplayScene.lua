@@ -175,6 +175,18 @@ function GameplayScene:update(dt, bounds)
     end
   end
   
+  -- Handle lightning orb chain sequence
+  if self.ball and self.ball.alive and self.ball.lightning and self.ball._lightningSequence then
+    self:_updateLightningSequence(self.ball, dt)
+  end
+  if self.balls and #self.balls > 0 then
+    for _, ball in ipairs(self.balls) do
+      if ball and ball.alive and ball.lightning and ball._lightningSequence then
+        self:_updateLightningSequence(ball, dt)
+      end
+    end
+  end
+  
   -- Update single ball (backward compatibility)
   if self.ball and self.ball.alive then self.ball:update(dt, { bounds = bounds }) end
   
@@ -631,6 +643,9 @@ function GameplayScene:draw(bounds)
     end
   end
 
+  -- Draw lightning streaks for lightning orbs
+  self:_drawLightningStreaks()
+  
   -- Shooter
   if self.shooter then self.shooter:draw() end
 
@@ -1284,6 +1299,28 @@ function GameplayScene:mousereleased(x, y, button, bounds)
           self.score = self.score + self.ball.score
           self.baseDamageThisTurn = self.baseDamageThisTurn + baseDmg -- Track base damage for animation
         end
+      elseif projectileId == "lightning" then
+        -- Lightning: single projectile that bounces between blocks
+        self.balls = {} -- Clear multiple balls
+        local maxBounces = (effective and effective.maxBounces) or config.ball.maxBounces
+        local lightningConfig = config.ball.lightning or {}
+        local trailConfig = lightningConfig.trail or config.ball.trail
+        self.ball = Ball.new(self.world, self.aimStartX, self.aimStartY, ndx, ndy, {
+          lightning = true,
+          maxBounces = maxBounces,
+          spritePath = spritePath,
+          trailConfig = trailConfig,
+          onLastBounce = function(ball)
+            ball:destroy()
+          end
+        })
+        if self.ball then
+          self.ball.projectileId = projectileId
+          local baseDmg = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
+          self.ball.score = baseDmg
+          self.score = self.score + self.ball.score
+          self.baseDamageThisTurn = self.baseDamageThisTurn + baseDmg -- Track base damage for animation
+        end
       else
         -- Single projectile (regular shot)
         self.balls = {} -- Clear multiple balls
@@ -1400,6 +1437,334 @@ function GameplayScene:_correctPiercePosition(ball)
   ball._needsPositionCorrection = false
 end
 
+-- Update lightning sequence (handles delayed bounces)
+function GameplayScene:_updateLightningSequence(ball, dt)
+  if not ball._lightningSequence then 
+    print("No lightning sequence found!")
+    return 
+  end
+  
+  local seq = ball._lightningSequence
+  seq.timer = seq.timer - dt
+  print(string.format("Lightning update: timer=%.2f, index=%d/%d", seq.timer, seq.currentIndex, #seq.targets))
+  
+  if seq.timer <= 0 and seq.currentIndex <= #seq.targets then
+    -- Execute next bounce
+    local target = seq.targets[seq.currentIndex]
+    
+    -- Skip if target block was destroyed
+    if not target.block or not target.block.alive then
+      print(string.format("Lightning bounce %d/%d skipped (block destroyed)", seq.currentIndex, #seq.targets))
+      seq.currentIndex = seq.currentIndex + 1
+      seq.timer = seq.bounceDelay
+      
+      if seq.currentIndex > #seq.targets then
+        print("Lightning sequence complete (with skips), destroying ball")
+        if ball.fixture then
+          ball.fixture:setSensor(false) -- Re-enable collisions before destroying
+        end
+        ball:destroy()
+      end
+      return
+    end
+    
+    -- Teleport ball
+    ball.body:setPosition(target.x, target.y)
+    ball.body:setLinearVelocity(0, 0)
+    
+    -- Add to path
+    table.insert(ball._lightningPath, {
+      x = target.x,
+      y = target.y,
+      time = love.timer.getTime()
+    })
+    
+    -- Hit the block
+    if target.block and target.block.alive and not self._blocksHitThisFrame[target.block] then
+      self._blocksHitThisFrame[target.block] = true
+      target.block:hit()
+      self.blocksHitThisTurn = (self.blocksHitThisTurn or 0) + 1
+      
+      if self.particles then
+        self.particles:emitSpark(target.x, target.y)
+      end
+      
+      -- Award rewards
+      local perHit = (config.score and config.score.rewardPerHit) or 1
+      local hitReward = perHit
+      if target.block.kind == "crit" then
+        self.critThisTurn = (self.critThisTurn or 0) + 1
+      elseif target.block.kind == "multiplier" then
+        self.multiplierThisTurn = (self.multiplierThisTurn or 0) + 1
+      elseif target.block.kind == "aoe" then
+        hitReward = hitReward + 3
+        self.aoeThisTurn = true
+      elseif target.block.kind == "armor" or target.block.kind == "potion" then
+        hitReward = 0
+      end
+      self.score = self.score + hitReward
+      
+      if target.block.kind == "damage" or target.block.kind == "attack" or target.block.kind == "crit" or target.block.kind == "multiplier" or target.block.kind == "aoe" then
+        table.insert(self.blockHitSequence, {
+          damage = hitReward,
+          kind = target.block.kind
+        })
+      end
+    end
+    
+    print(string.format("Lightning bounce %d/%d at (%.1f, %.1f)", 
+      seq.currentIndex, #seq.targets, target.x, target.y))
+    
+    seq.currentIndex = seq.currentIndex + 1
+    seq.timer = seq.bounceDelay
+    
+    if seq.currentIndex > #seq.targets then
+      -- Sequence complete, destroy ball
+      print("Lightning sequence complete, destroying ball")
+      if ball.fixture then
+        ball.fixture:setSensor(false) -- Re-enable collisions before destroying
+      end
+      ball:destroy()
+    end
+  end
+end
+
+-- Build lightning chain sequence on first block hit
+function GameplayScene:_buildLightningSequence(ball, startBlock)
+  if not ball or not ball.lightning or not ball.alive then return end
+  if not startBlock or not startBlock.cx or not startBlock.cy then return end
+  
+  -- Get effective stats
+  local projectileData = ProjectileManager.getProjectile(ball.projectileId or "lightning")
+  local effective = ProjectileManager.getEffective(projectileData)
+  local maxBounces = (effective and effective.maxBounces) or 4
+  
+  local lightningConfig = config.ball.lightning or {}
+  local jumpDistance = lightningConfig.gridJumpDistance or 3
+  local bounceDelay = lightningConfig.bounceDelay or 0.4
+  
+  -- Grid setup
+  local width = love.graphics.getWidth()
+  local height = love.graphics.getHeight()
+  local margin = config.playfield.margin
+  local playfieldW = width - 2 * margin
+  local horizontalSpacingFactor = (config.playfield and config.playfield.horizontalSpacingFactor) or 1.0
+  local effectivePlayfieldW = playfieldW * horizontalSpacingFactor
+  local playfieldXOffset = playfieldW * (1 - horizontalSpacingFactor) * 0.5
+  local gridPadding = (config.blocks.gridSnap.padding) or 30
+  local sidePadding = (config.blocks.gridSnap.sidePadding) or 40
+  local gridAvailableWidth = effectivePlayfieldW - 2 * gridPadding - 2 * sidePadding
+  local cellSize = (config.blocks.gridSnap.cellSize) or 38
+  local numCellsX = math.floor(gridAvailableWidth / cellSize)
+  local gridWidth = numCellsX * cellSize
+  local gridOffsetX = sidePadding + gridPadding + (gridAvailableWidth - gridWidth) * 0.5
+  local gridStartX = margin + playfieldXOffset + gridOffsetX
+  local playfieldY = margin + ((config.playfield and config.playfield.topBarHeight) or 60)
+  
+  -- Build chain of targets
+  local targets = {}
+  local hitBlocks = {[startBlock] = true}
+  local currentBlock = startBlock
+  
+  for bounce = 1, maxBounces do
+    -- Find candidates from current block
+    local blockGridX = math.floor((currentBlock.cx - gridStartX) / cellSize)
+    local blockGridY = math.floor((currentBlock.cy - playfieldY) / cellSize)
+    
+    -- Try multiple search radii in order of preference
+    local searchRadii = {
+      {min = jumpDistance - 1, max = jumpDistance + 1},  -- Preferred range
+      {min = jumpDistance - 2, max = jumpDistance + 2},  -- Wider range
+      {min = 1, max = jumpDistance + 3},                 -- Any nearby block
+    }
+    
+    local candidates = {}
+    for _, range in ipairs(searchRadii) do
+      candidates = {}
+      for _, otherBlock in ipairs(self.blocks.blocks or {}) do
+        if otherBlock and otherBlock.alive and not hitBlocks[otherBlock] then
+          local otherGridX = math.floor((otherBlock.cx - gridStartX) / cellSize)
+          local otherGridY = math.floor((otherBlock.cy - playfieldY) / cellSize)
+          local gridDx = math.abs(otherGridX - blockGridX)
+          local gridDy = math.abs(otherGridY - blockGridY)
+          local gridDist = math.max(gridDx, gridDy)
+          
+          if gridDist >= range.min and gridDist <= range.max then
+            table.insert(candidates, otherBlock)
+          end
+        end
+      end
+      
+      if #candidates > 0 then
+        break -- Found candidates, use this range
+      end
+    end
+    
+    if #candidates == 0 then
+      print(string.format("Lightning chain ended at bounce %d/%d (no targets)", bounce, maxBounces))
+      break
+    end
+    
+    -- Pick random target
+    local targetBlock = candidates[love.math.random(#candidates)]
+    hitBlocks[targetBlock] = true
+    table.insert(targets, {
+      x = targetBlock.cx,
+      y = targetBlock.cy,
+      block = targetBlock
+    })
+    currentBlock = targetBlock
+    print(string.format("  Chain planning bounce %d: found %d candidates", bounce, #candidates))
+  end
+  
+  print(string.format("Lightning built chain with %d bounces", #targets))
+  
+  if #targets == 0 then
+    -- No chain, destroy ball
+    ball:destroy()
+    return
+  end
+  
+  -- Create sequence
+  ball._lightningSequence = {
+    targets = targets,
+    currentIndex = 1,
+    timer = bounceDelay,
+    bounceDelay = bounceDelay
+  }
+  
+  -- Stop the ball and disable physics collisions during sequence
+  ball.body:setLinearVelocity(0, 0)
+  if ball.fixture then
+    ball.fixture:setSensor(true) -- Make it a sensor (no collisions)
+  end
+end
+
+-- Draw lightning streaks between blocks for lightning orbs
+function GameplayScene:_drawLightningStreaks()
+  love.graphics.push("all")
+  love.graphics.setBlendMode("add")
+  
+  -- Helper function to draw a jagged lightning streak between two points
+  local function drawLightningStreak(x1, y1, x2, y2, alpha, seed)
+    local dx = x2 - x1
+    local dy = y2 - y1
+    local dist = math.sqrt(dx * dx + dy * dy)
+    if dist < 1 then return end
+    
+    -- Number of segments (more segments = smoother but more jagged)
+    local numSegments = math.max(3, math.floor(dist / 15))
+    
+    -- Normalize direction
+    local ndx = dx / dist
+    local ndy = dy / dist
+    local perpX = -ndy
+    local perpY = ndx
+    
+    -- Simple hash function for consistent randomness based on seed
+    local function hash(n)
+      n = ((n + seed) * 1103515245 + 12345) % 2147483647
+      return (n % 2000) / 2000.0 -- Normalize to 0-1
+    end
+    
+    -- Create jagged path
+    local points = {}
+    table.insert(points, {x = x1, y = y1})
+    
+    for i = 1, numSegments - 1 do
+      local t = i / numSegments
+      local baseX = x1 + dx * t
+      local baseY = y1 + dy * t
+      
+      -- Add consistent random offset perpendicular to the line (jagged effect)
+      local offsetAmount = (hash(i) * 2 - 1) * 8 -- Offset up to 8 pixels
+      local offsetX = perpX * offsetAmount
+      local offsetY = perpY * offsetAmount
+      
+      table.insert(points, {x = baseX + offsetX, y = baseY + offsetY})
+    end
+    
+    table.insert(points, {x = x2, y = y2})
+    
+    -- Draw the lightning streak with glow effect
+    local lcfg = (config.ball and config.ball.lightning) or {}
+    
+    -- Outer glow (softer, wider)
+    local outerAlpha = (lcfg.streakOuterAlpha or 0.45) * alpha
+    love.graphics.setColor(0.3, 0.7, 1.0, outerAlpha)
+    love.graphics.setLineWidth(lcfg.streakOuterWidth or 12)
+    for i = 1, #points - 1 do
+      love.graphics.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y)
+    end
+    
+    -- Main streak (brighter, thinner)
+    local mainAlpha = (lcfg.streakMainAlpha or 0.9) * alpha
+    love.graphics.setColor(0.5, 0.9, 1.0, mainAlpha)
+    love.graphics.setLineWidth(lcfg.streakMainWidth or 6)
+    for i = 1, #points - 1 do
+      love.graphics.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y)
+    end
+    
+    -- Core streak (brightest, thinnest)
+    local coreAlpha = (lcfg.streakCoreAlpha or 1.0) * alpha
+    love.graphics.setColor(1.0, 1.0, 1.0, coreAlpha)
+    love.graphics.setLineWidth(lcfg.streakCoreWidth or 3)
+    for i = 1, #points - 1 do
+      love.graphics.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y)
+    end
+  end
+  
+  -- Draw streaks for single ball
+  if self.ball and self.ball.lightning and self.ball._lightningPath and #self.ball._lightningPath > 1 then
+    local path = self.ball._lightningPath
+    local currentTime = love.timer.getTime()
+    local lcfg = (config.ball and config.ball.lightning) or {}
+    local streakLifetime = lcfg.streakLifetime or 1.2 -- How long streaks stay visible
+    
+    for i = 1, #path - 1 do
+      -- Use the newer of the two points' time for streak lifetime
+      local streakTime = math.max(path[i].time, path[i + 1].time)
+      local age = currentTime - streakTime
+      if age < streakLifetime then
+        local alpha = 1.0 - (age / streakLifetime) -- Fade out over time
+        alpha = math.max(0, math.min(1, alpha))
+        -- Use path index as seed for consistent randomness
+        local seed = (path[i].x * 1000 + path[i].y * 1000 + i) % 1000000
+        drawLightningStreak(path[i].x, path[i].y, path[i + 1].x, path[i + 1].y, alpha, seed)
+      end
+    end
+  end
+  
+  -- Draw streaks for multiple balls
+  if self.balls then
+    for _, ball in ipairs(self.balls) do
+      if ball and ball.lightning and ball._lightningPath and #ball._lightningPath > 1 then
+        local path = ball._lightningPath
+        local currentTime = love.timer.getTime()
+        local lcfg = (config.ball and config.ball.lightning) or {}
+        local streakLifetime = lcfg.streakLifetime or 1.2
+        
+        for i = 1, #path - 1 do
+          -- Use the newer of the two points' time for streak lifetime
+          local streakTime = math.max(path[i].time, path[i + 1].time)
+          local age = currentTime - streakTime
+          if age < streakLifetime then
+            local alpha = 1.0 - (age / streakLifetime)
+            alpha = math.max(0, math.min(1, alpha))
+            -- Use path index as seed for consistent randomness
+            local seed = (path[i].x * 1000 + path[i].y * 1000 + i) % 1000000
+            drawLightningStreak(path[i].x, path[i].y, path[i + 1].x, path[i + 1].y, alpha, seed)
+          end
+        end
+      end
+    end
+  end
+  
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.setLineWidth(1)
+  love.graphics.pop()
+end
+
 function GameplayScene:preSolve(fixA, fixB, contact)
   -- Disable collision response for pierce orbs hitting blocks (they pierce through)
   -- With restitution=0 and direction maintained in update(), this ensures straight piercing
@@ -1422,6 +1787,12 @@ function GameplayScene:preSolve(fixA, fixB, contact)
       ball._piercePosition = { x = ball.body:getX(), y = ball.body:getY() }
       ball._pierceTime = love.timer.getTime()
     end
+    contact:setEnabled(false)
+  end
+  
+  -- Lightning orbs: only process the FIRST block hit, ignore subsequent collisions
+  if ball and block and ball.lightning and ball._lightningHidden then
+    -- Already started sequence, ignore all other collisions
     contact:setEnabled(false)
   end
 end
@@ -1493,12 +1864,24 @@ function GameplayScene:beginContact(fixA, fixB, contact)
   end
   if ball and block then
     local destroyBallAfter = false
+    
+    -- Lightning orbs: only process the VERY FIRST block collision ever
+    if ball.lightning then
+      if ball._lightningFirstHit then
+        -- Already processed first hit, ignore ALL subsequent collisions
+        return
+      else
+        -- Mark this as the first (and only) hit to process
+        ball._lightningFirstHit = true
+      end
+    end
+    
     -- Early exit checks: block must be alive, not already hit, and not marked as hit this frame
     if not block.alive or block.hitThisFrame or self._blocksHitThisFrame[block] then
       -- Block already destroyed or already processed this frame, skip all processing
       -- Pierce orbs don't bounce, so skip bounce call for them
-      if not ball.pierce then
-      ball:onBounce()
+      if not ball.pierce and not ball.lightning then
+        ball:onBounce()
       end
       return
     end
@@ -1553,14 +1936,36 @@ function GameplayScene:beginContact(fixA, fixB, contact)
       destroyBallAfter = true
     end
     
-    -- Handle pierce vs bounce behavior
-    if ball.pierce then
+    -- Lightning orb: build chain sequence on first hit
+    if ball.lightning and ball.alive and not ball._lightningHidden then
+      print("Lightning orb hit FIRST block, building sequence")
+      -- Stop the ball immediately to prevent drilling through
+      ball.body:setLinearVelocity(0, 0)
+      
+      -- Hide the orb and initialize
+      ball._lightningHidden = true
+      ball._lightningPath = {}
+      -- Add first block position
+      table.insert(ball._lightningPath, {
+        x = block.cx or (x or 0),
+        y = block.cy or (y or 0),
+        time = love.timer.getTime()
+      })
+      
+      -- Build the entire chain sequence
+      self:_buildLightningSequence(ball, block)
+      
+      -- Disable further collisions for this ball
+      if ball.fixture then
+        ball.fixture:setSensor(true)
+      end
+    elseif ball.pierce then
       -- Pierce orb: pierce through the block (no bounce)
       -- Velocity will be restored in postSolve to maintain straight path
       ball:onPierce()
-    else
-      -- Regular orb: bounce off the block
-    ball:onBounce()
+    elseif not ball.lightning then
+      -- Regular orb: bounce off the block (skip if lightning already handled bounce)
+      ball:onBounce()
     end
     -- Award rewards: per-hit for all blocks. Crit sets a turn multiplier (2x total damage), Soul sets a turn multiplier (4x total damage)
     local perHit = (config.score and config.score.rewardPerHit) or 1

@@ -103,6 +103,22 @@ projectiles.data = {
     icon = "assets/images/orb_black_hole.png",
     description = "Creates a black hole that sucks blocks into it."
   },
+  {
+    id = "lightning",
+    name = "Lightning Orb",
+    rarity = projectiles.Rarity.RARE,
+    level = 1,
+    baseDamage = 5,
+    levels = {
+      [1] = { baseDamage = 5, maxBounces = 4 },
+      [2] = { baseDamage = 6, maxBounces = 5 },
+      [3] = { baseDamage = 7, maxBounces = 6 },
+      [4] = { baseDamage = 8, maxBounces = 7 },
+      [5] = { baseDamage = 10, maxBounces = 8 },
+    },
+    icon = "assets/images/orb_lightning.png",
+    description = "Shoots a lightning orb that bounces between blocks."
+  },
 }
 
 -- Helper function to get projectile by ID

@@ -2,6 +2,7 @@ local theme = require("theme")
 local config = require("config")
 local math2d = require("utils.math2d")
 local Trail = require("utils.trail")
+local LightningShader = require("utils.LightningShader")
 
 local Ball = {}
 Ball.__index = Ball
@@ -68,6 +69,9 @@ function Ball.new(world, x, y, dirX, dirY, opts)
   local pierce = opts.pierce or false
   local maxPierce = opts.maxPierce or nil
   
+  -- Determine if this is a lightning orb (can be overridden)
+  local lightning = opts.lightning or false
+  
   -- Load ball sprite (can be overridden via opts.spritePath)
   local ballImg = nil
   local ballPath = opts.spritePath or ((config.assets and config.assets.images and config.assets.images.ball) or nil)
@@ -88,6 +92,7 @@ function Ball.new(world, x, y, dirX, dirY, opts)
     pierce = pierce, -- whether this ball pierces through blocks
     maxPierce = maxPierce, -- maximum number of blocks to pierce through
     pierces = 0, -- current number of blocks pierced
+    lightning = lightning, -- whether this is a lightning orb
     alive = true,
     score = 0,
     body = nil,
@@ -164,8 +169,15 @@ end
 
 function Ball:draw()
   if not self.alive then return end
+  
+  -- Skip drawing if lightning orb is hidden (after first block hit)
+  if self.lightning and self._lightningHidden then
+    return
+  end
+  
   -- Trail first
   if self.trail then self.trail:draw() end
+  
   love.graphics.setColor(theme.colors.ball)
   local x, y = self.body:getX(), self.body:getY()
   -- Glow behind ball (multi-layered for stronger illumination)
@@ -267,8 +279,19 @@ function Ball:draw()
     end
     
     love.graphics.push("all")
-    love.graphics.setShader(BRIGHTNESS_SHADER)
-    BRIGHTNESS_SHADER:send("u_brightness", 1.5) -- +50% brightness
+    if self.lightning then
+      -- Lightning orb: use lightning shader
+      local lightningShader = LightningShader.getShader()
+      if lightningShader then
+        lightningShader:send("u_time", love.timer.getTime())
+        lightningShader:send("u_intensity", 0.8)
+        love.graphics.setShader(lightningShader)
+      end
+    else
+      -- Regular orb: use brightness shader
+      love.graphics.setShader(BRIGHTNESS_SHADER)
+      BRIGHTNESS_SHADER:send("u_brightness", 1.5) -- +50% brightness
+    end
     love.graphics.draw(self.ballImg, x, y, rotation, scale, scale, imgW * 0.5, imgH * 0.5)
     love.graphics.setShader()
     love.graphics.pop()

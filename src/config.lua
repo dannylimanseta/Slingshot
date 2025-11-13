@@ -77,6 +77,33 @@ config.ball = {
       invert = true,
     },
   },
+  -- Lightning orb visual settings
+  lightning = {
+    trail = {
+      enabled = true,
+      width = 23.4, -- match base trail width
+      maxPoints = 32,
+      sampleInterval = 0.016,
+      softness = 0.25,
+      color = { 0.3, 0.7, 1.0, 0.7 }, -- Bright cyan-blue
+      colorStart = { 0.3, 0.7, 1.0, 0.7 }, -- Bright cyan-blue
+      colorEnd = { 0.5, 0.9, 1.0, 0.5 }, -- Lighter cyan-blue
+      additive = true,
+      overlap = 7.8, -- match base overlap
+      taperPower = 1.4,
+      invert = true,
+    },
+    gridJumpDistance = 3, -- number of grid spaces to jump between blocks
+    bounceDelay = 0.4, -- delay in seconds between each bounce/teleport (increased for better visibility)
+    -- Lightning streak visual settings
+    streakLifetime = 2.5, -- How long streaks stay visible (seconds) - increased to show all bounces
+    streakOuterWidth = 12, -- Outer glow width
+    streakMainWidth = 6, -- Main streak width
+    streakCoreWidth = 3, -- Core streak width
+    streakOuterAlpha = 0.45, -- Outer glow alpha
+    streakMainAlpha = 0.9, -- Main streak alpha
+    streakCoreAlpha = 1.0, -- Core streak alpha
+  },
   easing = {
     enabled = true,
     startFactor = 0.4, -- start at 40% of target speed
@@ -340,6 +367,7 @@ config.player = {
   -- Array of projectile IDs that appear in the shooter carousel
   -- Order matters: this is the sequence they rotate through
   equippedProjectiles = {
+    "lightning",     -- Lightning Orb (Level 1) - 1st slot
     "strike",        -- Strike (Level 1)
   },
 }
