@@ -570,7 +570,16 @@ function Visuals.draw(scene, bounds)
           love.graphics.setShader()
           love.graphics.setColor(1, 1, 1, 1)
         else
-          love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, 1)
+          -- Apply darkening to non-attacking enemies
+          local darkness = 0.0
+          if scene._attackingEnemyIndex and scene._attackingEnemyIndex ~= i then
+            darkness = scene._nonAttackingEnemyDarkness or 0.0
+          end
+          -- Darken to 30% brightness at max darkness (more visible)
+          local darkenMultiplier = 1.0 - (darkness * 0.7) -- darkness 1.0 = 30% brightness
+          local finalBrightness = brightnessMultiplier * darkenMultiplier
+          
+          love.graphics.setColor(finalBrightness, finalBrightness, finalBrightness, 1)
           love.graphics.draw(enemy.img, pos.curX, enemyY, tilt, sx, sy, iw * 0.5, ih)
 
           if enemy.disintegrating and scene.disintegrationShader then
@@ -587,7 +596,14 @@ function Visuals.draw(scene, bounds)
               love.graphics.draw(enemy.img, pos.curX, enemyY, enemy.rotation or 0, sx, sy, iw * 0.5, ih)
             end
             love.graphics.setBlendMode("alpha")
-            love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, 1)
+            -- Restore darkening after flash
+            local darkness = 0.0
+            if scene._attackingEnemyIndex and scene._attackingEnemyIndex ~= i then
+              darkness = scene._nonAttackingEnemyDarkness or 0.0
+            end
+            local darkenMultiplier = 1.0 - (darkness * 0.7)
+            local finalBrightness = brightnessMultiplier * darkenMultiplier
+            love.graphics.setColor(finalBrightness, finalBrightness, finalBrightness, 1)
           end
         end
         

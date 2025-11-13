@@ -214,7 +214,9 @@ function GameplayScene:update(dt, bounds)
             -- Award rewards for the delayed hit
             if block._lightningHitRewardPending then
               self:awardBlockReward(block)
+              -- For lightning, show damage number for this block and update all existing ones
               self:showDamageNumber(block)
+              self:updateAllDamageNumbers()
               block._lightningHitRewardPending = nil
             end
           end
@@ -659,42 +661,65 @@ function GameplayScene:awardBlockReward(block)
   BattleState.registerBlockHit(block, rewardData)
 end
 
--- Show damage number above block with latest damage tally
-function GameplayScene:showDamageNumber(block)
-  if not self.visualEffects or not block then return end
-  
-  -- Calculate current total damage from BattleState
+-- Calculate final damage (shared logic for showDamageNumber and updateAllDamageNumbers)
+function GameplayScene:calculateFinalDamage()
   local state = self.state or BattleState.get()
-  if not state or not state.rewards then return end
+  if not state or not state.rewards then return 0 end
   
   local blockHitSequence = state.rewards.blockHitSequence or {}
   local orbBaseDamage = state.rewards.baseDamage or 0
   
-  -- Calculate cumulative damage (excluding crit/multiplier blocks from base)
-  local cumulative = orbBaseDamage
+  -- Calculate cumulative damage (excluding crit/multiplier/armor/potion blocks from base)
+  -- Match the exact calculation used for final damage in SplitScene
+  local baseDamage = orbBaseDamage
   for _, hit in ipairs(blockHitSequence) do
     local kind = (type(hit) == "table" and hit.kind) or "damage"
     local amount = (type(hit) == "table" and (hit.damage or hit.amount)) or 0
-    -- Only add damage from blocks that aren't crit or multiplier
-    if kind ~= "crit" and kind ~= "multiplier" then
-      cumulative = cumulative + amount
+    -- Only add damage from blocks that contribute to damage (exclude crit, multiplier, armor, potion)
+    if kind ~= "crit" and kind ~= "multiplier" and kind ~= "armor" and kind ~= "heal" and kind ~= "potion" then
+      baseDamage = baseDamage + amount
     end
   end
   
-  -- Apply multipliers if any
+  -- Apply multipliers to match final damage calculation (same as SplitScene)
   local critCount = state.rewards.critCount or 0
   local multiplierCount = state.rewards.multiplierCount or 0
+  local finalDamage = baseDamage
+  
+  -- Apply crit multiplier (2x per crit)
   if critCount > 0 then
     local mult = (config.score and config.score.critMultiplier) or 2
-    cumulative = cumulative * (mult ^ critCount)
-  end
-  if multiplierCount > 0 then
-    local dmgMult = (config.score and config.score.powerCritMultiplier) or 4
-    cumulative = cumulative * dmgMult
+    finalDamage = finalDamage * (mult ^ critCount)
   end
   
-  -- Show damage number (will accumulate if block already has one)
-  self.visualEffects:addDamageNumber(block, cumulative)
+  -- Apply damage multiplier once if any multiplier block was hit
+  if multiplierCount > 0 then
+    local dmgMult = (config.score and config.score.powerCritMultiplier) or 4
+    finalDamage = finalDamage * dmgMult
+  end
+  
+  return finalDamage
+end
+
+-- Show damage number above block with latest damage tally
+function GameplayScene:showDamageNumber(block)
+  if not self.visualEffects or not block then return end
+  local finalDamage = self:calculateFinalDamage()
+  -- Show final damage number (with multipliers applied) to match what's shown above enemy
+  self.visualEffects:addDamageNumber(block, finalDamage)
+end
+
+-- Update all existing damage numbers (useful for lightning attacks where multiple blocks are hit sequentially)
+function GameplayScene:updateAllDamageNumbers()
+  if not self.visualEffects then return end
+  local finalDamage = self:calculateFinalDamage()
+  
+  -- Update all existing damage numbers with the latest cumulative damage
+  for block, _ in pairs(self.visualEffects.damageNumbers or {}) do
+    if block and block.alive then
+      self.visualEffects:addDamageNumber(block, finalDamage)
+    end
+  end
 end
 
 -- ============================================================================

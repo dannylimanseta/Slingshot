@@ -120,6 +120,8 @@ function BattleScene.new()
     _enemyTurnDelay = nil, -- Delay timer for enemy turn start (after armor popup)
     _pendingEnemyTurnStart = false, -- Flag to track if enemy turn is waiting for player attack to complete
     _enemyAttackDelays = {}, -- Array of delay timers for staggered enemy attacks {index, delay}
+    _attackingEnemyIndex = nil, -- Index of currently attacking enemy (for darkening others)
+    _nonAttackingEnemyDarkness = 0.0, -- Tweened darkness value for non-attacking enemies (0 = normal, 1 = fully dark)
     _playerAttackDelayTimer = nil, -- Delay timer for player attack animation (after ball despawn)
     _pendingPlayerAttackDamage = nil, -- { damage, armor, wasJackpot, impactBlockCount, impactIsCrit } - stored when turn ends, applied after delay
     _pendingImpactParams = nil, -- { blockCount, isCrit } - stored by playImpact, merged into pending damage
@@ -1265,6 +1267,12 @@ function BattleScene:update(dt, bounds)
   -- Update calcify particle animation
   self:_updateCalcifySequence(dt)
 
+  -- Update tweened darkness for non-attacking enemies
+  local targetDarkness = (self._attackingEnemyIndex ~= nil) and 1.0 or 0.0 -- Darken fully (to 0% brightness) when enemy is attacking
+  local darknessSpeed = 4.0 -- Speed of darkness tween
+  local darknessDelta = targetDarkness - self._nonAttackingEnemyDarkness
+  self._nonAttackingEnemyDarkness = self._nonAttackingEnemyDarkness + darknessDelta * math.min(1, darknessSpeed * dt)
+  
   -- Handle staggered enemy attack delays
   -- Don't process staggered attacks while shockwave or calcify sequence is active
   local shockwaveActive = self._shockwaveSequence ~= nil
@@ -1277,6 +1285,9 @@ function BattleScene:update(dt, bounds)
     else
       delayData.delay = delayData.delay - dt
       if delayData.delay <= 0 then
+        -- Set this enemy as the attacking enemy (before performing action)
+        self._attackingEnemyIndex = delayData.index
+        
         -- Perform action for this enemy
         local enemy = self.enemies[delayData.index]
         if enemy and enemy.hp > 0 then
@@ -1328,12 +1339,32 @@ function BattleScene:update(dt, bounds)
             end
           end
         end
+        -- Clear attacking enemy after attack completes (with small delay for visual feedback)
+        -- The delay will be handled by checking if attack delays are empty
       else
         table.insert(aliveAttackDelays, delayData)
       end
     end
   end
   self._enemyAttackDelays = aliveAttackDelays
+  
+  -- Clear attacking enemy index when all attacks are done
+  -- Add small delay after last attack completes for visual feedback
+  if #self._enemyAttackDelays == 0 and not shockwaveActive and not calcifyActive then
+    -- Keep attacking enemy visible for a brief moment after attack completes
+    if not self._attackingEnemyClearDelay then
+      self._attackingEnemyClearDelay = 0.3 -- 0.3s delay before clearing
+    else
+      self._attackingEnemyClearDelay = self._attackingEnemyClearDelay - dt
+      if self._attackingEnemyClearDelay <= 0 then
+        self._attackingEnemyIndex = nil
+        self._attackingEnemyClearDelay = nil
+      end
+    end
+  else
+    -- Reset delay if attacks are still happening
+    self._attackingEnemyClearDelay = nil
+  end
 
   -- Handle player attack delay (between ball despawn and attack animation)
   if self._playerAttackDelayTimer and self._playerAttackDelayTimer > 0 then
@@ -1713,6 +1744,8 @@ end
 function BattleScene:performEnemyAttack(minDamage, maxDamage)
   -- Clear any existing attack delays
   self._enemyAttackDelays = {}
+  -- Set first enemy as attacking (will be updated as attacks progress)
+  self._attackingEnemyIndex = 1
   
   -- Schedule attacks for all alive enemies with staggered delays
   local attackDelay = 0.5 -- Delay between consecutive enemy attacks (in seconds)
@@ -1720,6 +1753,8 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
     if enemy.hp > 0 and enemy.displayHP > 0.1 then
       -- First enemy attacks immediately (handled below), others are delayed by 0.3s intervals
       if i == 1 then
+        -- Set first enemy as attacking
+        self._attackingEnemyIndex = 1
         -- Use stored intent if available, otherwise fall back to old logic
         local intent = enemy.intent
         local shouldShockwave = false
@@ -1818,6 +1853,9 @@ function BattleScene:performEnemyCalcify(enemy, blockCount)
   end
   
   if not enemyIndex then enemyIndex = 1 end
+  
+  -- Set this enemy as the attacking enemy (for darkening others)
+  self._attackingEnemyIndex = enemyIndex
   
   -- Get enemy position for particle start
   local enemyX, enemyY = self:getEnemyCenterPivot(enemyIndex, self._lastBounds)
@@ -1996,6 +2034,10 @@ function BattleScene:_updateCalcifySequence(dt)
       if seq.timer >= 1.5 then
         seq.phase = "complete"
         self._calcifySequence = nil
+        -- Clear attacking enemy when calcify completes
+        if #self._enemyAttackDelays == 0 then
+          self._attackingEnemyIndex = nil
+        end
       end
     end
   end
@@ -2038,6 +2080,20 @@ end
 
 -- Perform enemy shockwave attack (enemy_1 special ability)
 function BattleScene:performEnemyShockwave(enemy)
+  -- Find enemy index
+  local enemyIndex = nil
+  for i, e in ipairs(self.enemies or {}) do
+    if e == enemy then
+      enemyIndex = i
+      break
+    end
+  end
+  
+  if not enemyIndex then enemyIndex = 1 end
+  
+  -- Set this enemy as the attacking enemy (for darkening others)
+  self._attackingEnemyIndex = enemyIndex
+  
   -- Start jump animation
   enemy.jumpTime = 1e-6
   
@@ -2129,6 +2185,10 @@ function BattleScene:_updateShockwaveSequence(dt)
     if seq.timer >= blocksDropDuration then
       -- Sequence complete - now other enemies can attack
       self._shockwaveSequence = nil
+      -- Clear attacking enemy when shockwave completes
+      if #self._enemyAttackDelays == 0 then
+        self._attackingEnemyIndex = nil
+      end
     end
   end
 end

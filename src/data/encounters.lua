@@ -1923,6 +1923,48 @@ local ENCOUNTERS = {
                               kind = "damage",
                               x = 0.847,
                               y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.405,
+                              y = 0.334
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.532,
+                              y = 0.334
+                            },
+                    {
+                              hp = 1,
+                              kind = "crit",
+                              x = 0.468,
+                              y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "multiplier",
+                              x = 0.468,
+                              y = 0.549
+                            },
+                    {
+                              hp = 1,
+                              kind = "crit",
+                              x = 0.405,
+                              y = 0.477
+                            },
+                    {
+                              hp = 1,
+                              kind = "crit",
+                              x = 0.532,
+                              y = 0.477
+                            },
+                    {
+                              hp = 1,
+                              kind = "crit",
+                              x = 0.532,
+                              y = 0.549
                             }
                   },
             type = "predefined"

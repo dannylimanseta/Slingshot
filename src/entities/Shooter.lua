@@ -32,6 +32,8 @@ function Shooter.new(x, y, projectileId)
     arrowOffsetX = 0, -- Relative offset from shooter center (tweened)
     lastTurnNumber = 1, -- Track turn number to detect changes
     bobTime = 0, -- Time tracker for bobbing animation
+    alpha = 1.0, -- Alpha for fade in/out based on turn phase
+    targetAlpha = 1.0, -- Target alpha to tween toward
   }, Shooter)
   
   -- Load all projectiles dynamically
@@ -224,6 +226,23 @@ function Shooter:update(dt, bounds)
   -- Update bobbing animation time
   self.bobTime = (self.bobTime or 0) + dt
   
+  -- Update alpha based on turn phase (fade out during enemy turn)
+  local BattleState = require("core.BattleState")
+  local state = BattleState.get()
+  if state and state.turn then
+    local turnPhase = state.turn.phase
+    -- Check if it's enemy turn (any phase that starts with "enemy")
+    local isEnemyTurn = turnPhase and (turnPhase:find("enemy") ~= nil)
+    self.targetAlpha = isEnemyTurn and 0.0 or 1.0
+  else
+    self.targetAlpha = 1.0
+  end
+  
+  -- Smoothly tween alpha toward target
+  local fadeSpeed = 5.0 -- Speed of fade transition
+  local alphaDelta = self.targetAlpha - (self.alpha or 1.0)
+  self.alpha = (self.alpha or 1.0) + alphaDelta * math.min(1, fadeSpeed * dt)
+  
   local speed = config.shooter.speed
   local move = 0
   if love.keyboard.isDown("a") then move = move - 1 end
@@ -352,7 +371,11 @@ function Shooter:getCurrentProjectileId()
 end
 
 function Shooter:draw()
-  love.graphics.setColor(1, 1, 1, 1)
+  local alpha = self.alpha or 1.0
+  -- Don't draw if fully transparent
+  if alpha <= 0 then return end
+  
+  love.graphics.setColor(1, 1, 1, alpha)
   
   -- Shift entire shooter up by 20px
   local drawY = self.y - 20
@@ -369,6 +392,8 @@ function Shooter:draw()
     local iw, ih = self.ballSlotsImage:getWidth(), self.ballSlotsImage:getHeight()
     local scale = (slotsWidth / math.max(iw, ih)) * 2
     
+    -- Apply alpha to background
+    love.graphics.setColor(1, 1, 1, alpha)
     -- Center the background on shooter position
     love.graphics.draw(self.ballSlotsImage, self.x, drawY - 15, 0, scale, scale, iw * 0.5, ih * 0.5)
   end
@@ -399,20 +424,22 @@ function Shooter:draw()
     end
       
       -- Draw projectile image or fallback circle
+      -- Apply shooter alpha to final alpha
+      local combinedAlpha = finalAlpha * alpha
       if slotImage then
-      love.graphics.setColor(1, 1, 1, finalAlpha)
+      love.graphics.setColor(1, 1, 1, combinedAlpha)
         local iw, ih = slotImage:getWidth(), slotImage:getHeight()
       local scale = (slotData.size * 2 * bobScale) / math.max(iw, ih)
       love.graphics.draw(slotImage, slotData.x, drawY, 0, scale, scale, iw * 0.5, ih * 0.5)
   else
       -- Fallback circle
-      love.graphics.setColor(0.8, 0.8, 0.8, finalAlpha)
+      love.graphics.setColor(0.8, 0.8, 0.8, combinedAlpha)
       love.graphics.circle("fill", slotData.x, drawY, slotData.size * bobScale)
     end
       end
       
       -- Reset color
-      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.setColor(1, 1, 1, alpha)
   
   -- Draw arrow below the active ball (center slot)
   if self.arrowImage then
@@ -439,6 +466,8 @@ function Shooter:draw()
     -- Scale arrow to match ball size (with bobbing)
     local iw, ih = self.arrowImage:getWidth(), self.arrowImage:getHeight()
       local scale = (centerSlot.size * bobScale * 1.5) / math.max(iw, ih) * 1.5
+      -- Apply alpha to arrow
+      love.graphics.setColor(1, 1, 1, alpha)
       love.graphics.draw(self.arrowImage, arrowX, arrowY, 0, scale, scale, iw * 0.5, ih * 0.5)
     end
   end

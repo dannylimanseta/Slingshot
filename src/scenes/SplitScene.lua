@@ -1026,7 +1026,18 @@ function SplitScene:update(dt)
     end
   end
   
-  if turnState == TurnManager.States.PLAYER_TURN_ACTIVE and shotWasFired and not hasBall and not hasActiveBlackHoles then
+  -- Check if lightning hits are still pending (delay turn end until all delayed lightning hits apply)
+  local hasPendingLightningHits = false
+  if self.left and self.left.blocks and self.left.blocks.blocks then
+    for _, b in ipairs(self.left.blocks.blocks) do
+      if b and b.alive and b._lightningHitPending then
+        hasPendingLightningHits = true
+        break
+      end
+    end
+  end
+  
+  if turnState == TurnManager.States.PLAYER_TURN_ACTIVE and shotWasFired and not hasBall and not hasActiveBlackHoles and not hasPendingLightningHits then
     -- Trigger impact VFX
     if self.right and self.right.playImpact then
       local blockCount = (self.left and self.left.blocksHitThisTurn) or 1
