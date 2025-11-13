@@ -207,7 +207,7 @@ end
 
 function SceneManager:mousereleased(x, y, button, isTouch, presses)
   if self.currentScene and self.currentScene.mousereleased then
-    self.currentScene:mousereleased(x, y, button, isTouch, presses)
+    return self.currentScene:mousereleased(x, y, button, isTouch, presses)
   end
 end
 

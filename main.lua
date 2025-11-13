@@ -280,7 +280,12 @@ function love.mousereleased(x, y, button, isTouch, presses)
   if InputManager and InputManager.onMouseReleased then
     InputManager.onMouseReleased(vx, vy, button, isTouch, presses)
   end
-  if sceneManager then sceneManager:mousereleased(vx, vy, button, isTouch, presses) end
+  if sceneManager then
+    local result = sceneManager:mousereleased(vx, vy, button, isTouch, presses)
+    if transitionHandler and result then
+      transitionHandler:handleTransition(result)
+    end
+  end
 end
 
 function love.mousemoved(x, y, dx, dy, isTouch)
