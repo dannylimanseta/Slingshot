@@ -493,37 +493,38 @@ end
 function ProjectileEffects:destroyBlockByBlackHole(block)
   block._suckedByBlackHole = true
   
-  -- Track damage
+  -- Use BattleState to track damage (ensures multipliers are counted correctly)
+  local BattleState = require("core.BattleState")
   local perHit = (config.score and config.score.rewardPerHit) or 1
   local hitReward = perHit
+  local kind = block.kind or "damage"
+  local rewardData = { kind = kind, damage = hitReward, destroyed = false }
   
-  if block.kind == "crit" then
-    self.scene.critThisTurn = (self.scene.critThisTurn or 0) + 1
-  elseif block.kind == "multiplier" then
-    self.scene.multiplierThisTurn = (self.scene.multiplierThisTurn or 0) + 1
-  elseif block.kind == "aoe" then
+  if kind == "crit" then
+    BattleState.trackDamage("crit", hitReward)
+  elseif kind == "multiplier" then
+    BattleState.trackDamage("multiplier", hitReward)
+  elseif kind == "aoe" then
     hitReward = hitReward + 3
-    self.scene.aoeThisTurn = true
-  elseif block.kind == "armor" then
+    rewardData.damage = hitReward
+    BattleState.trackDamage("aoe", hitReward)
+  elseif kind == "armor" then
     hitReward = 0
     local rewardByHp = (config.armor and config.armor.rewardByHp) or {}
     local hp = (block and block.hp) or 1
     local armorGain = rewardByHp[hp] or rewardByHp[1] or 3
-    self.scene.armorThisTurn = self.scene.armorThisTurn + armorGain
-  elseif block.kind == "potion" then
+    rewardData.armorGain = armorGain
+    BattleState.trackDamage("armor", armorGain)
+  elseif kind == "potion" then
     hitReward = 0
     local healAmount = (config.heal and config.heal.potionHeal) or 8
-    self.scene.healThisTurn = self.scene.healThisTurn + healAmount
+    rewardData.healAmount = healAmount
+    BattleState.trackDamage("heal", healAmount)
+  else
+    BattleState.trackDamage(kind, hitReward)
   end
   
-  self.scene.score = self.scene.score + hitReward
-  
-  if block.kind == "damage" or block.kind == "attack" or block.kind == "crit" or block.kind == "multiplier" or block.kind == "aoe" then
-    table.insert(self.scene.blockHitSequence, {
-      damage = hitReward,
-      kind = block.kind
-    })
-  end
+  BattleState.registerBlockHit(block, rewardData)
   
   block:destroy()
 end

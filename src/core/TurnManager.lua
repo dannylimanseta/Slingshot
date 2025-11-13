@@ -180,7 +180,7 @@ function TurnManager:startPlayerTurn()
     BattleState.resetBlocksDestroyedThisTurn()
     BattleState.setCanShoot(false)
   else
-    self.turnNumber = self.turnNumber + 1
+  self.turnNumber = self.turnNumber + 1
     self.turnData = {}
   end
   
@@ -213,13 +213,16 @@ function TurnManager:endPlayerTurn(turnData)
   local rewards = state and state.rewards or {}
   local blocksDestroyed = (state and state.blocks and state.blocks.destroyedThisTurn) or 0
   self.turnData = {
-    score = rewards.score or (turnData and turnData.score) or 0,
+    score = (turnData and turnData.score) or rewards.score or 0, -- Prioritize turnData.score (has multipliers) over rewards.score (base only)
     armor = rewards.armorThisTurn or (turnData and turnData.armor) or 0,
     crits = rewards.critCount or (turnData and turnData.crits) or 0,
+    critCount = (turnData and turnData.critCount) or rewards.critCount or 0, -- Prioritize calculated critCount from SplitScene
+    multiplierCount = (turnData and turnData.multiplierCount) or rewards.multiplierCount or 0, -- Prioritize calculated multiplierCount from SplitScene
     blocksDestroyed = blocksDestroyed or (turnData and turnData.blocksDestroyed) or 0,
     isAOE = rewards.aoeFlag or (turnData and turnData.isAOE) or false,
     blockHitSequence = rewards.blockHitSequence or (turnData and turnData.blockHitSequence) or {},
-    baseDamage = rewards.baseDamage or (turnData and turnData.baseDamage) or rewards.score or 0,
+    baseDamage = (turnData and turnData.baseDamage) or rewards.baseDamage or 0, -- Prioritize calculated baseDamage from SplitScene
+    orbBaseDamage = (turnData and turnData.orbBaseDamage) or 0,
     heal = rewards.healThisTurn or (turnData and turnData.heal) or 0,
     projectileId = rewards.projectileId or (turnData and turnData.projectileId) or "strike",
   }

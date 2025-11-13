@@ -617,11 +617,16 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
   end
   
   -- Calculate cumulative damage from block hits (add to base)
+  -- IMPORTANT: Exclude crit and multiplier blocks from cumulative - they only trigger multipliers, don't add damage
   for i, hit in ipairs(blockHitSequence) do
+    local kind = (type(hit) == "table" and hit.kind) or "damage"
     local hitAmount = (type(hit) == "table" and (hit.damage or hit.amount)) or 0
-    cumulative = cumulative + hitAmount
-    -- Show each increment (e.g., 4, 5, 6, 7, 8) - doubled duration
-    table.insert(sequence, { text = tostring(cumulative), duration = 0.1 })
+    -- Only add damage from blocks that aren't crit or multiplier
+    if kind ~= "crit" and kind ~= "multiplier" then
+      cumulative = cumulative + hitAmount
+      -- Show each increment (e.g., 4, 5, 6, 7, 8) - doubled duration
+      table.insert(sequence, { text = tostring(cumulative), duration = 0.1 })
+    end
   end
   
   -- Ensure cumulative reflects actual pre-multiplier damage (covers bonuses that aren't in blockHitSequence)
@@ -702,7 +707,7 @@ function BattleScene:onPlayerTurnEnd(turnData)
       impactBlockCount = turnData.impactBlockCount or (self._pendingImpactParams and self._pendingImpactParams.blockCount) or 1,
       impactIsCrit = turnData.impactIsCrit or (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false,
       blockHitSequence = turnData.blockHitSequence or {},
-      baseDamage = turnData.baseDamage or dmg,
+      baseDamage = turnData.baseDamage or 0, -- Use calculated baseDamage, don't fall back to final damage
       orbBaseDamage = turnData.orbBaseDamage or 0,
       critCount = turnData.critCount or 0,
       multiplierCount = turnData.multiplierCount or 0,
@@ -1331,8 +1336,21 @@ function BattleScene:update(dt, bounds)
         
         -- Build animated damage sequence
         local blockHitSequence = self._pendingPlayerAttackDamage.blockHitSequence or {}
-        local baseDamage = self._pendingPlayerAttackDamage.baseDamage or dmg
         local orbBaseDamage = self._pendingPlayerAttackDamage.orbBaseDamage or 0
+        
+        -- Calculate baseDamage if not provided (exclude crit/multiplier blocks)
+        local baseDamage = self._pendingPlayerAttackDamage.baseDamage
+        if not baseDamage or baseDamage == 0 then
+          baseDamage = orbBaseDamage
+          for _, hit in ipairs(blockHitSequence) do
+            local kind = (type(hit) == "table" and hit.kind) or "damage"
+            local amount = (type(hit) == "table" and (hit.damage or hit.amount)) or 0
+            if kind ~= "crit" and kind ~= "multiplier" then
+              baseDamage = baseDamage + amount
+            end
+          end
+        end
+        
         local critCount = self._pendingPlayerAttackDamage.critCount or 0
         local multiplierCount = self._pendingPlayerAttackDamage.multiplierCount or 0
         local damageSequence = buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBaseDamage, critCount, multiplierCount, dmg)

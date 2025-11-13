@@ -345,7 +345,21 @@ function SplitScene:endPlayerTurnWithTurnManager()
   if state ~= TurnManager.States.PLAYER_TURN_ACTIVE then return false end
   
   -- Collect turn data
-  local baseDamage = self.left and self.left.score or 0 -- Base damage before multipliers
+  local blockHitSequence = (self.left and self.left.blockHitSequence) or {} -- Array of {damage, kind} for animated damage display
+  local orbBaseDamage = (self.left and self.left.baseDamageThisTurn) or 0 -- Base damage from orb/projectile
+  
+  -- Calculate base damage by summing only non-crit, non-multiplier blocks
+  -- Crit and multiplier blocks should NOT contribute to base damage - they only trigger multipliers
+  local baseDamage = orbBaseDamage
+  for _, hit in ipairs(blockHitSequence) do
+    local kind = (type(hit) == "table" and hit.kind) or "damage"
+    local amount = (type(hit) == "table" and (hit.damage or hit.amount)) or 0
+    -- Only add damage from blocks that aren't crit or multiplier
+    if kind ~= "crit" and kind ~= "multiplier" then
+      baseDamage = baseDamage + amount
+    end
+  end
+  
   local mult = (config.score and config.score.critMultiplier) or 2
   local critCount = (self.left and self.left.critThisTurn) or 0
   local multiplierCount = (self.left and self.left.multiplierThisTurn) or 0
@@ -366,8 +380,6 @@ function SplitScene:endPlayerTurnWithTurnManager()
   local heal = self.left and self.left.healThisTurn or 0
   local blocksDestroyed = self.left and self.left.destroyedThisTurn or 0
   local isAOE = (self.left and self.left.aoeThisTurn) or false
-  local blockHitSequence = (self.left and self.left.blockHitSequence) or {} -- Array of {damage, kind} for animated damage display
-  local orbBaseDamage = (self.left and self.left.baseDamageThisTurn) or 0 -- Base damage from orb/projectile
   
   -- Get current projectile ID from shooter
   local projectileId = "strike" -- default

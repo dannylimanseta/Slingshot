@@ -532,6 +532,7 @@ function GameplayScene:handleBallBlockCollision(ball, block, contact)
     local streakAnimDuration = lcfg.streakAnimDuration or 0.18
     block._lightningHitDelay = streakAnimDuration * 0.5 -- Half the animation duration for subtle delay
     block._lightningHitPending = true
+    block._lightningHitRewardPending = true -- Mark first block for reward when delayed hit processes
   else
     block:hit()
   end
