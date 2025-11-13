@@ -649,13 +649,29 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
   end
   
   -- Apply damage multiplier if any
-  if multiplierCount > 0 then
-    local dmgMult = (config.score and config.score.powerCritMultiplier) or 4
+  -- Also check if final damage suggests a multiplier was applied (defensive check for sync issues)
+  local dmgMult = (config.score and config.score.powerCritMultiplier) or 4
+  
+  -- Check if a multiplier was applied by comparing final damage to expected damage
+  -- If multiplierCount is 0 but final damage suggests a multiplier was applied, show it anyway
+  local shouldShowMultiplier = multiplierCount > 0
+  if not shouldShowMultiplier and finalDamage > 0 and cumulative > 0 then
+    -- Calculate what the final damage would be with the multiplier
+    local expectedWithMult = cumulative * dmgMult
+    -- Check if final damage matches the expected value (accounting for floating point)
+    if math.abs(finalDamage - expectedWithMult) < 0.01 then
+      shouldShowMultiplier = true
+    end
+  end
+  
+  if shouldShowMultiplier then
     local beforeMult = cumulative
     local afterMult = beforeMult * dmgMult
     -- Show multiplier step (e.g., "128x4") - mark as multiplier step, longer duration for visibility
     table.insert(sequence, { text = tostring(beforeMult) .. "x" .. tostring(dmgMult), duration = 0.4, isMultiplier = true })
     cumulative = afterMult
+    -- Update hasMultiplier flag
+    hasMultiplier = true
   end
   
   -- Show final total - add exclamation only if there was a multiplier
