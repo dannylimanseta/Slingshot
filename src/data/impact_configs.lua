@@ -70,6 +70,7 @@ impactConfigs.behaviors = {
     suppressInitialSplatter = true, -- No splatter until shards hit
     suppressInitialParticles = true, -- No particles until shards hit
     popupDelay = 1.04, -- Delay until shards appear (0.65 * 1.6s)
+    delayHPReduction = true, -- Delay HP reduction until after damage animation completes
   },
   
   -- Lightning projectile (custom animation, fast)

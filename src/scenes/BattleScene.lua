@@ -853,6 +853,16 @@ function BattleScene:update(dt, bounds)
           -- Mark sequence as completed (only once)
           if not p.sequenceFinished then
             p.sequenceFinished = true
+            
+            -- Apply pending damage now that animation is complete
+            if p.who == "enemy" and p.enemyIndex then
+              local enemy = self.enemies and self.enemies[p.enemyIndex]
+              if enemy and enemy.pendingDamage and enemy.pendingDamage > 0 then
+                enemy.hp = math.max(0, enemy.hp - enemy.pendingDamage)
+                enemy.pendingDamage = 0
+              end
+            end
+            
             -- Longer linger for the final value
             local lastStep = p.sequence[#p.sequence]
             local hasExclamation = lastStep and lastStep.text and string.find(lastStep.text, "!") ~= nil
@@ -1204,7 +1214,12 @@ function BattleScene:update(dt, bounds)
           -- AOE attack: damage all enemies
           for i, enemy in ipairs(self.enemies or {}) do
             if enemy and enemy.hp > 0 then
-              enemy.hp = math.max(0, enemy.hp - dmg)
+              -- For black hole, delay HP reduction until damage animation completes
+              if behavior.delayHPReduction then
+                enemy.pendingDamage = (enemy.pendingDamage or 0) + dmg
+              else
+                enemy.hp = math.max(0, enemy.hp - dmg)
+              end
               
               -- Trigger enemy hit visual effects (flash, knockback, animated popup)
               -- Use behavior config to determine what effects to show
@@ -1315,7 +1330,12 @@ function BattleScene:update(dt, bounds)
         if selectedEnemy then
           local i = self.selectedEnemyIndex
           if selectedEnemy.hp > 0 then
-            selectedEnemy.hp = math.max(0, selectedEnemy.hp - dmg)
+            -- For black hole, delay HP reduction until damage animation completes
+            if behavior.delayHPReduction then
+              selectedEnemy.pendingDamage = (selectedEnemy.pendingDamage or 0) + dmg
+            else
+              selectedEnemy.hp = math.max(0, selectedEnemy.hp - dmg)
+            end
         
             -- Trigger enemy hit visual effects (flash, knockback, animated popup)
             -- Use behavior config to determine what effects to show
