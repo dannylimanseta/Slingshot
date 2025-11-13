@@ -770,7 +770,7 @@ function ImpactSystem.drawLightningStrikes(scene)
           end
         end
         
-        -- Bright endpoint glow
+        -- Bright endpoint glow (traveling tip)
         if progress < 1.0 then
           local endPoint = points[#points]
           love.graphics.setColor(1.0, 1.0, 1.0, 0.4 * alpha)
@@ -780,6 +780,24 @@ function ImpactSystem.drawLightningStrikes(scene)
           love.graphics.setColor(1.0, 1.0, 1.0, alpha)
           love.graphics.circle("fill", endPoint.x, endPoint.y, 5)
         end
+        
+        -- Big cyan-white glow at the origin (start of lightning)
+        local startPoint = points[1]
+        -- Large outer glow (cyan)
+        love.graphics.setColor(0.3, 0.7, 1.0, 0.25 * alpha)
+        love.graphics.circle("fill", startPoint.x, startPoint.y, 45)
+        love.graphics.setColor(0.4, 0.8, 1.0, 0.35 * alpha)
+        love.graphics.circle("fill", startPoint.x, startPoint.y, 32)
+        -- Medium bright glow (white-cyan)
+        love.graphics.setColor(0.7, 0.9, 1.0, 0.5 * alpha)
+        love.graphics.circle("fill", startPoint.x, startPoint.y, 22)
+        love.graphics.setColor(0.9, 0.95, 1.0, 0.7 * alpha)
+        love.graphics.circle("fill", startPoint.x, startPoint.y, 14)
+        -- Bright white core
+        love.graphics.setColor(1.0, 1.0, 1.0, 0.85 * alpha)
+        love.graphics.circle("fill", startPoint.x, startPoint.y, 8)
+        love.graphics.setColor(1.0, 1.0, 1.0, alpha)
+        love.graphics.circle("fill", startPoint.x, startPoint.y, 4)
       end
     end
   end
