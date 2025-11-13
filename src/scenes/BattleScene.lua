@@ -53,7 +53,7 @@ function BattleScene:calculateEnemyIntents()
     if enemy.hp > 0 and not enemy.disintegrating then
       -- Determine intent based on enemy type and behavior
       local isEnemy1 = enemy.spritePath == "enemy_1.png"
-      local isStagmaw = enemy.spritePath == "fx/enemy_4.png" or 
+      local isStagmaw = enemy.spritePath == "enemy_4.png" or 
                         enemy.name == "Stagmaw" or 
                         (enemy.spritePath and enemy.spritePath:find("enemy_4"))
       
