@@ -1,5 +1,6 @@
 local config = require("config")
 local SpriteAnimation = require("utils.SpriteAnimation")
+local impactConfigs = require("data.impact_configs")
 
 local ImpactSystem = {}
 
@@ -40,33 +41,41 @@ local function createSplatter(scene, spriteCenterX, spriteCenterY)
   })
 end
 
--- Create multiple staggered impact instances and schedule flash/knockback events
--- isAOE: if true, create impacts at all enemy positions
--- isPierce: if true, create single horizontal slicing impact (left to right)
--- isBlackHole: if true, create black hole attack animation
--- isLightning: if true, create lightning strike attack animation
-function ImpactSystem.create(scene, blockCount, isCrit, isAOE, isPierce, isBlackHole, isLightning)
+-- Create impact animations based on projectile type
+-- Uses data-driven approach via impact_configs.lua
+function ImpactSystem.create(scene, impactData)
   if not scene or not scene.impactAnimation then return end
-  blockCount = blockCount or 1
-  isCrit = isCrit or false
-  isAOE = isAOE or false
-  isPierce = isPierce or false
-  isBlackHole = isBlackHole or false
-  isLightning = isLightning or false
   
-  -- Black hole attack uses custom animation
-  if isBlackHole then
-    return ImpactSystem.createBlackHoleAttack(scene, isAOE)
+  -- Support both old style (positional params) and new style (object)
+  if type(impactData) ~= "table" or impactData.blockCount == nil then
+    -- Old style: convert to object
+    local blockCount, isCrit, isAOE, isPierce, isBlackHole, isLightning = impactData, isCrit, isAOE, isPierce, isBlackHole, isLightning
+    impactData = {
+      blockCount = blockCount or 1,
+      isCrit = isCrit or false,
+      isAOE = isAOE or false,
+      projectileId = (isLightning and "lightning") or (isBlackHole and "black_hole") or (isPierce and "pierce") or "strike",
+    }
   end
   
-  -- Lightning attack uses custom animation
-  if isLightning then
+  local blockCount = impactData.blockCount or 1
+  local isCrit = impactData.isCrit or false
+  local isAOE = impactData.isAOE or false
+  local projectileId = impactData.projectileId or "strike"
+  local behavior = impactData.behavior or impactConfigs.getBehavior(projectileId)
+  
+  -- Dispatch to appropriate impact type based on behavior config
+  local impactType = behavior.impactType
+  
+  if impactType == "black_hole" then
+    return ImpactSystem.createBlackHoleAttack(scene, isAOE)
+  elseif impactType == "lightning_strike" then
     return ImpactSystem.createLightningAttack(scene, blockCount, isAOE)
   end
-
-  -- If crit, always spawn 5 slashes; otherwise cap at 4 sprites max
-  -- For pierce, use single impact
-  local spriteCount = isPierce and 1 or (isCrit and 5 or math.min(blockCount, 4))
+  
+  -- Standard impact animation (for most projectiles)
+  -- Pierce uses single impact, crit uses 5, others based on block count
+  local spriteCount = (projectileId == "pierce") and 1 or (isCrit and 5 or math.min(blockCount, 4))
 
   local w = (scene._lastBounds and scene._lastBounds.w) or love.graphics.getWidth()
   local h = (scene._lastBounds and scene._lastBounds.h) or love.graphics.getHeight()
@@ -135,7 +144,7 @@ function ImpactSystem.create(scene, blockCount, isCrit, isAOE, isPierce, isBlack
     local spriteDelay = (i - 1) * staggerDelay
     local delay = baseDelay + spriteDelay
     
-    if isPierce then
+    if projectileId == "pierce" then
       -- Pierce impact: single image, no rotation, horizontal movement left to right
       -- Get enemy sprite width to determine start/end positions
       local enemySpriteWidth = enemy.img and (enemy.img:getWidth() * enemyScale) or (r * 2)

@@ -535,38 +535,57 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
   return sequence
 end
 
-function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE, blockHitSequence, baseDamage, orbBaseDamage, critCount, multiplierCount, isPierce, isBlackHole, isLightning)
+function BattleScene:onPlayerTurnEnd(turnData)
+  -- Support both old parameter style (for backward compatibility) and new object style
+  if type(turnData) ~= "table" or turnData.damage == nil then
+    -- Old style: convert positional parameters to object
+    local turnScore, armor, isAOE, blockHitSequence, baseDamage, orbBaseDamage, critCount, multiplierCount, isPierce, isBlackHole, isLightning = turnData, armor, isAOE, blockHitSequence, baseDamage, orbBaseDamage, critCount, multiplierCount, isPierce, isBlackHole, isLightning
+    turnData = {
+      damage = turnScore,
+      armor = armor,
+      isAOE = isAOE,
+      blockHitSequence = blockHitSequence,
+      baseDamage = baseDamage,
+      orbBaseDamage = orbBaseDamage,
+      critCount = critCount,
+      multiplierCount = multiplierCount,
+      projectileId = (isLightning and "lightning") or (isBlackHole and "black_hole") or (isPierce and "pierce") or "strike",
+    }
+  end
+  
   -- Check win/lose states via TurnManager
   local tmState = self.turnManager and self.turnManager:getState()
   if tmState == TurnManager.States.VICTORY or tmState == TurnManager.States.DEFEAT then return end
-  if turnScore and turnScore > 0 then
-    local dmg = math.floor(turnScore)
+  if turnData.damage and turnData.damage > 0 then
+    local dmg = math.floor(turnData.damage)
+    
+    -- Load impact behavior config
+    local impactConfigs = require("data.impact_configs")
+    local projectileId = turnData.projectileId or "strike"
+    local behavior = impactConfigs.getBehavior(projectileId)
     
     -- Store damage info to apply after delay (merge with pending impact params if any)
     self._pendingPlayerAttackDamage = {
       damage = dmg,
-      armor = armor or 0,
-      isAOE = isAOE or false, -- Store AOE flag
-      isPierce = isPierce or false, -- Store pierce flag
-      isBlackHole = isBlackHole or false, -- Store black hole flag
-      isLightning = isLightning or false, -- Store lightning flag
-      impactBlockCount = (self._pendingImpactParams and self._pendingImpactParams.blockCount) or 1,
-      impactIsCrit = (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false,
-      blockHitSequence = blockHitSequence or {}, -- Array of {damage, kind} for animated damage display
-      baseDamage = baseDamage or dmg, -- Base damage before multipliers
-      orbBaseDamage = orbBaseDamage or 0, -- Base damage from orb/projectile
-      critCount = critCount or 0,
-      multiplierCount = multiplierCount or 0
+      armor = turnData.armor or 0,
+      isAOE = turnData.isAOE or false,
+      projectileId = projectileId,
+      impactBlockCount = turnData.impactBlockCount or (self._pendingImpactParams and self._pendingImpactParams.blockCount) or 1,
+      impactIsCrit = turnData.impactIsCrit or (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false,
+      blockHitSequence = turnData.blockHitSequence or {},
+      baseDamage = turnData.baseDamage or dmg,
+      orbBaseDamage = turnData.orbBaseDamage or 0,
+      critCount = turnData.critCount or 0,
+      multiplierCount = turnData.multiplierCount or 0,
+      behavior = behavior, -- Store behavior config
     }
     self._pendingImpactParams = nil -- Clear after merging
-    -- Trigger player attack sequence after delay
-    -- Black hole and lightning attacks start much faster
-    local isBlackHole = self._pendingPlayerAttackDamage.isBlackHole or false
-    local isLightning = self._pendingPlayerAttackDamage.isLightning or false
-    self._playerAttackDelayTimer = isBlackHole and 0.05 or (isLightning and 0.05 or ((config.battle and config.battle.playerAttackDelay) or 0.5))
+    
+    -- Use behavior-driven attack delay
+    self._playerAttackDelayTimer = behavior.attackDelay
     
     -- Queue incoming armor for TurnManager to handle (this happens immediately, visual effects are delayed)
-    self.pendingArmor = armor or 0
+    self.pendingArmor = turnData.armor or 0
     self.armorPopupShown = false
   end
 end
@@ -1156,16 +1175,20 @@ function BattleScene:update(dt, bounds)
         local dmg = self._pendingPlayerAttackDamage.damage
         local armor = self._pendingPlayerAttackDamage.armor
         local isAOE = self._pendingPlayerAttackDamage.isAOE or false
-        local isPierce = self._pendingPlayerAttackDamage.isPierce or false
-        local isBlackHole = self._pendingPlayerAttackDamage.isBlackHole or false
-        local isLightning = self._pendingPlayerAttackDamage.isLightning or false
+        local projectileId = self._pendingPlayerAttackDamage.projectileId or "strike"
+        local behavior = self._pendingPlayerAttackDamage.behavior
         local impactBlockCount = self._pendingPlayerAttackDamage.impactBlockCount or 1
         local impactIsCrit = self._pendingPlayerAttackDamage.impactIsCrit or false
         
         -- Create impact sprite animations first (before damage effects)
-        -- Pass AOE, pierce, black hole, and lightning flags
         if impactBlockCount and impactBlockCount > 0 then
-          self:_createImpactInstances(impactBlockCount, impactIsCrit, isAOE, isPierce, isBlackHole, isLightning)
+          self:_createImpactInstances({
+            blockCount = impactBlockCount,
+            isCrit = impactIsCrit,
+            isAOE = isAOE,
+            projectileId = projectileId,
+            behavior = behavior
+          })
         end
         
         -- Build animated damage sequence
@@ -1184,9 +1207,11 @@ function BattleScene:update(dt, bounds)
               enemy.hp = math.max(0, enemy.hp - dmg)
               
               -- Trigger enemy hit visual effects (flash, knockback, animated popup)
-              -- Skip initial flash for black hole (shards will trigger it)
-              if not isBlackHole then
+              -- Use behavior config to determine what effects to show
+              if not behavior.suppressInitialFlash then
                 enemy.flash = config.battle.hitFlashDuration
+              end
+              if not behavior.suppressInitialKnockback then
                 enemy.knockbackTime = 1e-6
               end
               -- Calculate total animation duration + linger + disintegration time
@@ -1205,8 +1230,8 @@ function BattleScene:update(dt, bounds)
               local safetyBuffer = 0.5 -- Extra time to ensure sequence never times out prematurely
               local totalPopupLifetime = totalSequenceDuration + lingerTime + disintegrationDisplayTime + safetyBuffer
               
-              -- For black hole attacks, delay popup until shards appear (0.65 * 1.6s = ~1.04s)
-              local popupStartDelay = isBlackHole and 1.04 or 0
+              -- Use behavior config for popup delay
+              local popupStartDelay = behavior.popupDelay or 0
               
               table.insert(self.popups, { 
                 x = 0, 
@@ -1222,8 +1247,8 @@ function BattleScene:update(dt, bounds)
                 enemyIndex = i,
                 startDelay = popupStartDelay -- Delay before popup becomes visible
               })
-              -- Emit hit burst particles from enemy center (skip for black hole - shards will trigger it)
-              if self.particles and not isBlackHole then
+              -- Emit hit burst particles from enemy center (use behavior config)
+              if self.particles and not behavior.suppressInitialParticles then
                 local ex, ey = self:getEnemyCenterPivot(i, self._lastBounds)
                 if ex and ey then
                   self.particles:emitHitBurst(ex, ey, nil, impactIsCrit) -- Uses default colors, crit mode if applicable
@@ -1293,9 +1318,11 @@ function BattleScene:update(dt, bounds)
             selectedEnemy.hp = math.max(0, selectedEnemy.hp - dmg)
         
             -- Trigger enemy hit visual effects (flash, knockback, animated popup)
-            -- Skip initial flash for black hole (shards will trigger it)
-            if not isBlackHole then
+            -- Use behavior config to determine what effects to show
+            if not behavior.suppressInitialFlash then
               selectedEnemy.flash = config.battle.hitFlashDuration
+            end
+            if not behavior.suppressInitialKnockback then
               selectedEnemy.knockbackTime = 1e-6
             end
             -- Calculate total animation duration + linger + disintegration time
@@ -1310,8 +1337,8 @@ function BattleScene:update(dt, bounds)
             local safetyBuffer = 0.5 -- Extra time to ensure sequence never times out prematurely
             local totalPopupLifetime = totalSequenceDuration + lingerTime + disintegrationDuration + safetyBuffer
             
-            -- For black hole attacks, delay popup until shards appear (0.65 * 1.6s = ~1.04s)
-            local popupStartDelay = isBlackHole and 1.04 or 0
+            -- Use behavior config for popup delay
+            local popupStartDelay = behavior.popupDelay or 0
             
             table.insert(self.popups, { 
               x = 0, 
@@ -1327,8 +1354,8 @@ function BattleScene:update(dt, bounds)
               enemyIndex = i,
               startDelay = popupStartDelay -- Delay before popup becomes visible
             })
-            -- Emit hit burst particles from enemy center (skip for black hole - shards will trigger it)
-            if self.particles and not isBlackHole then
+            -- Emit hit burst particles from enemy center (use behavior config)
+            if self.particles and not behavior.suppressInitialParticles then
               local ex, ey = self:getEnemyCenterPivot(i, self._lastBounds)
               if ex and ey then
                 self.particles:emitHitBurst(ex, ey, nil, impactIsCrit) -- Uses default colors, crit mode if applicable
@@ -2419,9 +2446,22 @@ function BattleScene:playImpact(blockCount, isCrit)
 end
 
 -- Internal helper to actually create impact instances (called after delay)
-function BattleScene:_createImpactInstances(blockCount, isCrit, isAOE, isPierce, isBlackHole, isLightning)
+function BattleScene:_createImpactInstances(impactData)
   if not self.impactAnimation then return end
-  ImpactSystem.create(self, blockCount or 1, isCrit or false, isAOE or false, isPierce or false, isBlackHole or false, isLightning or false)
+  
+  -- Support both old style (positional params) and new style (object)
+  if type(impactData) ~= "table" or impactData.blockCount == nil then
+    -- Old style: convert to object
+    local blockCount, isCrit, isAOE, isPierce, isBlackHole, isLightning = impactData, isCrit, isAOE, isPierce, isBlackHole, isLightning
+    impactData = {
+      blockCount = blockCount or 1,
+      isCrit = isCrit or false,
+      isAOE = isAOE or false,
+      projectileId = (isLightning and "lightning") or (isBlackHole and "black_hole") or (isPierce and "pierce") or "strike",
+    }
+  end
+  
+  ImpactSystem.create(self, impactData)
 end
 
 -- Handle keyboard input for enemy selection

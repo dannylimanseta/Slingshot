@@ -235,21 +235,20 @@ function SplitScene:setupTurnManagerEvents()
   self.turnManager:on("apply_damage", function(data)
     if data.target == "enemy" and self.right and self.right.onPlayerTurnEnd then
       local turnData = self.turnManager:getTurnData()
-      -- Call the old method but only pass damage (armor will be handled separately)
-      -- Pass AOE flag as third parameter, and block hit sequence data for animated damage display
-      self.right:onPlayerTurnEnd(
-        data.amount, 
-        turnData.armor or 0, 
-        turnData.isAOE or false,
-        turnData.blockHitSequence or {},
-        turnData.baseDamage or data.amount,
-        turnData.orbBaseDamage or 0,
-        turnData.critCount or 0,
-        turnData.multiplierCount or 0,
-        turnData.isPierce or false,
-        turnData.isBlackHole or false,
-        turnData.isLightning or false
-      )
+      -- Pass consolidated turn data object
+      self.right:onPlayerTurnEnd({
+        damage = data.amount,
+        armor = turnData.armor or 0,
+        isAOE = turnData.isAOE or false,
+        projectileId = turnData.projectileId or "strike",
+        blockHitSequence = turnData.blockHitSequence or {},
+        baseDamage = turnData.baseDamage or data.amount,
+        orbBaseDamage = turnData.orbBaseDamage or 0,
+        critCount = turnData.critCount or 0,
+        multiplierCount = turnData.multiplierCount or 0,
+        impactBlockCount = (self._pendingImpactParams and self._pendingImpactParams.blockCount) or 1,
+        impactIsCrit = (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false,
+      })
       -- Apply healing if any
       if turnData.heal and turnData.heal > 0 and self.right and self.right.applyHealing then
         self.right:applyHealing(turnData.heal)
@@ -367,11 +366,14 @@ function SplitScene:endPlayerTurnWithTurnManager()
   local heal = self.left and self.left.healThisTurn or 0
   local blocksDestroyed = self.left and self.left.destroyedThisTurn or 0
   local isAOE = (self.left and self.left.aoeThisTurn) or false
-  local isPierce = (self.left and self.left.pierceThisTurn) or false
-  local isBlackHole = (self.left and self.left.blackHoleThisTurn) or false
-  local isLightning = (self.left and self.left.lightningThisTurn) or false
   local blockHitSequence = (self.left and self.left.blockHitSequence) or {} -- Array of {damage, kind} for animated damage display
   local orbBaseDamage = (self.left and self.left.baseDamageThisTurn) or 0 -- Base damage from orb/projectile
+  
+  -- Get current projectile ID from shooter
+  local projectileId = "strike" -- default
+  if self.left and self.left.shooter and self.left.shooter.getCurrentProjectileId then
+    projectileId = self.left.shooter:getCurrentProjectileId()
+  end
   
   -- End the turn using TurnManager
   self.turnManager:endPlayerTurn({
@@ -381,9 +383,7 @@ function SplitScene:endPlayerTurnWithTurnManager()
     crits = critCount,
     blocksDestroyed = blocksDestroyed,
     isAOE = isAOE,
-    isPierce = isPierce,
-    isBlackHole = isBlackHole,
-    isLightning = isLightning,
+    projectileId = projectileId, -- Pass projectile ID instead of multiple booleans
     blockHitSequence = blockHitSequence, -- Pass block hit sequence for animated damage display
     baseDamage = baseDamage, -- Store base damage before multipliers for animation
     orbBaseDamage = orbBaseDamage, -- Base damage from orb/projectile

@@ -38,9 +38,6 @@ function GameplayScene.new()
     critThisTurn = 0, -- count of crit blocks hit this turn
     multiplierThisTurn = 0, -- count of multiplier blocks hit this turn
     aoeThisTurn = false, -- true if any AOE blocks were hit this turn
-    pierceThisTurn = false, -- true if pierce orb was used this turn
-    blackHoleThisTurn = false, -- true if black hole orb was used this turn
-    lightningThisTurn = false, -- true if lightning orb was used this turn
     blockHitSequence = {}, -- Array of {damage, kind} for each block hit this turn (for animated damage display)
     baseDamageThisTurn = 0, -- Base damage from the orb/projectile at the start of the turn
     _prevCanShoot = true,
@@ -1119,9 +1116,6 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       self.critThisTurn = 0
       self.multiplierThisTurn = 0
       self.aoeThisTurn = false
-      self.pierceThisTurn = false
-      self.blackHoleThisTurn = false
-      self.lightningThisTurn = false
       self.blocksHitThisTurn = 0
       self.blockHitSequence = {} -- Reset block hit sequence for animated damage display
       self.baseDamageThisTurn = 0 -- Reset base damage for this turn
@@ -1258,7 +1252,6 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       elseif projectileId == "pierce" then
         -- Pierce: single projectile that pierces through blocks
         self.balls = {} -- Clear multiple balls
-        self.pierceThisTurn = true -- Track that pierce orb was used this turn
         local maxPierce = (effective and effective.maxPierce) or 6
         -- Pierce orbs are 2x larger
         local pierceRadiusScale = 2.0
@@ -1282,7 +1275,6 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       elseif projectileId == "black_hole" then
         -- Black Hole: single projectile, spawns a black hole on first block hit
         self.balls = {} -- Clear multiple balls
-        self.blackHoleThisTurn = true -- Mark that black hole was used this turn
         self.ball = Ball.new(self.world, self.aimStartX, self.aimStartY, ndx, ndy, {
           maxBounces = (effective and effective.maxBounces) or config.ball.maxBounces,
           spritePath = spritePath,
@@ -1304,7 +1296,6 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       elseif projectileId == "lightning" then
         -- Lightning: single projectile that bounces between blocks
         self.balls = {} -- Clear multiple balls
-        self.lightningThisTurn = true -- Mark that lightning orb was used this turn
         local maxBounces = (effective and effective.maxBounces) or config.ball.maxBounces
         local lightningConfig = config.ball.lightning or {}
         local trailConfig = lightningConfig.trail or config.ball.trail
