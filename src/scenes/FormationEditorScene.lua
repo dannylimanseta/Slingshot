@@ -603,7 +603,7 @@ function FormationEditorScene:drawBlock(x, y, kind, size, hp)
     local baseTextHeight = baseFont:getHeight()
     local textScale = 0.7
     local textHeight = baseTextHeight * textScale
-    local iconSize = textHeight * 0.9 * 0.85 * 0.85 * 1.2
+    local iconSize = textHeight * 0.9 * 0.85 * 0.85 * 1.3
     local iconW, iconH = iconToUse:getDimensions()
     local iconScale = iconSize / math.max(iconW, iconH)
     local iconXOffset = (kind == "armor") and 2 or ((kind == "potion") and 2 or 0)
