@@ -46,6 +46,25 @@ local function createEnemyFromConfig(enemyConfig, index)
   }
 end
 
+-- Returns true while enemy attacks/sequences are still running
+function BattleScene:areEnemyAttacksActive()
+  -- Any staggered enemy attacks pending?
+  if self._enemyAttackDelays and #self._enemyAttackDelays > 0 then
+    return true
+  end
+  -- Any special sequences active?
+  if self._shockwaveSequence or self._calcifySequence then
+    return true
+  end
+  -- Any enemy lunge/jump/knockback in progress?
+  for _, enemy in ipairs(self.enemies or {}) do
+    if (enemy.lungeTime and enemy.lungeTime > 0) or (enemy.jumpTime and enemy.jumpTime > 0) or (enemy.knockbackTime and enemy.knockbackTime > 0) then
+      return true
+    end
+  end
+  return false
+end
+
 -- Calculate enemy intents for the upcoming turn
 -- This determines what each enemy will do on their next turn
 function BattleScene:calculateEnemyIntents()
@@ -772,7 +791,7 @@ function BattleScene:update(dt, bounds)
 
   -- Update enemy flash timers
   for _, enemy in ipairs(self.enemies or {}) do
-    if enemy.flash > 0 then enemy.flash = math.max(0, enemy.flash - dt) end
+    if enemy.flash > 0 then enemy.flash = math.max(0, enemy.flash - dt * 0.85) end
   end
   
   -- Check if player was just hit (flash transitioned from 0 to positive)
@@ -908,7 +927,7 @@ function BattleScene:update(dt, bounds)
     if enemy.disintegrating then
     local cfg = config.battle.disintegration or {}
     local duration = cfg.duration or 1.5
-      enemy.disintegrationTime = enemy.disintegrationTime + dt
+      enemy.disintegrationTime = enemy.disintegrationTime + dt * 0.85
       if enemy.disintegrationTime >= duration then
         enemy.disintegrating = false
         -- If this was the selected enemy, select next one
@@ -1978,7 +1997,7 @@ function BattleScene:_updateCalcifySequence(dt)
     -- This phase is handled by the event system
     return
   elseif seq.phase == "animating" then
-    seq.timer = seq.timer + dt
+    seq.timer = seq.timer + dt * 0.85
     
     -- Update each particle
     local allHit = true
@@ -1986,7 +2005,7 @@ function BattleScene:_updateCalcifySequence(dt)
       if not particle.hit then
         allHit = false
         -- Update progress along bezier curve
-        particle.progress = math.min(1.0, particle.progress + particle.speed * dt)
+        particle.progress = math.min(1.0, particle.progress + particle.speed * dt * 0.85)
         
         -- Calculate position on bezier curve
         local t = particle.progress
@@ -2002,7 +2021,7 @@ function BattleScene:_updateCalcifySequence(dt)
         
         -- Update trail
         if particle.trail then
-          particle.trail:update(dt, particle.x, particle.y)
+          particle.trail:update(dt * 0.85, particle.x, particle.y)
         end
         
         -- Check if particle reached target
@@ -2025,7 +2044,7 @@ function BattleScene:_updateCalcifySequence(dt)
       else
         -- Particle already hit, fade out trail
         if particle.trail then
-          particle.trail:update(dt, particle.x, particle.y)
+          particle.trail:update(dt * 0.85, particle.x, particle.y)
         end
       end
     end
@@ -2113,7 +2132,7 @@ function BattleScene:_updateShockwaveSequence(dt)
   if not self._shockwaveSequence then return end
   
   local seq = self._shockwaveSequence
-  seq.timer = seq.timer + dt
+  seq.timer = seq.timer + dt * 0.85
   
   local jumpDuration = 0.5 -- 0.3s up + 0.2s down
   local screenshakeDelay = 0.1 -- Delay after jump lands
@@ -2201,6 +2220,15 @@ function BattleScene:setTurnManager(turnManager)
   
   -- Subscribe to TurnManager events
   if turnManager then
+    -- Provide a hook for TurnManager to test if enemy attacks are still running
+    function turnManager:isEnemyTurnBusy()
+      if not self or not self._sceneRight then return false end
+      local scene = self._sceneRight
+      if scene.areEnemyAttacksActive then
+        return scene:areEnemyAttacksActive()
+      end
+      return false
+    end
     -- Show turn indicator event
     turnManager:on("show_turn_indicator", function(data)
       if data and data.text then
@@ -2270,10 +2298,12 @@ function BattleScene:setTurnManager(turnManager)
           self.armorPopupShown = true
           -- Wait for player attack + armor popup duration + post-armor delay
           local armorDelay = (config.battle.popupLifetime or 0.8) + (config.battle.enemyAttackPostArmorDelay or 0.3)
-          self._enemyTurnDelay = delay + armorDelay
+          local extra = (config.battle and config.battle.enemyTurnStartExtraDelay) or 0.25
+          self._enemyTurnDelay = delay + armorDelay + extra
         else
           -- No armor, just wait for player attack to complete
-          self._enemyTurnDelay = delay
+          local extra = (config.battle and config.battle.enemyTurnStartExtraDelay) or 0.25
+          self._enemyTurnDelay = delay + extra
         end
       else
         -- Player attack already complete, proceed normally
@@ -2283,10 +2313,12 @@ function BattleScene:setTurnManager(turnManager)
           self.armorPopupShown = true
           -- Queue enemy turn start after armor popup duration + delay
           local delay = (config.battle.popupLifetime or 0.8) + (config.battle.enemyAttackPostArmorDelay or 0.3)
-          self._enemyTurnDelay = delay
+          local extra = (config.battle and config.battle.enemyTurnStartExtraDelay) or 0.25
+          self._enemyTurnDelay = delay + extra
         else
           -- No armor, start enemy turn immediately
-          turnManager:startEnemyTurn()
+          local extra = (config.battle and config.battle.enemyTurnStartExtraDelay) or 0.25
+          self._enemyTurnDelay = extra
         end
       end
     end)

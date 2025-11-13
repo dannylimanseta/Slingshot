@@ -4,6 +4,8 @@ local Animations = {}
 
 function Animations.update(scene, dt)
   if not scene then return end
+  -- Global enemy animation speed (slow enemies by ~15%)
+  local enemySpeed = 0.85
 
   -- Advance lunge timers (hold at peak while impacts play)
   do
@@ -27,7 +29,7 @@ function Animations.update(scene, dt)
   local totalEnemy = ((config.battle and config.battle.lungeDuration) or 0) + ((config.battle and config.battle.lungeReturnDuration) or 0)
   for _, enemy in ipairs(scene.enemies or {}) do
     if enemy.lungeTime and enemy.lungeTime > 0 then
-      enemy.lungeTime = enemy.lungeTime + dt
+      enemy.lungeTime = enemy.lungeTime + dt * enemySpeed
       if enemy.lungeTime > totalEnemy then enemy.lungeTime = 0 end
     end
   end
@@ -38,7 +40,7 @@ function Animations.update(scene, dt)
   local totalJump = jumpUpDuration + jumpDownDuration
   for _, enemy in ipairs(scene.enemies or {}) do
     if enemy.jumpTime and enemy.jumpTime > 0 then
-      enemy.jumpTime = enemy.jumpTime + dt
+      enemy.jumpTime = enemy.jumpTime + dt * enemySpeed
       if enemy.jumpTime > totalJump then enemy.jumpTime = 0 end
     end
   end
@@ -53,7 +55,7 @@ function Animations.update(scene, dt)
   local kbTotalEnemy = ((config.battle and config.battle.knockbackDuration) or 0) + ((config.battle and config.battle.knockbackReturnDuration) or 0)
   for _, enemy in ipairs(scene.enemies or {}) do
     if enemy.knockbackTime and enemy.knockbackTime > 0 then
-      enemy.knockbackTime = enemy.knockbackTime + dt
+      enemy.knockbackTime = enemy.knockbackTime + dt * enemySpeed
       if enemy.knockbackTime > kbTotalEnemy then enemy.knockbackTime = 0 end
     end
   end
@@ -67,7 +69,7 @@ function Animations.update(scene, dt)
   end
   for _, enemy in ipairs(scene.enemies or {}) do
     if enemy.rotation and math.abs(enemy.rotation) > 0.001 then
-    local k = math.min(1, rotationTweenSpeed * dt)
+      local k = math.min(1, rotationTweenSpeed * dt * enemySpeed)
       enemy.rotation = enemy.rotation * (1 - k)
       if math.abs(enemy.rotation) < 0.001 then enemy.rotation = 0 end
     end
@@ -87,7 +89,7 @@ function Animations.update(scene, dt)
   end
 
   -- Idle bob time
-  scene.idleT = (scene.idleT or 0) + dt
+  scene.idleT = (scene.idleT or 0) + dt * enemySpeed
 
   -- Update pulse animation timers (separate phases)
   local pulseConfig = config.battle and config.battle.pulse
@@ -95,7 +97,7 @@ function Animations.update(scene, dt)
     local speed = pulseConfig.speed or 1.2
     scene.playerPulseTime = (scene.playerPulseTime or 0) + dt * speed * 2 * math.pi
     for _, enemy in ipairs(scene.enemies or {}) do
-      enemy.pulseTime = (enemy.pulseTime or 0) + dt * speed * 2 * math.pi
+      enemy.pulseTime = (enemy.pulseTime or 0) + dt * enemySpeed * speed * 2 * math.pi
     end
   end
 

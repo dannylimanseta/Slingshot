@@ -160,6 +160,8 @@ function SplitScene:load()
   if self.right and self.right.setTurnManager then
     self.right:setTurnManager(self.turnManager)
   end
+  -- Give TurnManager a reference to BattleScene for enemy-turn-busy checks
+  self.turnManager._sceneRight = self.right
   
   -- Give GameplayScene access to TurnManager
   if self.left and self.left.setTurnManager then

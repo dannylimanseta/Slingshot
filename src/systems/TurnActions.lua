@@ -204,6 +204,25 @@ TurnActions.registerAll = function(turnManager)
   turnManager:registerAction("apply_damage", ApplyDamageAction)
   turnManager:registerAction("show_armor_popup", ShowArmorPopupAction)
   turnManager:registerAction("enemy_attack", EnemyAttackAction)
+  -- Wait until BattleScene reports enemy attacks complete
+  do
+    local WaitEnemyAttacksAction = setmetatable({}, Action)
+    WaitEnemyAttacksAction.__index = WaitEnemyAttacksAction
+    function WaitEnemyAttacksAction.new(params)
+      local self = Action.new(params)
+      self.duration = 0
+      return setmetatable(self, WaitEnemyAttacksAction)
+    end
+    function WaitEnemyAttacksAction:canExecute(turnManager)
+      -- Execute (advance) only when enemy attacks are NOT busy
+      local busy = (turnManager.isEnemyTurnBusy and turnManager:isEnemyTurnBusy()) or false
+      return not busy
+    end
+    function WaitEnemyAttacksAction:execute(turnManager)
+      -- no-op; advancing the queue means enemies are done
+    end
+    turnManager:registerAction("wait_for_enemy_attacks", WaitEnemyAttacksAction)
+  end
   turnManager:registerAction("spawn_blocks", SpawnBlocksAction)
   turnManager:registerAction("check_victory", CheckVictoryAction)
   turnManager:registerAction("check_defeat", CheckDefeatAction)

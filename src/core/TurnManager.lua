@@ -270,6 +270,7 @@ function TurnManager:startEnemyTurn()
       { type = "show_indicator", text = "ENEMY'S TURN", indicatorDuration = 1.0 },
       { type = "wait", duration = enemyAttackDelay },
       { type = "enemy_attack" },
+      { type = "wait_for_enemy_attacks" },
       { type = "check_defeat" },
       { type = "spawn_blocks", count = self.turnData.blocksDestroyed or 0 },
       { type = "wait", duration = 0.3 },
