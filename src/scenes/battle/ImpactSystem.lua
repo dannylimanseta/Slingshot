@@ -44,17 +44,24 @@ end
 -- isAOE: if true, create impacts at all enemy positions
 -- isPierce: if true, create single horizontal slicing impact (left to right)
 -- isBlackHole: if true, create black hole attack animation
-function ImpactSystem.create(scene, blockCount, isCrit, isAOE, isPierce, isBlackHole)
+-- isLightning: if true, create lightning strike attack animation
+function ImpactSystem.create(scene, blockCount, isCrit, isAOE, isPierce, isBlackHole, isLightning)
   if not scene or not scene.impactAnimation then return end
   blockCount = blockCount or 1
   isCrit = isCrit or false
   isAOE = isAOE or false
   isPierce = isPierce or false
   isBlackHole = isBlackHole or false
+  isLightning = isLightning or false
   
   -- Black hole attack uses custom animation
   if isBlackHole then
     return ImpactSystem.createBlackHoleAttack(scene, isAOE)
+  end
+  
+  -- Lightning attack uses custom animation
+  if isLightning then
+    return ImpactSystem.createLightningAttack(scene, blockCount, isAOE)
   end
 
   -- If crit, always spawn 5 slashes; otherwise cap at 4 sprites max
@@ -289,6 +296,34 @@ function ImpactSystem.createPlayerSplatter(scene, bounds)
 end
 
 -- Update black hole attack animations
+-- Update lightning strike animations
+function ImpactSystem.updateLightningStrikes(scene, dt)
+  if not scene.lightningStrikes then return end
+  
+  local activeStrikes = {}
+  for _, strike in ipairs(scene.lightningStrikes) do
+    strike.timer = strike.timer + dt
+    
+    if strike.timer >= strike.delay then
+      if not strike.active then
+        strike.active = true
+        strike.lifetime = 0
+      end
+      
+      strike.lifetime = strike.lifetime + dt
+      
+      -- Keep strike active during its duration
+      if strike.lifetime < strike.duration then
+        table.insert(activeStrikes, strike)
+      end
+    else
+      table.insert(activeStrikes, strike)
+    end
+  end
+  
+  scene.lightningStrikes = activeStrikes
+end
+
 function ImpactSystem.updateBlackHoleAttacks(scene, dt)
   if not scene or not scene.blackHoleAttacks then return end
   
@@ -501,6 +536,9 @@ end
 function ImpactSystem.update(scene, dt)
   if not scene then return end
   
+  -- Update lightning strikes
+  ImpactSystem.updateLightningStrikes(scene, dt)
+  
   -- Update black hole attacks
   ImpactSystem.updateBlackHoleAttacks(scene, dt)
 
@@ -656,6 +694,101 @@ function ImpactSystem.update(scene, dt)
 end
 
 -- Draw black hole attack animations
+-- Draw lightning strike animations
+function ImpactSystem.drawLightningStrikes(scene)
+  if not scene.lightningStrikes or #scene.lightningStrikes == 0 then return end
+  
+  love.graphics.push("all")
+  love.graphics.setBlendMode("add")
+  
+  for _, strike in ipairs(scene.lightningStrikes) do
+    if strike.active and strike.lifetime < strike.duration then
+      -- Calculate animation progress
+      local progress = math.min(1.0, strike.lifetime / strike.animDuration)
+      
+      -- Calculate fade-out alpha
+      local fadeStart = strike.animDuration
+      local alpha = 1.0
+      if strike.lifetime > fadeStart then
+        local fadeProgress = (strike.lifetime - fadeStart) / (strike.duration - fadeStart)
+        alpha = 1.0 - fadeProgress
+      end
+      
+      -- Calculate current end position (animates downward)
+      local strikeHeight = strike.endY - strike.startY
+      local currentEndY = strike.startY + strikeHeight * progress
+      
+      -- Draw lightning bolt
+      local x1, y1 = strike.x, strike.startY
+      local x2, y2 = strike.x, currentEndY
+      
+      local dx = x2 - x1
+      local dy = y2 - y1
+      local dist = math.sqrt(dx * dx + dy * dy)
+      
+      if dist > 1 then
+        -- Create jagged lightning path
+        local numSegments = math.max(3, math.floor(dist / 20))
+        local points = {{x = x1, y = y1}}
+        
+        -- Simple hash for consistent randomness
+        local seed = (strike.x * 1000 + strike.y * 1000) % 1000000
+        local function hash(n)
+          n = ((n + seed) * 1103515245 + 12345) % 2147483647
+          return (n % 2000) / 2000.0
+        end
+        
+        -- More varied jaggedness (changes per segment)
+        for i = 1, numSegments - 1 do
+          local t = i / numSegments
+          local baseX = x1
+          local baseY = y1 + dy * t
+          -- Varied jaggedness: alternates between small and large offsets for more organic look
+          local jagScale = 1.0 + hash(i + 100) * 0.5 -- 1.0 to 1.5x variation
+          local offsetX = (hash(i) * 2 - 1) * 15 * jagScale -- 15-22.5px horizontal jaggedness
+          table.insert(points, {x = baseX + offsetX, y = baseY})
+        end
+        
+        table.insert(points, {x = x2, y = y2})
+        
+        -- Draw three-layer lightning with tapering and thickness variety
+        local thicknessScale = strike.thicknessScale or 1.0
+        for layerIdx, layerCfg in ipairs({
+          {width = 22 * thicknessScale, color = {0.3, 0.7, 1.0}, alpha = 0.4}, -- Much thicker outer
+          {width = 11 * thicknessScale, color = {0.6, 0.9, 1.0}, alpha = 0.8}, -- Much thicker main
+          {width = 5 * thicknessScale, color = {1.0, 1.0, 1.0}, alpha = 1.0}  -- Much thicker core
+        }) do
+          for i = 1, #points - 1 do
+            local segmentPos = i / (#points - 1)
+            -- All streaks taper to thin at the end
+            local taperFactor = 1.0 - (segmentPos * 0.9) -- Thick to very thin (10% remaining)
+            local segmentWidth = layerCfg.width * taperFactor
+            
+            love.graphics.setColor(layerCfg.color[1], layerCfg.color[2], layerCfg.color[3], layerCfg.alpha * alpha)
+            love.graphics.setLineWidth(math.max(0.5, segmentWidth))
+            love.graphics.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y)
+          end
+        end
+        
+        -- Bright endpoint glow
+        if progress < 1.0 then
+          local endPoint = points[#points]
+          love.graphics.setColor(1.0, 1.0, 1.0, 0.4 * alpha)
+          love.graphics.circle("fill", endPoint.x, endPoint.y, 16)
+          love.graphics.setColor(1.0, 1.0, 1.0, 0.7 * alpha)
+          love.graphics.circle("fill", endPoint.x, endPoint.y, 10)
+          love.graphics.setColor(1.0, 1.0, 1.0, alpha)
+          love.graphics.circle("fill", endPoint.x, endPoint.y, 5)
+        end
+      end
+    end
+  end
+  
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.setLineWidth(1)
+  love.graphics.pop()
+end
+
 function ImpactSystem.drawBlackHoleAttacks(scene)
   if not scene or not scene.blackHoleAttacks then return end
   
@@ -701,7 +834,10 @@ end
 function ImpactSystem.draw(scene)
   if not scene then return end
   
-  -- Draw black hole attacks first
+  -- Draw lightning strikes first
+  ImpactSystem.drawLightningStrikes(scene)
+  
+  -- Draw black hole attacks
   ImpactSystem.drawBlackHoleAttacks(scene)
   
   -- Draw splatter effects first (behind impacts)
@@ -806,6 +942,76 @@ function ImpactSystem.draw(scene)
     end
   end
   love.graphics.pop()
+end
+
+-- Create lightning strike attack animation
+function ImpactSystem.createLightningAttack(scene, blockCount, isAOE)
+  local w = (scene._lastBounds and scene._lastBounds.w) or love.graphics.getWidth()
+  local h = (scene._lastBounds and scene._lastBounds.h) or love.graphics.getHeight()
+  local center = scene._lastBounds and scene._lastBounds.center or nil
+  local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
+  local centerW = center and center.w or math.floor(w * 0.5)
+  
+  -- Get hit points: all enemies if AOE, otherwise just selected enemy
+  local hitPoints = {}
+  if isAOE and scene.getAllEnemyHitPoints then
+    hitPoints = scene:getAllEnemyHitPoints({ x = 0, y = 0, w = w, h = h, center = { x = centerX, w = centerW, h = h } })
+  else
+    local hitX, hitY = scene:getEnemyHitPoint({ x = 0, y = 0, w = w, h = h, center = { x = centerX, w = centerW, h = h } })
+    table.insert(hitPoints, { x = hitX, y = hitY, enemyIndex = scene.selectedEnemyIndex })
+  end
+  
+  if #hitPoints == 0 then return end
+  
+  -- Initialize lightning strikes array
+  scene.lightningStrikes = scene.lightningStrikes or {}
+  scene.enemyFlashEvents = scene.enemyFlashEvents or {}
+  scene.enemyKnockbackEvents = scene.enemyKnockbackEvents or {}
+  
+  -- Number of strikes per enemy (based on block count, more blocks = more strikes)
+  local strikesPerEnemy = math.min(blockCount, 5) -- 1-5 strikes
+  local baseStaggerDelay = 0.08 -- Base delay between strikes
+  
+  -- Create multiple lightning strikes for each enemy
+  for _, hitPoint in ipairs(hitPoints) do
+    local hitX = hitPoint.x
+    local hitY = hitPoint.y
+    local enemyIndex = hitPoint.enemyIndex
+    
+    for strikeIdx = 1, strikesPerEnemy do
+      -- Add random variance to timing (±50% of base delay for more spread)
+      local delayVariance = (love.math.random() - 0.5) * baseStaggerDelay * 1.0
+      local delay = (strikeIdx - 1) * baseStaggerDelay + delayVariance
+      delay = math.max(0, delay) -- Ensure non-negative
+      
+      -- Random horizontal offset for variety
+      local offsetX = (love.math.random() - 0.5) * 40
+      local strikeX = hitX + offsetX
+      
+      -- Random thickness variation (some strikes much thicker than others)
+      local thicknessScale = 1.2 + love.math.random() * 1.3 -- 1.2 to 2.5x scale (more variety, thicker)
+      
+      table.insert(scene.lightningStrikes, {
+        x = strikeX,
+        y = hitY,
+        startY = hitY - 380, -- Lightning starts 380px above enemy (80px higher)
+        endY = hitY + 50, -- Extends slightly below hit point
+        delay = delay,
+        timer = 0,
+        lifetime = 0,
+        duration = 0.3, -- How long each strike lasts
+        animDuration = 0.08, -- How fast lightning travels downward
+        active = false,
+        enemyIndex = enemyIndex,
+        thicknessScale = thicknessScale -- Random thickness for variety
+      })
+      
+      -- Schedule flash and knockback for each strike
+      local flashDuration = 0.15
+      table.insert(scene.enemyFlashEvents, { delay = delay, duration = flashDuration, enemyIndex = enemyIndex })
+      table.insert(scene.enemyKnockbackEvents, { delay = delay, startTime = nil, enemyIndex = enemyIndex })
+    end
+  end
 end
 
 -- Create black hole attack animation (giant hole above enemies that shatters into triangles)

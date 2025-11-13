@@ -535,7 +535,7 @@ local function buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBas
   return sequence
 end
 
-function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE, blockHitSequence, baseDamage, orbBaseDamage, critCount, multiplierCount, isPierce, isBlackHole)
+function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE, blockHitSequence, baseDamage, orbBaseDamage, critCount, multiplierCount, isPierce, isBlackHole, isLightning)
   -- Check win/lose states via TurnManager
   local tmState = self.turnManager and self.turnManager:getState()
   if tmState == TurnManager.States.VICTORY or tmState == TurnManager.States.DEFEAT then return end
@@ -549,6 +549,7 @@ function BattleScene:onPlayerTurnEnd(turnScore, armor, isAOE, blockHitSequence, 
       isAOE = isAOE or false, -- Store AOE flag
       isPierce = isPierce or false, -- Store pierce flag
       isBlackHole = isBlackHole or false, -- Store black hole flag
+      isLightning = isLightning or false, -- Store lightning flag
       impactBlockCount = (self._pendingImpactParams and self._pendingImpactParams.blockCount) or 1,
       impactIsCrit = (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false,
       blockHitSequence = blockHitSequence or {}, -- Array of {damage, kind} for animated damage display
@@ -1141,13 +1142,14 @@ function BattleScene:update(dt, bounds)
         local isAOE = self._pendingPlayerAttackDamage.isAOE or false
         local isPierce = self._pendingPlayerAttackDamage.isPierce or false
         local isBlackHole = self._pendingPlayerAttackDamage.isBlackHole or false
+        local isLightning = self._pendingPlayerAttackDamage.isLightning or false
         local impactBlockCount = self._pendingPlayerAttackDamage.impactBlockCount or 1
         local impactIsCrit = self._pendingPlayerAttackDamage.impactIsCrit or false
         
         -- Create impact sprite animations first (before damage effects)
-        -- Pass AOE and pierce flags, and now black hole flag too
+        -- Pass AOE, pierce, black hole, and lightning flags
         if impactBlockCount and impactBlockCount > 0 then
-          self:_createImpactInstances(impactBlockCount, impactIsCrit, isAOE, isPierce, isBlackHole)
+          self:_createImpactInstances(impactBlockCount, impactIsCrit, isAOE, isPierce, isBlackHole, isLightning)
         end
         
         -- Build animated damage sequence
@@ -2387,9 +2389,9 @@ function BattleScene:playImpact(blockCount, isCrit)
 end
 
 -- Internal helper to actually create impact instances (called after delay)
-function BattleScene:_createImpactInstances(blockCount, isCrit, isAOE, isPierce, isBlackHole)
+function BattleScene:_createImpactInstances(blockCount, isCrit, isAOE, isPierce, isBlackHole, isLightning)
   if not self.impactAnimation then return end
-  ImpactSystem.create(self, blockCount or 1, isCrit or false, isAOE or false, isPierce or false, isBlackHole or false)
+  ImpactSystem.create(self, blockCount or 1, isCrit or false, isAOE or false, isPierce or false, isBlackHole or false, isLightning or false)
 end
 
 -- Handle keyboard input for enemy selection

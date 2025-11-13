@@ -247,7 +247,8 @@ function SplitScene:setupTurnManagerEvents()
         turnData.critCount or 0,
         turnData.multiplierCount or 0,
         turnData.isPierce or false,
-        turnData.isBlackHole or false
+        turnData.isBlackHole or false,
+        turnData.isLightning or false
       )
       -- Apply healing if any
       if turnData.heal and turnData.heal > 0 and self.right and self.right.applyHealing then
@@ -368,6 +369,7 @@ function SplitScene:endPlayerTurnWithTurnManager()
   local isAOE = (self.left and self.left.aoeThisTurn) or false
   local isPierce = (self.left and self.left.pierceThisTurn) or false
   local isBlackHole = (self.left and self.left.blackHoleThisTurn) or false
+  local isLightning = (self.left and self.left.lightningThisTurn) or false
   local blockHitSequence = (self.left and self.left.blockHitSequence) or {} -- Array of {damage, kind} for animated damage display
   local orbBaseDamage = (self.left and self.left.baseDamageThisTurn) or 0 -- Base damage from orb/projectile
   
@@ -381,6 +383,7 @@ function SplitScene:endPlayerTurnWithTurnManager()
     isAOE = isAOE,
     isPierce = isPierce,
     isBlackHole = isBlackHole,
+    isLightning = isLightning,
     blockHitSequence = blockHitSequence, -- Pass block hit sequence for animated damage display
     baseDamage = baseDamage, -- Store base damage before multipliers for animation
     orbBaseDamage = orbBaseDamage, -- Base damage from orb/projectile

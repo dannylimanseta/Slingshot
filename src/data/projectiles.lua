@@ -110,11 +110,11 @@ projectiles.data = {
     level = 1,
     baseDamage = 5,
     levels = {
-      [1] = { baseDamage = 5, maxBounces = 4 },
-      [2] = { baseDamage = 6, maxBounces = 5 },
-      [3] = { baseDamage = 7, maxBounces = 6 },
-      [4] = { baseDamage = 8, maxBounces = 7 },
-      [5] = { baseDamage = 10, maxBounces = 8 },
+      [1] = { baseDamage = 5, maxBounces = 3 },
+      [2] = { baseDamage = 6, maxBounces = 4 },
+      [3] = { baseDamage = 7, maxBounces = 5 },
+      [4] = { baseDamage = 8, maxBounces = 6 },
+      [5] = { baseDamage = 10, maxBounces = 7 },
     },
     icon = "assets/images/orb_lightning.png",
     description = "Shoots a lightning orb that bounces between blocks."

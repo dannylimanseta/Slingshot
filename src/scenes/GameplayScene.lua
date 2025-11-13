@@ -40,6 +40,7 @@ function GameplayScene.new()
     aoeThisTurn = false, -- true if any AOE blocks were hit this turn
     pierceThisTurn = false, -- true if pierce orb was used this turn
     blackHoleThisTurn = false, -- true if black hole orb was used this turn
+    lightningThisTurn = false, -- true if lightning orb was used this turn
     blockHitSequence = {}, -- Array of {damage, kind} for each block hit this turn (for animated damage display)
     baseDamageThisTurn = 0, -- Base damage from the orb/projectile at the start of the turn
     _prevCanShoot = true,
@@ -1120,6 +1121,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       self.aoeThisTurn = false
       self.pierceThisTurn = false
       self.blackHoleThisTurn = false
+      self.lightningThisTurn = false
       self.blocksHitThisTurn = 0
       self.blockHitSequence = {} -- Reset block hit sequence for animated damage display
       self.baseDamageThisTurn = 0 -- Reset base damage for this turn
@@ -1302,6 +1304,7 @@ function GameplayScene:mousereleased(x, y, button, bounds)
       elseif projectileId == "lightning" then
         -- Lightning: single projectile that bounces between blocks
         self.balls = {} -- Clear multiple balls
+        self.lightningThisTurn = true -- Mark that lightning orb was used this turn
         local maxBounces = (effective and effective.maxBounces) or config.ball.maxBounces
         local lightningConfig = config.ball.lightning or {}
         local trailConfig = lightningConfig.trail or config.ball.trail
