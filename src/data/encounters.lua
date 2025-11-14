@@ -99,7 +99,7 @@ local ENCOUNTERS = {
     },
   {
       id = "ENCOUNTER_DOUBLE_FAWN",
-      difficulty = 2,
+      difficulty = 1,
       centerWidthFactor = 0.43,
       enemies = {
             "fawn",
@@ -364,7 +364,7 @@ local ENCOUNTERS = {
     },
   {
       id = "ENCOUNTER_DOUBLE_FUNGLOOM",
-      difficulty = 2,
+      difficulty = 1,
       centerWidthFactor = 0.43,
       enemies = {
             "fungloom",
@@ -564,7 +564,7 @@ local ENCOUNTERS = {
     },
   {
       id = "ENCOUNTER_FUNGLOOM_FAWN",
-      difficulty = 2,
+      difficulty = 1,
       centerWidthFactor = 0.43,
       enemies = {
             "fungloom",
@@ -746,7 +746,7 @@ local ENCOUNTERS = {
     },
   {
       id = "ENCOUNTER_SOLO_CRAWLER",
-      difficulty = 2,
+      difficulty = 1,
       centerWidthFactor = 0.43,
       enemies = {
             "crawler"
@@ -929,11 +929,12 @@ local ENCOUNTERS = {
                             }
                   },
             type = "predefined"
-          }
+          },
+      elite = true
     },
   {
       id = "ENCOUNTER_CRAWLER_DOUBLE_FAWN",
-      difficulty = 2,
+      difficulty = 1,
       centerWidthFactor = 0.43,
       enemies = {
             "crawler",
@@ -1190,11 +1191,12 @@ local ENCOUNTERS = {
                             }
                   },
             type = "predefined"
-          }
+          },
+      elite = true
     },
   {
       id = "ENCOUNTER_STAGMAW_DOUBLE_FAWN",
-      difficulty = 2,
+      difficulty = 1,
       centerWidthFactor = 0.43,
       enemies = {
             "fawn",
@@ -1570,7 +1572,7 @@ local ENCOUNTERS = {
     },
   {
       id = "ENCOUNTER_SOLO_DERANGED_BOAR",
-      difficulty = 2,
+      difficulty = 1,
       centerWidthFactor = 0.43,
       enemies = {
             "deranged_boar"
@@ -1679,7 +1681,7 @@ local ENCOUNTERS = {
     },
   {
       id = "ENCOUNTER_DOUBLE_DERANGED_BOAR",
-      difficulty = 2,
+      difficulty = 1,
       centerWidthFactor = 0.43,
       enemies = {
             "deranged_boar",
@@ -1873,7 +1875,7 @@ local ENCOUNTERS = {
     },
   {
       id = "ENCOUNTER_DERANGED_BOAR_DOUBLE_FAWN",
-      difficulty = 2,
+      difficulty = 1,
       centerWidthFactor = 0.43,
       enemies = {
             "deranged_boar",

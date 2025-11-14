@@ -2,6 +2,7 @@
 -- Centralizes all scene transition logic to reduce duplication and improve maintainability
 
 local MapScene = require("scenes.MapScene")
+local MapManager = require("managers.MapManager")
 local SplitScene = require("scenes.SplitScene")
 local FormationEditorScene = require("scenes.FormationEditorScene")
 local RewardsScene = require("scenes.RewardsScene")
@@ -187,8 +188,23 @@ function SceneTransitionHandler:handleOpenEncounterSelect()
     self.mapScene._savedWorldX = self.mapScene.playerWorldX
     self.mapScene._savedWorldY = self.mapScene.playerWorldY
   end
+  
+  -- Check if current tile is elite
+  local isEliteTile = false
+  if self.mapScene and self.mapScene.mapManager then
+    local gridX = self.mapScene.mapManager.playerGridX
+    local gridY = self.mapScene.mapManager.playerGridY
+    if gridX > 0 and gridY > 0 then
+      local tile = self.mapScene.mapManager:getTile(gridX, gridY)
+      if tile and tile.type == MapManager.TileType.ENEMY then
+        isEliteTile = (tile.spriteVariant == 2)
+      end
+    end
+  end
+  
   local selectScene = EncounterSelectScene.new()
   selectScene:setPreviousScene(self.sceneManager.currentScene)
+  selectScene:setEliteFilter(isEliteTile)
   self.previousScene = self.sceneManager.currentScene
   self.sceneManager:set(selectScene)
   self.setCursorForScene(selectScene)

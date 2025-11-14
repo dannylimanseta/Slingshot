@@ -81,6 +81,9 @@ function SplitScene.new()
     _orbsUIOpen = false, -- track if orbs UI is open
     _mouseX = 0,
     _mouseY = 0,
+    -- Lightning impact delay timer (delay after last lightning streak hits before playing enemy animation)
+    _lightningImpactDelayTimer = 0,
+    _lightningImpactDelayDuration = 0.2, -- Delay duration in seconds
   }, SplitScene)
 end
 
@@ -1040,7 +1043,44 @@ function SplitScene:update(dt)
     end
   end
   
+  -- Check if current attack is lightning
+  local isLightningAttack = false
+  local projectileId = "strike"
+  if self.left and self.left.shooter and self.left.shooter.getCurrentProjectileId then
+    projectileId = self.left.shooter:getCurrentProjectileId()
+  elseif self.currentProjectileId then
+    projectileId = self.currentProjectileId
+  end
+  isLightningAttack = (projectileId == "lightning")
+  
+  -- Start lightning impact delay timer when last lightning hit completes
+  if isLightningAttack and not hasPendingLightningHits and self._lightningImpactDelayTimer == 0 and turnState == TurnManager.States.PLAYER_TURN_ACTIVE and shotWasFired and not hasBall and not hasActiveBlackHoles then
+    self._lightningImpactDelayTimer = self._lightningImpactDelayDuration
+  end
+  
+  -- Update lightning impact delay timer
+  if self._lightningImpactDelayTimer > 0 then
+    self._lightningImpactDelayTimer = self._lightningImpactDelayTimer - dt
+    if self._lightningImpactDelayTimer < 0 then
+      self._lightningImpactDelayTimer = 0
+    end
+  end
+  
+  -- Trigger impact VFX after delay (or immediately if not lightning)
+  local shouldTriggerImpact = false
   if turnState == TurnManager.States.PLAYER_TURN_ACTIVE and shotWasFired and not hasBall and not hasActiveBlackHoles and not hasPendingLightningHits then
+    if isLightningAttack then
+      -- For lightning, wait for delay timer to expire
+      if self._lightningImpactDelayTimer <= 0 then
+        shouldTriggerImpact = true
+      end
+    else
+      -- For non-lightning, trigger immediately
+      shouldTriggerImpact = true
+    end
+  end
+  
+  if shouldTriggerImpact then
     -- Trigger impact VFX
     if self.right and self.right.playImpact then
       local blockCount = (self.left and self.left.blocksHitThisTurn) or 1
@@ -1049,6 +1089,8 @@ function SplitScene:update(dt)
     end
     -- End the turn using TurnManager
     self:endPlayerTurnWithTurnManager()
+    -- Reset lightning delay timer
+    self._lightningImpactDelayTimer = 0
   end
 
   -- (Jackpot feed removed)
@@ -1115,12 +1157,14 @@ function SplitScene:update(dt)
         end
       end
       
-      -- Award gold based on encounter difficulty
+      -- Award gold based on encounter difficulty (use Progress system, not encounter data)
       local EncounterManager = require("core.EncounterManager")
       local PlayerState = require("core.PlayerState")
+      local Progress = require("core.Progress")
       local encounter = EncounterManager.getCurrentEncounter()
       if encounter then
-        local difficulty = encounter.difficulty or 1
+        -- Use actual difficulty from Progress system instead of static encounter difficulty
+        local difficulty = Progress.getCurrentDifficultyLevel() or 1
         local goldReward = self:calculateGoldReward(difficulty)
         if goldReward > 0 then
           -- Store gold reward for display in RewardsScene; actual add happens on Rewards click

@@ -1070,11 +1070,16 @@ function MapManager:completeMovement()
       -- Check if this is an elite enemy node (spriteVariant == 2)
       local isElite = tile.spriteVariant == 2
       
-      -- Filter encounters: if elite node, only pick elite encounters
+      -- Filter encounters: elite node picks only elite encounters, normal node picks only non-elite encounters
       local filterFn = nil
       if isElite then
         filterFn = function(enc)
           return enc.elite == true
+        end
+      else
+        -- Normal enemy tile: exclude elite encounters
+        filterFn = function(enc)
+          return enc.elite ~= true
         end
       end
       

@@ -15,6 +15,7 @@ function EncounterSelectScene.new()
     selectedIndex = 1,
     hoveredIndex = nil,
     previousScene = nil,
+    _isEliteFilter = nil, -- nil = show all, true = show only elite, false = show only non-elite
 
     layoutCache = nil,
     _deferScrollToSelection = true,
@@ -43,7 +44,29 @@ end
 -- ============================================================================
 
 function EncounterSelectScene:load()
-  self.encounters = encounters.list() or {}
+  local allEncounters = encounters.list() or {}
+  
+  -- Filter encounters based on elite status
+  if self._isEliteFilter ~= nil then
+    self.encounters = {}
+    for _, enc in ipairs(allEncounters) do
+      local isElite = (enc.elite == true)
+      if self._isEliteFilter then
+        -- Show only elite encounters
+        if isElite then
+          table.insert(self.encounters, enc)
+        end
+      else
+        -- Show only non-elite encounters
+        if not isElite then
+          table.insert(self.encounters, enc)
+        end
+      end
+    end
+  else
+    -- Show all encounters
+    self.encounters = allEncounters
+  end
 
   if #self.encounters == 0 then
     self.selectedIndex = 0
@@ -184,9 +207,10 @@ function EncounterSelectScene:_drawEncounters(layout)
       love.graphics.print(label, textX, textY)
 
       local metaParts = {}
-      if enc.difficulty then
-        table.insert(metaParts, "Difficulty: " .. tostring(enc.difficulty))
-      end
+      -- Show difficulty from Progress system (what will actually be used) instead of static encounter difficulty
+      local Progress = require("core.Progress")
+      local actualDifficulty = Progress.peekDifficultyLevel() or (enc.difficulty or 1)
+      table.insert(metaParts, "Difficulty: " .. tostring(actualDifficulty))
 
       local enemySummary = self:_enemySummary(enc)
       if enemySummary then
@@ -390,6 +414,11 @@ end
 
 function EncounterSelectScene:setPreviousScene(scene)
   self.previousScene = scene
+end
+
+function EncounterSelectScene:setEliteFilter(isElite)
+  -- nil = show all, true = show only elite, false = show only non-elite
+  self._isEliteFilter = isElite
 end
 
 function EncounterSelectScene:_virtualSize()

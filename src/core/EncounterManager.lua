@@ -76,12 +76,10 @@ local function buildBattleProfileFromEncounter(enc)
 	}
 	-- Resolve enemies
 	if enc.enemies and type(enc.enemies) == "table" then
-		local Progress = require("core.Progress")
 		for i = 1, #enc.enemies do
 			local base = resolveEnemyRef(enc.enemies[i])
 			if base then
-				-- Increment difficulty progression, but do not modify or annotate enemy stats
-				Progress.assignDifficultyForNextEnemy()
+				-- Difficulty progression is per-encounter (handled in setEncounterById); do not increment here
 				table.insert(profile.enemies, base)
 			end
 		end
@@ -94,6 +92,11 @@ end
 function EncounterManager.setEncounterById(id)
 	_currentEncounterId = id
 	_currentBattleProfile = nil
+	-- Register encounter start for difficulty progression
+	local ok, Progress = pcall(require, "core.Progress")
+	if ok and Progress and Progress.startNextEncounter then
+		Progress.startNextEncounter()
+	end
 	local enc = encounters.get(id)
 	if enc then
 		_currentBattleProfile = buildBattleProfileFromEncounter(enc)
