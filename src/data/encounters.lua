@@ -3347,11 +3347,26 @@ local ENCOUNTERS = {
     }
 }
 
--- Load additional encounters from modular files (if present)
-local ok_spore, extra_spore = pcall(require, "data.encounters.difficulty_2.spore_caller_boar")
-if ok_spore and type(extra_spore) == "table" then
-	for _, enc in ipairs(extra_spore) do
-		table.insert(ENCOUNTERS, enc)
+-- Load additional encounters from modular files via manifest
+-- This automatically loads all encounters listed in _manifest.lua
+-- To add a new encounter: 
+--   1. Create the encounter file in the appropriate subdirectory
+--   2. Add it to _manifest.lua: { "subdirectory", "filename" }
+--   3. It will automatically appear in the encounter menu!
+local ok_manifest, manifest = pcall(require, "data.encounters._manifest")
+if ok_manifest and type(manifest) == "table" then
+	for _, entry in ipairs(manifest) do
+		if type(entry) == "table" and #entry >= 2 then
+			local subdir = entry[1]
+			local filename = entry[2]
+			local modulePath = "data.encounters." .. subdir .. "." .. filename
+			local ok_mod, mod = pcall(require, modulePath)
+			if ok_mod and type(mod) == "table" then
+				for _, enc in ipairs(mod) do
+					table.insert(ENCOUNTERS, enc)
+				end
+			end
+		end
 	end
 end
 
