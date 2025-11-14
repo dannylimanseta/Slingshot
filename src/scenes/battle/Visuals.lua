@@ -486,6 +486,32 @@ function Visuals.draw(scene, bounds)
     local sx, sy = s, s * bob
     local tilt = scene.playerRotation or 0
     local drawAlpha = 1.0
+    
+    -- Draw heal glow behind player (yellowish-green tint)
+    if scene.playerHealGlowTimer and scene.playerHealGlowTimer > 0 and scene.glowSelectedImg then
+      local healGlowAlpha = scene.playerHealGlowTimer -- Fades from 1.0 to 0.0
+      
+      if healGlowAlpha > 0 then
+        local glowImg = scene.glowSelectedImg
+        local glowW, glowH = glowImg:getWidth(), glowImg:getHeight()
+        local constantGlowWidth = 100
+        local glowScale = (constantGlowWidth / glowW) * 1.5
+        
+        -- Bobbing animation
+        local bobSpeed = 1.0
+        local bobAmplitude = 1
+        local bobOffset = math.sin((scene.idleT or 0) * bobSpeed * 2 * math.pi) * bobAmplitude
+        
+        love.graphics.push("all")
+        love.graphics.setBlendMode("add")
+        -- Yellowish-green tint: {0.8, 1.0, 0.4} with fade
+        love.graphics.setColor(0.8, 1.0, 0.4, healGlowAlpha * 0.7)
+        -- Position glow behind player sprite (player sprite pivot is at bottom center)
+        local curPlayerX = playerX - (scene.playerKnockbackTime or 0) * 20
+        love.graphics.draw(glowImg, curPlayerX, baselineY + 19 + bobOffset, 0, glowScale * 1.2, glowScale * 1.2, glowW * 0.5, glowH)
+        love.graphics.pop()
+      end
+    end
     do
       local d = (config.battle and config.battle.lungeDuration) or 0
       local rdur = (config.battle and config.battle.lungeReturnDuration) or 0
@@ -658,6 +684,36 @@ function Visuals.draw(scene, bounds)
             -- Position glow from bottom-center pivot to match enemy sprite pivot (iw * 0.5, ih)
             -- Shift down by 12px and apply bobbing animation
             -- Increase width and height by 20%
+            love.graphics.draw(glowImg, pos.curX, enemyY + 19 + bobOffset, 0, glowScale * 1.2, glowScale * 1.2, glowW * 0.5, glowH)
+            love.graphics.pop()
+          end
+        end
+        
+        -- Draw heal glow behind enemy (yellowish-green tint)
+        if scene.enemyHealGlowTimer and scene.enemyHealGlowTimer[i] and scene.enemyHealGlowTimer[i] > 0 and scene.glowSelectedImg then
+          local healGlowAlpha = scene.enemyHealGlowTimer[i] -- Fades from 1.0 to 0.0
+          if enemy.disintegrating then
+            local cfg = config.battle.disintegration or {}
+            local duration = cfg.duration or 1.5
+            local progress = math.min(1, (enemy.disintegrationTime or 0) / duration)
+            healGlowAlpha = healGlowAlpha * math.max(0, 1.0 - (progress / 0.7))
+          end
+          
+          if healGlowAlpha > 0 then
+            local glowImg = scene.glowSelectedImg
+            local glowW, glowH = glowImg:getWidth(), glowImg:getHeight()
+            local constantGlowWidth = 100
+            local glowScale = (constantGlowWidth / glowW) * 1.5
+            
+            -- Bobbing animation
+            local bobSpeed = 1.0
+            local bobAmplitude = 1
+            local bobOffset = math.sin((scene.idleT or 0) * bobSpeed * 2 * math.pi) * bobAmplitude
+            
+            love.graphics.push("all")
+            love.graphics.setBlendMode("add")
+            -- Yellowish-green tint: {0.8, 1.0, 0.4} with fade
+            love.graphics.setColor(0.8, 1.0, 0.4, healGlowAlpha * 0.7)
             love.graphics.draw(glowImg, pos.curX, enemyY + 19 + bobOffset, 0, glowScale * 1.2, glowScale * 1.2, glowW * 0.5, glowH)
             love.graphics.pop()
           end
@@ -973,9 +1029,13 @@ function Visuals.draw(scene, bounds)
         local valueText = nil
         local isChargeSkill = (enemy.intent.type == "skill" and enemy.intent.skillType == "charge")
         local isShockwaveSkill = (enemy.intent.type == "skill" and enemy.intent.skillType == "shockwave")
+        local isHealSkill = (enemy.intent.type == "skill" and enemy.intent.skillType == "heal")
         if isChargeSkill then
           -- Show charging label for boar Charge skill
           valueText = "Charging..."
+        elseif isHealSkill and enemy.intent.amount then
+          -- Show heal amount for heal skill
+          valueText = "+" .. tostring(enemy.intent.amount)
         elseif isShockwaveSkill and enemy.intent.damage then
           -- Show damage for shockwave skill
           valueText = tostring(enemy.intent.damage)

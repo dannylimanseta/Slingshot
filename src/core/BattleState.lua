@@ -412,7 +412,17 @@ function BattleState.applyEnemyDamage(enemyId, amount)
   local state = assert(_currentState, "BattleState not initialized")
   for _, enemy in ipairs(state.enemies) do
     if enemy.id == enemyId or enemy.index == enemyId then
-      local dmg = math.max(0, amount or 0)
+      local dmg = amount or 0
+      -- Handle healing (negative damage)
+      if dmg < 0 then
+        local heal = math.abs(dmg)
+        local maxHP = enemy.maxHP or 100
+        enemy.hp = math.min(maxHP, (enemy.hp or enemy.maxHP or 0) + heal)
+        BattleState._emit("enemy_hp_changed", enemy)
+        break
+      end
+      -- Handle damage (positive)
+      dmg = math.max(0, dmg)
       if enemy.armor and enemy.armor > 0 then
         local absorbed = math.min(enemy.armor, dmg)
         enemy.armor = enemy.armor - absorbed

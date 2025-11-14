@@ -569,6 +569,11 @@ function SplitScene:draw()
   if self.right and self.right._drawCalcifyParticles then
     self.right:_drawCalcifyParticles()
   end
+  
+  -- Draw heal particles after blocks (highest z-order for particles)
+  if self.right and self.right._drawHealParticles then
+    self.right:_drawHealParticles()
+  end
 
   -- Draw edge glow effects when ball hits edges (after gameplay scene, outside scissor so they're not clipped)
   -- Push state to save scissor, then clear it

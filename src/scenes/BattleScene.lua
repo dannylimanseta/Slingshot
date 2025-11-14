@@ -53,7 +53,7 @@ function BattleScene:areEnemyAttacksActive()
     return true
   end
   -- Any special sequences active?
-  if self._shockwaveSequence or self._calcifySequence then
+  if self._shockwaveSequence or self._calcifySequence or self._healSequence then
     return true
   end
   -- Any enemy lunge/jump/knockback in progress?
@@ -81,6 +81,7 @@ function BattleScene:calculateEnemyIntents()
       local isStagmaw = enemy.spritePath == "enemy_4.png" or 
                         enemy.name == "Stagmaw" or 
                         (enemy.spritePath and enemy.spritePath:find("enemy_4"))
+      local isMender = enemy.name == "Mender" or enemy.id == "mender"
       
       -- Stagmaw has 30% chance to use calcify skill
       local shouldCalcify = isStagmaw and (love.math.random() < 0.3)
@@ -95,6 +96,57 @@ function BattleScene:calculateEnemyIntents()
       end
       local shouldGainArmor = isEnemy2 and (enemy.armorTurnCounter or 0) >= 2
       
+      -- Mender heals allies or itself when below 50% HP, or every 3 turns
+      local shouldHeal = false
+      local healTargetIndex = nil
+      if isMender then
+        -- Initialize heal turn counter if not set
+        if not enemy.healTurnCounter then
+          enemy.healTurnCounter = 0
+        end
+        
+        -- Check for allies that need healing (prioritize other enemies over self)
+        local mostDamagedAlly = nil
+        local mostDamagedAllyIndex = nil
+        local lowestAllyHpPercent = 1.0
+        
+        -- Check self HP
+        local selfHpPercent = enemy.hp / (enemy.maxHP or 1)
+        local selfNeedsHealing = selfHpPercent < 0.5
+        
+        -- Check other enemies (allies)
+        for j, otherEnemy in ipairs(self.enemies or {}) do
+          if j ~= i and otherEnemy.hp > 0 and not otherEnemy.disintegrating then
+            local hpPercent = otherEnemy.hp / (otherEnemy.maxHP or 1)
+            if hpPercent < lowestAllyHpPercent then
+              lowestAllyHpPercent = hpPercent
+              mostDamagedAlly = otherEnemy
+              mostDamagedAllyIndex = j
+            end
+          end
+        end
+        
+        -- Priority 1: Heal ally if any ally is below 50% HP
+        if mostDamagedAlly and lowestAllyHpPercent < 0.5 then
+          shouldHeal = true
+          healTargetIndex = mostDamagedAllyIndex
+        -- Priority 2: Heal self if self is below 50% HP
+        elseif selfNeedsHealing then
+          shouldHeal = true
+          healTargetIndex = i
+        -- Priority 3: Every 3 turns, heal the most damaged ally (or self if alone)
+        elseif (enemy.healTurnCounter or 0) >= 3 then
+          shouldHeal = true
+          if mostDamagedAlly then
+            -- Heal most damaged ally
+            healTargetIndex = mostDamagedAllyIndex
+          else
+            -- Heal self if no allies
+            healTargetIndex = i
+          end
+        end
+      end
+      
       -- If this enemy has a pending charged attack, force a heavy attack intent
       if isBoar and enemy.chargeReady then
         enemy.intent = {
@@ -105,6 +157,18 @@ function BattleScene:calculateEnemyIntents()
         }
         -- Consume the charge so it only applies once
         enemy.chargeReady = false
+      elseif shouldHeal then
+        -- Mender heals an ally or itself
+        enemy.intent = {
+          type = "skill",
+          skillType = "heal",
+          targetIndex = healTargetIndex,
+          amount = 18, -- Heal amount
+        }
+        -- Reset counter after using heal ability
+        if isMender then
+          enemy.healTurnCounter = 0
+        end
       elseif shouldGainArmor then
         -- Fungloom gains armor every 2 turns
         enemy.intent = {
@@ -150,6 +214,11 @@ function BattleScene:calculateEnemyIntents()
         enemy.armorTurnCounter = (enemy.armorTurnCounter or 0) + 1
       end
       
+      -- Increment heal turn counter for Mender if not healing this turn
+      if isMender and not shouldHeal then
+        enemy.healTurnCounter = (enemy.healTurnCounter or 0) + 1
+      end
+      
       -- Initialize fade timer for intent (starts at 0, fades in)
       enemy.intentFadeTime = 0
       self:_registerEnemyIntent(i, enemy.intent)
@@ -184,6 +253,7 @@ function BattleScene.new()
     _pendingImpactParams = nil, -- { blockCount, isCrit } - stored by playImpact, merged into pending damage
     _shockwaveSequence = nil, -- Timer for sequencing shockwave animation phases
     _calcifySequence = nil, -- Timer for calcify particle animation sequence
+    _healSequence = nil, -- Timer for heal particle animation sequence
     playerImg = nil,
     playerScaleMul = 1,
     playerLungeTime = 0,
@@ -209,6 +279,8 @@ function BattleScene.new()
     enemyBarY = {}, -- Bar Y positions for each enemy
     enemyBarW = {}, -- Bar widths for each enemy
     enemyBarH = {}, -- Bar heights for each enemy
+    enemyHealGlowTimer = {}, -- Heal glow timers for each enemy (fades out after heal)
+    playerHealGlowTimer = 0, -- Heal glow timer for player (fades out after heal)
     _lastBounds = nil,
     -- Turn indicator state
     turnIndicator = nil, -- { text = "PLAYER'S TURN" or "ENEMY'S TURN", t = lifetime }
@@ -333,6 +405,8 @@ function BattleScene:_applyPlayerHeal(amount)
   if not amount or amount <= 0 then return end
   BattleState.applyPlayerHeal(amount)
   self:_syncPlayerFromState()
+  -- Trigger heal glow effect (fades out over 1 second)
+  self.playerHealGlowTimer = 1.0
 end
 
 function BattleScene:_setPlayerArmor(value)
@@ -1413,6 +1487,19 @@ function BattleScene:update(dt, bounds)
   -- Update calcify particle animation
   self:_updateCalcifySequence(dt)
   
+  -- Update heal particle animation
+  self:_updateHealSequence(dt)
+  
+  -- Update heal glow timers (fade out over time)
+  if self.playerHealGlowTimer > 0 then
+    self.playerHealGlowTimer = math.max(0, self.playerHealGlowTimer - dt)
+  end
+  for i, enemy in ipairs(self.enemies or {}) do
+    if self.enemyHealGlowTimer[i] and self.enemyHealGlowTimer[i] > 0 then
+      self.enemyHealGlowTimer[i] = math.max(0, self.enemyHealGlowTimer[i] - dt)
+    end
+  end
+  
   -- Check for charged attacks entering forward phase and apply damage
   for _, enemy in ipairs(self.enemies or {}) do
     if enemy.pendingChargedDamage and enemy.chargeLungeTime and enemy.chargeLungeTime > 0 and enemy.chargeLunge then
@@ -1500,6 +1587,9 @@ function BattleScene:update(dt, bounds)
           if intent and intent.type == "armor" then
             -- Execute armor gain for delayed enemies too
             self:performEnemyArmorGain(enemy, intent.amount or 5)
+          elseif intent and intent.type == "skill" and intent.skillType == "heal" then
+            -- Execute heal for delayed enemies too
+            self:performEnemyHeal(enemy, intent.targetIndex, intent.amount or 18)
           elseif intent and intent.type == "skill" and intent.skillType == "calcify" then
             -- Execute calcify for delayed enemies too
             self:performEnemyCalcify(enemy, intent.blockCount or 3)
@@ -2012,9 +2102,14 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
           shouldShockwave = isEnemy1 and (love.math.random() < 0.3)
         end
         
+        local shouldHeal = intent and intent.type == "skill" and intent.skillType == "heal"
+        
         if shouldGainArmor then
           -- Perform armor gain (Fungloom)
           self:performEnemyArmorGain(enemy, intent.amount or 5)
+        elseif shouldHeal then
+          -- Perform heal (Mender)
+          self:performEnemyHeal(enemy, intent.targetIndex, intent.amount or 18)
         elseif shouldCalcify then
           -- Perform calcify skill
           self:performEnemyCalcify(enemy, intent.blockCount or 3)
@@ -2243,6 +2338,164 @@ function BattleScene:performEnemyArmorGain(enemy, amount)
   pushLog(self, (enemy.name or "Fungloom") .. " gained " .. amount .. " armor!")
 end
 
+-- Perform enemy heal (Mender special ability)
+-- Mender heals an ally or itself
+function BattleScene:performEnemyHeal(enemy, targetIndex, amount)
+  amount = amount or 18
+  
+  -- Find enemy index
+  local enemyIndex = nil
+  for i, e in ipairs(self.enemies or {}) do
+    if e == enemy then
+      enemyIndex = i
+      break
+    end
+  end
+  
+  if not enemyIndex then enemyIndex = 1 end
+  
+  -- Set this enemy as the attacking enemy (for darkening others)
+  self._attackingEnemyIndex = enemyIndex
+  
+  -- Find target enemy
+  local targetEnemy = nil
+  if targetIndex and self.enemies and self.enemies[targetIndex] then
+    targetEnemy = self.enemies[targetIndex]
+  end
+  
+  -- Fallback to self if target not found
+  if not targetEnemy or targetEnemy.hp <= 0 or targetEnemy.disintegrating then
+    targetEnemy = enemy
+    targetIndex = enemyIndex
+  end
+  
+  -- Heal the target enemy
+  local oldHP = targetEnemy.hp
+  local maxHP = targetEnemy.maxHP or 100
+  local newHP = math.min(maxHP, oldHP + amount)
+  local actualHeal = newHP - oldHP
+  
+  -- Update HP via BattleState
+  if actualHeal > 0 then
+    -- Apply negative damage (healing)
+    BattleState.applyEnemyDamage(targetIndex, -actualHeal)
+    
+    -- Sync HP from state
+    local state = self.battleState or BattleState.get()
+    if state and state.enemies and state.enemies[targetIndex] then
+      targetEnemy.hp = state.enemies[targetIndex].hp or targetEnemy.hp
+    end
+    
+    -- Get enemy positions for particle effect
+    local menderX, menderY = self:getEnemyCenterPivot(enemyIndex, self._lastBounds)
+    local targetX, targetY = self:getEnemyCenterPivot(targetIndex, self._lastBounds)
+    
+    -- Create heal particle effect
+    if menderX and menderY and targetX and targetY then
+      -- Calculate eye positions (offset from enemy center, slightly up and to the sides)
+      local enemy = self.enemies[enemyIndex]
+      local eyeOffsetY = -15 -- Eyes are above center
+      local eyeOffsetX = 8 -- Eyes are to the sides
+      
+      local leftEyeX = menderX - eyeOffsetX
+      local leftEyeY = menderY + eyeOffsetY
+      local rightEyeX = menderX + eyeOffsetX
+      local rightEyeY = menderY + eyeOffsetY
+      
+      -- Initialize heal particle sequence
+      self._healSequence = {
+        timer = 0,
+        phase = "animating",
+        particles = {},
+        targetIndex = targetIndex,
+      }
+      
+      -- Create particles from both eyes
+      local eyePositions = {
+        { x = leftEyeX, y = leftEyeY },
+        { x = rightEyeX, y = rightEyeY }
+      }
+      
+      for _, eyePos in ipairs(eyePositions) do
+        -- Calculate bezier curve control points for boomerang effect (upward arc)
+        local dx = targetX - eyePos.x
+        local dy = targetY - eyePos.y
+        local dist = math.sqrt(dx * dx + dy * dy)
+        
+        -- Calculate upward arc height (always go upward first)
+        local arcHeight = math.max(60, dist * 0.6) -- Minimum 60px upward, or 60% of distance
+        local randomVariation = (love.math.random() - 0.5) * 20 -- Add some variation
+        
+        -- First control point - goes upward and slightly forward
+        -- This creates the upward arc
+        local cp1x = eyePos.x + dx * 0.2 -- Slight forward movement
+        local cp1y = eyePos.y - arcHeight - randomVariation -- Go upward
+        
+        -- Second control point - curves back down toward target
+        -- This creates the downward return arc
+        local cp2x = eyePos.x + dx * 0.8 -- Most of the way to target horizontally
+        local cp2y = eyePos.y + dy * 0.3 - arcHeight * 0.3 -- Coming back down but still elevated
+        
+        -- Create trail with yellowish-green color
+        local trail = Trail.new({
+          enabled = true,
+          width = 20,
+          taperPower = 1.2,
+          softness = 0.3,
+          colorStart = { 0.8, 1.0, 0.4, 0.9 }, -- Yellowish-green at head
+          colorEnd = { 0.6, 0.9, 0.3, 0.3 }, -- Slightly darker green at tail
+          additive = true,
+          sampleInterval = 0.01,
+          maxPoints = 35,
+        })
+        
+        -- Create particle
+        local particle = {
+          x = eyePos.x,
+          y = eyePos.y,
+          startX = eyePos.x,
+          startY = eyePos.y,
+          targetX = targetX,
+          targetY = targetY,
+          cp1x = cp1x,
+          cp1y = cp1y,
+          cp2x = cp2x,
+          cp2y = cp2y,
+          trail = trail,
+          progress = 0,
+          speed = 1.0, -- Progress per second
+          hit = false,
+        }
+        
+        table.insert(self._healSequence.particles, particle)
+      end
+    end
+    
+    -- Trigger heal glow effect (fades out over 1 second)
+    self.enemyHealGlowTimer[targetIndex] = 1.0
+    
+    -- Show heal popup
+    if targetX and targetY then
+      table.insert(self.popups, {
+        x = targetX,
+        y = targetY,
+        kind = "heal",
+        value = actualHeal,
+        t = config.battle.popupLifetime or 0.8,
+        who = "enemy",
+        enemyIndex = targetIndex,
+      })
+    end
+    
+    local targetName = targetEnemy.name or "Enemy"
+    if targetIndex == enemyIndex then
+      pushLog(self, (enemy.name or "Mender") .. " healed itself for " .. actualHeal .. " HP!")
+    else
+      pushLog(self, (enemy.name or "Mender") .. " healed " .. targetName .. " for " .. actualHeal .. " HP!")
+    end
+  end
+end
+
 -- Start calcify particle animation (called from SplitScene when block positions are ready)
 function BattleScene:startCalcifyAnimation(enemyX, enemyY, blockPositions)
   if not self._calcifySequence then return end
@@ -2421,6 +2674,107 @@ function BattleScene:_drawCalcifyParticles()
       -- Core particle (larger than before)
       love.graphics.setColor(1, 1, 1, 0.95)
       love.graphics.circle("fill", particle.x, particle.y, 5)
+      
+      love.graphics.setBlendMode("alpha")
+    end
+  end
+end
+
+-- Update heal particle animation sequence
+function BattleScene:_updateHealSequence(dt)
+  if not self._healSequence then return end
+  
+  local seq = self._healSequence
+  
+  if seq.phase == "animating" then
+    seq.timer = seq.timer + dt
+    
+    -- Update each particle
+    local allHit = true
+    for _, particle in ipairs(seq.particles) do
+      if not particle.hit then
+        allHit = false
+        -- Update progress along bezier curve
+        particle.progress = math.min(1.0, particle.progress + particle.speed * dt)
+        
+        -- Calculate position on bezier curve
+        local t = particle.progress
+        local mt = 1 - t
+        local mt2 = mt * mt
+        local mt3 = mt2 * mt
+        local t2 = t * t
+        local t3 = t2 * t
+        
+        -- Cubic bezier: (1-t)^3*P0 + 3*(1-t)^2*t*P1 + 3*(1-t)*t^2*P2 + t^3*P3
+        particle.x = mt3 * particle.startX + 3 * mt2 * t * particle.cp1x + 3 * mt * t2 * particle.cp2x + t3 * particle.targetX
+        particle.y = mt3 * particle.startY + 3 * mt2 * t * particle.cp1y + 3 * mt * t2 * particle.cp2y + t3 * particle.targetY
+        
+        -- Update trail
+        if particle.trail then
+          particle.trail:update(dt, particle.x, particle.y)
+        end
+        
+        -- Check if particle reached target
+        local dx = particle.x - particle.targetX
+        local dy = particle.y - particle.targetY
+        local dist = math.sqrt(dx * dx + dy * dy)
+        
+        if dist < 15 or particle.progress >= 1.0 then
+          -- Particle hit target
+          particle.hit = true
+        end
+      else
+        -- Particle already hit, fade out trail
+        if particle.trail then
+          particle.trail:update(dt, particle.x, particle.y)
+        end
+      end
+    end
+    
+    -- Check if all particles have hit their targets
+    if allHit then
+      -- Wait a bit for trails to fade, then complete
+      if seq.timer >= 1.2 then
+        seq.phase = "complete"
+        self._healSequence = nil
+        -- Clear attacking enemy when heal completes
+        if #self._enemyAttackDelays == 0 then
+          self._attackingEnemyIndex = nil
+        end
+      end
+    end
+  end
+end
+
+-- Draw heal particles (called from draw function)
+function BattleScene:_drawHealParticles()
+  if not self._healSequence or not self._healSequence.particles then return end
+  
+  for _, particle in ipairs(self._healSequence.particles) do
+    -- Draw trail
+    if particle.trail then
+      particle.trail:draw()
+    end
+    
+    -- Draw particle with yellowish-green glow effect
+    if not particle.hit then
+      love.graphics.setBlendMode("add")
+      
+      -- Outer glow layers (larger, more transparent, yellowish-green)
+      love.graphics.setColor(0.8, 1.0, 0.4, 0.15)
+      love.graphics.circle("fill", particle.x, particle.y, 14)
+      love.graphics.setColor(0.8, 1.0, 0.4, 0.25)
+      love.graphics.circle("fill", particle.x, particle.y, 11)
+      love.graphics.setColor(0.8, 1.0, 0.4, 0.4)
+      love.graphics.circle("fill", particle.x, particle.y, 8)
+      
+      -- Middle glow
+      love.graphics.setColor(0.8, 1.0, 0.4, 0.6)
+      love.graphics.circle("fill", particle.x, particle.y, 6)
+      
+      -- Core particle
+      love.graphics.setColor(0.9, 1.0, 0.5, 0.95)
+      love.graphics.circle("fill", particle.x, particle.y, 4)
       
       love.graphics.setBlendMode("alpha")
     end
