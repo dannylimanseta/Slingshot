@@ -648,6 +648,74 @@ function Visuals.draw(scene, bounds)
     end
   end
 
+  -- Draw charge puffs for enemies that are currently using the Charge skill
+  do
+    local puffL = scene.puffImageLeft
+    local puffR = scene.puffImageRight
+    if puffL or puffR then
+      local t = (scene.idleT or 0)
+      local speed = 0.8 -- cycles per second
+      local cycle = (t * speed) % 1.0
+      local baseAlpha = 0.9
+      local maxRise = 40 -- pixels upwards
+      local horizOffset = 20 -- horizontal offset from enemy center
+      
+      for i, pos in ipairs(enemyPositions) do
+        local enemy = pos.enemy
+        local intent = enemy and enemy.intent
+        local isCharging = intent and intent.type == "skill" and intent.skillType == "charge"
+        if isCharging then
+          local enemyY = pos.curY or pos.y
+          local enemyTopY
+          if enemy.img then
+            local spriteHeight = enemy.img:getHeight()
+            local baseScale = pos.scale
+            local bobA = (config.battle and config.battle.idleBobScaleY) or 0
+            local maxBobScale = 1 + bobA
+            enemyTopY = enemyY - spriteHeight * baseScale * maxBobScale
+          else
+            enemyTopY = enemyY - r * 2
+          end
+          
+          local function drawPuff(img, dir)
+            if not img then return end
+            -- dir = -1 for left, 1 for right
+            local phase = (dir == -1) and 0 or 0.5
+            local p = (cycle + phase) % 1.0
+            -- Quick fade-in, then fade-out over the cycle
+            local fadeIn = 0.2
+            local alpha
+            if p < fadeIn then
+              alpha = baseAlpha * (p / fadeIn)
+            else
+              local outP = (p - fadeIn) / math.max(0.0001, (1.0 - fadeIn))
+              alpha = baseAlpha * (1.0 - outP)
+            end
+            if alpha <= 0 then return end
+            local rise = maxRise * p
+            local dx = horizOffset * dir * (0.5 + 0.5 * p)
+              local x = pos.curX + dx
+              if dir == -1 then
+                -- Shift left puff further to the left for clearer separation
+                x = x - 90
+              end
+            -- Base height a bit above the boar's head, shifted further down for better visibility
+            local y = enemyTopY + 80 - rise
+            
+            local iw, ih = img:getWidth(), img:getHeight()
+            local scale = 0.8
+            love.graphics.setColor(1, 1, 1, alpha)
+            love.graphics.draw(img, x, y, 0, scale * dir, scale, iw * 0.5, ih * 0.5)
+          end
+          
+          drawPuff(puffL, -1)
+          drawPuff(puffR, 1)
+          love.graphics.setColor(1, 1, 1, 1)
+        end
+      end
+    end
+  end
+
   -- Draw enemy intents (above enemy sprites, with fade animation)
   local turnManager = scene.turnManager
   local isPlayerTurn = turnManager and (
@@ -702,9 +770,13 @@ function Visuals.draw(scene, bounds)
         local phaseOffset = (i - 1) * math.pi * 0.3
         local bobOffset = math.sin((scene.idleT or 0) * bobSpeed * 2 * math.pi + phaseOffset) * bobAmplitude
         
-        -- Calculate text dimensions first (needed for centering)
+        -- Calculate text to display beside the icon
         local valueText = nil
-        if enemy.intent.type == "attack" and enemy.intent.damage then
+        local isChargeSkill = (enemy.intent.type == "skill" and enemy.intent.skillType == "charge")
+        if isChargeSkill then
+          -- Show charging label for boar Charge skill
+          valueText = "Charging..."
+        elseif enemy.intent.type == "attack" and enemy.intent.damage then
           -- Show fixed damage (e.g., shockwave)
           valueText = tostring(enemy.intent.damage)
         elseif enemy.intent.type == "attack" and enemy.intent.damageMin and enemy.intent.damageMax then
@@ -719,21 +791,37 @@ function Visuals.draw(scene, bounds)
         end
         
         -- Calculate total width of icon + gap + text for centering
+        -- Use exact measured text width for accurate centering
         local textW = 0
         local textH = 0
         if valueText then
           local font = love.graphics.getFont()
-          textW = font:getWidth(valueText)
+          textW = font:getWidth(valueText) -- Exact pixel width of "Charging..." or other text
           textH = font:getHeight()
         end
         
         local iconWidth = iconW * iconScale
         local gapWidth = valueText and 6 or 0 -- 6px gap between icon and text
-        local totalWidth = iconWidth + gapWidth + textW
+        local totalWidth = iconWidth + gapWidth + textW -- Total bundle width
         
-        -- Center the icon+text combination relative to enemy sprite
-        -- Enemy center is at pos.curX, so offset icon left by half the total width
-        local iconX = pos.curX - totalWidth * 0.5 + iconWidth * 0.5
+        -- To center: enemyCenterX = iconX + (gapWidth + textW) / 2
+        -- Therefore: iconX = enemyCenterX - (gapWidth + textW) / 2
+        local enemyCenterX = pos.curX or pos.x -- Enemy sprite center X (pivot point)
+        -- Optional nudge to compensate for sprite visual padding; only apply for charge label
+        local isBoarSprite = enemy and (enemy.name == "Deranged Boar" or (enemy.spritePath and enemy.spritePath:find("enemy_boar")))
+        local nudgeX = isChargeSkill and (isBoarSprite and 44 or 12) or 0
+        local iconX
+        if isChargeSkill and valueText and textW > 0 then
+          -- Center the text visually on the enemy, then place the icon to the left
+          local textCenterX = enemyCenterX + nudgeX
+          -- love.print draws from left baseline; convert center to left X
+          local textXLeft = textCenterX - textW * 0.5
+          -- Icon sits to the left of text by gap
+          iconX = textXLeft - gapWidth - iconWidth * 0.5
+        else
+          -- Default: center the bundle span (icon + gap + text) over enemy
+          iconX = enemyCenterX - (gapWidth + textW) * 0.5 + nudgeX
+        end
         
         -- Draw icon with fade
         love.graphics.setColor(1, 1, 1, alpha)
@@ -741,9 +829,17 @@ function Visuals.draw(scene, bounds)
         
         -- Draw text if available
         if valueText then
-          -- Position text to the right of icon
-          local iconRightEdge = iconX + iconWidth * 0.5
-          local textX = iconRightEdge + gapWidth
+          -- Position text
+          local textX
+          if isChargeSkill and textW > 0 then
+            -- Use the same centered text position as above
+            local textCenterX = (pos.curX or pos.x) + nudgeX
+            textX = textCenterX - textW * 0.5
+          else
+            -- Default: text to the right of the icon
+            local iconRightEdge = iconX + iconWidth * 0.5
+            textX = iconRightEdge + gapWidth
+          end
           -- Align text center with icon center (love.graphics.print uses baseline, so adjust)
           local iconCenterY = iconY + bobOffset -- Icon center Y
           local textY = iconCenterY + textH * -0.28 -- Adjust for text baseline to center with icon

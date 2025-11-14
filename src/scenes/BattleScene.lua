@@ -220,6 +220,9 @@ function BattleScene.new()
     glowSelectedImg = nil, -- Image for glow effect behind selected character
     -- Particle system
     particles = ParticleManager.new(),
+    -- Charge skill puff images (left/right variants)
+    puffImageLeft = nil,
+    puffImageRight = nil,
   }, BattleScene)
 end
 
@@ -437,6 +440,16 @@ function BattleScene:load(bounds, battleProfile)
       local fps = (config.battle and config.battle.impactFps) or 30
       self.impactAnimation = SpriteAnimation.new(impactPath, 512, 512, 4, 4, fps)
     end
+  end
+  
+  -- Load charge puff images (optional)
+  do
+    local puffRPath = "assets/images/fx/fx_puff_r.png"
+    local puffLPath = "assets/images/fx/fx_puff_l.png"
+    local okR, puffRImg = pcall(love.graphics.newImage, puffRPath)
+    if okR then self.puffImageRight = puffRImg end
+    local okL, puffLImg = pcall(love.graphics.newImage, puffLPath)
+    if okL then self.puffImageLeft = puffLImg end
   end
   
   -- Load disintegration shader
