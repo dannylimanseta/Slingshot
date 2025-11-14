@@ -22,6 +22,7 @@ BattleScene.__index = BattleScene
 -- Helper function to create an enemy entry from config
 local function createEnemyFromConfig(enemyConfig, index)
   return {
+    id = enemyConfig.id, -- Enemy identifier (e.g., "bloodhound")
     hp = enemyConfig.maxHP,
     maxHP = enemyConfig.maxHP,
     displayHP = enemyConfig.maxHP, -- Display HP for smooth tweening
@@ -43,6 +44,10 @@ local function createEnemyFromConfig(enemyConfig, index)
     name = enemyConfig.name, -- Display name (optional)
     index = index, -- Position in array (for reference)
     intent = nil, -- Enemy intent for next turn: { type = "attack"|"armor"|"skill", ... }
+    -- Enrage FX state (for enemies like Bloodhound)
+    enrageLevel = 0,       -- 0 = normal, 1 = first enrage, 2 = second enrage
+    enrageFxTime = 0,      -- Timer for enrage FX animation
+    enrageFxActive = false,-- Whether enrage FX is currently playing
   }
 end
 
@@ -61,8 +66,72 @@ function BattleScene:areEnemyAttacksActive()
     if (enemy.lungeTime and enemy.lungeTime > 0) or (enemy.jumpTime and enemy.jumpTime > 0) or (enemy.knockbackTime and enemy.knockbackTime > 0) or (enemy.chargeLungeTime and enemy.chargeLungeTime > 0) then
       return true
     end
+    -- Check for active multi-hit attacks
+    if enemy.multiHitState then
+      return true
+    end
   end
   return false
+end
+
+-- Helper: Get hit count for an enemy (for multi-hit attacks like Bloodhound)
+function BattleScene:_getEnemyHitCount(enemy, intent)
+  -- For Bloodhound, always recalculate from current HP
+  if enemy.id == "bloodhound" or enemy.name == "Bloodhound" then
+    local hpPercent = enemy.maxHP and enemy.maxHP > 0 and (enemy.hp / enemy.maxHP) or 1
+    if hpPercent < 0.25 then
+      return 3
+    elseif hpPercent < 0.5 then
+      return 2
+    else
+      return 1
+    end
+  end
+  -- Other enemies: use intent.hits if available
+  return (intent and intent.hits) or 1
+end
+
+-- Helper: Apply multi-hit damage to player with staggered timing
+function BattleScene:_applyMultiHitDamage(enemy, damage, hitCount, enemyIndex)
+  hitCount = math.max(1, hitCount or 1)
+  
+  -- For multi-hit attacks, queue each hit with a small delay
+  if hitCount > 1 then
+    -- Store multi-hit state on enemy
+    enemy.multiHitState = {
+      damage = damage,
+      remainingHits = hitCount,
+      currentHit = 0,
+      delay = 0.35, -- 0.35 seconds between hits (increased for visibility)
+      timer = 0,
+      enemyIndex = enemyIndex,
+    }
+  else
+    -- Single hit - apply immediately
+    local blocked, net = self:_applyPlayerDamage(damage)
+    
+    if net <= 0 then
+      self.armorIconFlashTimer = 0.5
+      table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+    else
+      self.playerFlash = config.battle.hitFlashDuration
+      self.playerKnockbackTime = 1e-6
+      table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
+      if self.particles then
+        local px, py = self:getPlayerCenterPivot(self._lastBounds)
+        if px and py then
+          self.particles:emitHitBurst(px, py)
+        end
+      end
+      if self.onPlayerDamage then
+        self.onPlayerDamage()
+      end
+    end
+    
+    -- Trigger lunge animation and shake
+    enemy.lungeTime = 1e-6
+    self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+  end
 end
 
 -- Calculate enemy intents for the upcoming turn
@@ -82,6 +151,7 @@ function BattleScene:calculateEnemyIntents()
                         enemy.name == "Stagmaw" or 
                         (enemy.spritePath and enemy.spritePath:find("enemy_4"))
       local isMender = enemy.name == "Mender" or enemy.id == "mender"
+      local isBloodhound = enemy.name == "Bloodhound" or enemy.id == "bloodhound"
       
       -- Stagmaw has 30% chance to use calcify skill
       local shouldCalcify = isStagmaw and (love.math.random() < 0.3)
@@ -199,6 +269,37 @@ function BattleScene:calculateEnemyIntents()
           skillType = "shockwave",
           damage = 6, -- Fixed shockwave damage
         }
+      elseif isBloodhound then
+        -- Bloodhound: multi-hit attacks based on current HP
+        local hpPercent = enemy.maxHP and enemy.maxHP > 0 and (enemy.hp / enemy.maxHP) or 1
+        local hits = 1
+        if hpPercent < 0.25 then
+          hits = 3
+        elseif hpPercent < 0.5 then
+          hits = 2
+        end
+        -- Track enrage level and trigger FX when it increases
+        local prevLevel = enemy.enrageLevel or 0
+        local newLevel = 0
+        if hits == 2 then
+          newLevel = 1
+        elseif hits == 3 then
+          newLevel = 2
+        end
+        if newLevel > prevLevel then
+          enemy.enrageLevel = newLevel
+          enemy.enrageFxTime = 0
+          enemy.enrageFxActive = true
+        else
+          enemy.enrageLevel = newLevel
+        end
+        enemy.intent = {
+          type = "attack",
+          attackType = "normal",
+          damageMin = enemy.damageMin,
+          damageMax = enemy.damageMax,
+          hits = hits,
+        }
       else
         -- Normal attack
         enemy.intent = {
@@ -295,6 +396,7 @@ function BattleScene.new()
     splatterImages = {}, -- Array of splatter images for randomization
     splatterInstances = {}, -- Array of active splatter instances {x, y, rotation, scale, alpha, lifetime, maxLifetime, image}
     blackHoleImage = nil, -- Black hole image for black hole attacks
+    bloodEnrageImage = nil, -- FX image for Bloodhound enrage indicator
     -- Staggered flash and knockback events
     enemyFlashEvents = {}, -- Array of {delay, duration} for staggered flashes
     enemyKnockbackEvents = {}, -- Array of {delay, startTime} for staggered knockbacks
@@ -578,6 +680,17 @@ function BattleScene:load(bounds, battleProfile)
       self.whiteSilhouetteShader = wshader
     else
       self.whiteSilhouetteShader = nil
+    end
+  end
+  
+  -- Load Bloodhound enrage FX image
+  do
+    local bloodFxPath = "assets/images/fx/fx_blood.png"
+    local okBlood, bloodImg = pcall(love.graphics.newImage, bloodFxPath)
+    if okBlood then
+      self.bloodEnrageImage = bloodImg
+    else
+      self.bloodEnrageImage = nil
     end
   end
   
@@ -1068,6 +1181,19 @@ function BattleScene:update(dt, bounds)
     end
   end
   
+  -- Update Bloodhound enrage FX timers
+  do
+    local fxDuration = 0.8 -- seconds
+    for _, enemy in ipairs(self.enemies or {}) do
+      if enemy.enrageFxActive and enemy.enrageFxTime ~= nil then
+        enemy.enrageFxTime = enemy.enrageFxTime + dt
+        if enemy.enrageFxTime >= fxDuration or enemy.hp <= 0 then
+          enemy.enrageFxActive = false
+        end
+      end
+    end
+  end
+  
   -- Update enemy disintegration effects
   for _, enemy in ipairs(self.enemies or {}) do
     if enemy.disintegrating then
@@ -1551,6 +1677,59 @@ function BattleScene:update(dt, bounds)
     end
   end
 
+  -- Update multi-hit attack timers
+  for i, enemy in ipairs(self.enemies or {}) do
+    if enemy.multiHitState then
+      local state = enemy.multiHitState
+      state.timer = state.timer + dt
+      
+      if state.timer >= state.delay then
+        state.timer = 0
+        state.currentHit = state.currentHit + 1
+        
+        if state.currentHit <= state.remainingHits then
+          local blocked, net = self:_applyPlayerDamage(state.damage)
+          
+          if net <= 0 then
+            self.armorIconFlashTimer = 0.5
+            table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+          else
+            -- Flash and knockback on EVERY hit for better visual feedback
+            self.playerFlash = config.battle.hitFlashDuration
+            self.playerKnockbackTime = 1e-6
+            table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
+            if self.particles then
+              local px, py = self:getPlayerCenterPivot(self._lastBounds)
+              if px and py then
+                self.particles:emitHitBurst(px, py)
+              end
+            end
+            if self.onPlayerDamage then
+              self.onPlayerDamage()
+            end
+          end
+          
+          -- Trigger lunge on EVERY hit for better visual feedback
+          enemy.lungeTime = 1e-6
+          -- Trigger shake on EVERY hit for better feedback
+          self:triggerShake((config.battle and config.battle.shakeMagnitude) or 8, (config.battle and config.battle.shakeDuration) or 0.2)
+          
+          -- On last hit, clean up
+          if state.currentHit >= state.remainingHits then
+            enemy.multiHitState = nil
+            
+            if self.playerHP <= 0 then
+              self.state = "lose"
+              if self.turnManager then
+                self.turnManager:transitionTo(TurnManager.States.DEFEAT)
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  
   -- Update tweened darkness for non-attacking enemies
   local targetDarkness = (self._attackingEnemyIndex ~= nil) and 1.0 or 0.0 -- Darken fully (to 0% brightness) when enemy is attacking
   local darknessSpeed = 4.0 -- Speed of darkness tween
@@ -1601,22 +1780,20 @@ function BattleScene:update(dt, bounds)
             -- Execute shockwave for delayed enemies too
             self:performEnemyShockwave(enemy)
           else
-            -- Check if this is a charged attack - delay damage until forward phase
+            -- Normal or charged attack
             local isChargedAttack = intent and intent.type == "attack" and intent.attackType == "charged"
+            local hitCount = self:_getEnemyHitCount(enemy, intent)
             
             local dmg
             if intent and intent.type == "attack" and intent.damageMin and intent.damageMax then
-              -- Use intent damage range (but still randomize the actual damage)
               dmg = love.math.random(intent.damageMin, intent.damageMax)
             else
-              -- Fallback to enemy's default damage range
               dmg = love.math.random(enemy.damageMin, enemy.damageMax)
             end
             
             if isChargedAttack then
-              -- Store damage to apply later when forward charge phase starts
-              enemy.pendingChargedDamage = dmg
-              -- Trigger charged lunge animation (damage will be applied during forward phase)
+              -- Store damage (scaled by hit count) to apply later when forward charge phase starts
+              enemy.pendingChargedDamage = dmg * hitCount
               enemy.chargeLungeTime = 1e-6
               enemy.chargeLunge = {
                 windupDuration = 0.55,
@@ -1626,31 +1803,8 @@ function BattleScene:update(dt, bounds)
                 forwardDistance = ((config.battle and config.battle.lungeDistance) or 80) * 2.8,
               }
             else
-              -- Apply damage immediately for normal attacks
-              local blocked, net = self:_applyPlayerDamage(dmg)
-              
-              if net <= 0 then
-                self.armorIconFlashTimer = 0.5
-                table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
-              else
-                self.playerFlash = config.battle.hitFlashDuration
-                self.playerKnockbackTime = 1e-6
-                table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
-                pushLog(self, "Enemy " .. delayData.index .. " dealt " .. net)
-                -- Emit hit burst particles from player center
-                if self.particles then
-                  local px, py = self:getPlayerCenterPivot(self._lastBounds)
-                  if px and py then
-                    self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
-                  end
-                end
-                if self.onPlayerDamage then
-                  self.onPlayerDamage()
-                end
-              end
-              -- Trigger normal lunge animation
-              enemy.lungeTime = 1e-6
-              self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+              -- Apply multi-hit damage immediately
+              self:_applyMultiHitDamage(enemy, dmg, hitCount, delayData.index)
             end
             
             if self.playerHP <= 0 then
@@ -2120,25 +2274,21 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
           -- Perform shockwave attack
           self:performEnemyShockwave(enemy)
         else
-          -- Perform normal attack
+          -- Normal or charged attack
+          local isChargedAttack = intent and intent.type == "attack" and intent.attackType == "charged"
+          local hitCount = self:_getEnemyHitCount(enemy, intent)
+          
           local dmg
           if intent and intent.type == "attack" and intent.damageMin and intent.damageMax then
-            -- Use intent damage range (but still randomize the actual damage)
             dmg = love.math.random(intent.damageMin, intent.damageMax)
           else
-            -- Fallback to enemy's default damage range
             dmg = love.math.random(enemy.damageMin, enemy.damageMax)
           end
           
-          -- Check if this is a charged attack - delay damage until forward charge phase
-          local isChargedAttack = intent and intent.type == "attack" and intent.attackType == "charged"
-          
           if isChargedAttack then
-            -- Store damage to apply later when forward charge phase starts
-            enemy.pendingChargedDamage = dmg
-            -- Reset damage applied flag for this new charge attack
+            -- Store damage (scaled by hit count) to apply later when forward charge phase starts
+            enemy.pendingChargedDamage = dmg * hitCount
             enemy.chargedDamageApplied = nil
-            -- Trigger charged lunge animation (damage will be applied during forward phase)
             enemy.chargeLungeTime = 1e-6
             enemy.chargeLunge = {
               windupDuration = 0.55,
@@ -2148,32 +2298,8 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
               forwardDistance = ((config.battle and config.battle.lungeDistance) or 80) * 2.8,
             }
           else
-            -- Apply damage immediately for normal attacks
-            local blocked, net = self:_applyPlayerDamage(dmg)
-            
-            -- If damage is fully blocked, show armor icon popup and flash icon
-            if net <= 0 then
-              self.armorIconFlashTimer = 0.5 -- Flash duration
-              table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
-            else
-              self.playerFlash = config.battle.hitFlashDuration
-              self.playerKnockbackTime = 1e-6
-              table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
-              -- Emit hit burst particles from player center
-              if self.particles then
-                local px, py = self:getPlayerCenterPivot(self._lastBounds)
-                if px and py then
-                  self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
-                end
-              end
-              pushLog(self, "Enemy " .. i .. " dealt " .. net)
-              if self.onPlayerDamage then
-                self.onPlayerDamage()
-              end
-            end
-            -- Trigger normal lunge animation
-            enemy.lungeTime = 1e-6
-            self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+            -- Apply multi-hit damage immediately
+            self:_applyMultiHitDamage(enemy, dmg, hitCount, i)
           end
         end
       else

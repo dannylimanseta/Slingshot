@@ -971,6 +971,58 @@ function Visuals.draw(scene, bounds)
     end
   end
 
+  -- Draw Bloodhound enrage FX above head when it becomes enraged
+  do
+    local bloodImg = scene.bloodEnrageImage
+    if bloodImg then
+      local fxDuration = 0.8
+      local iw, ih = bloodImg:getWidth(), bloodImg:getHeight()
+      for i, pos in ipairs(enemyPositions) do
+        local enemy = pos.enemy
+        if enemy and enemy.enrageFxActive and enemy.enrageFxTime and enemy.enrageFxTime < fxDuration and enemy.hp > 0 and not enemy.disintegrating then
+          local t = enemy.enrageFxTime / fxDuration
+          -- Fade in then fade out
+          local alpha
+          if t < 0.25 then
+            alpha = t / 0.25
+          elseif t > 0.75 then
+            alpha = (1.0 - t) / 0.25
+          else
+            alpha = 1.0
+          end
+          alpha = math.max(0, math.min(1, alpha))
+          
+          -- Pop scale animation (slight overshoot then settle)
+          local baseScale = 0.55
+          local pop = 1.0 + 0.25 * math.sin(math.pi * math.min(1, t))
+          local scale = baseScale * pop
+          
+          -- Position above enemy head
+          local enemyY = pos.curY or pos.y
+          local enemyHeight
+          if enemy.img then
+            local spriteHeight = enemy.img:getHeight()
+            local baseScaleEnemy = pos.scale
+            local bobA = (config.battle and config.battle.idleBobScaleY) or 0
+            local maxBobScale = 1 + bobA
+            local maxScaleY = baseScaleEnemy * maxBobScale
+            enemyHeight = spriteHeight * maxScaleY
+          else
+            enemyHeight = r * 2
+          end
+          local enemyTop = enemyY - enemyHeight
+          local x = pos.curX or pos.x
+          -- Position noticeably above the intent icon (which already sits above enemyTop)
+          local y = enemyTop - ih * scale * 0.5 - 60
+          
+          love.graphics.setColor(1, 1, 1, alpha)
+          love.graphics.draw(bloodImg, x, y, 0, scale, scale, iw * 0.5, ih * 0.5)
+          love.graphics.setColor(1, 1, 1, 1)
+        end
+      end
+    end
+  end
+
   -- Draw enemy intents (above enemy sprites, with fade animation)
   local turnManager = scene.turnManager
   local isPlayerTurn = turnManager and (
@@ -1039,14 +1091,29 @@ function Visuals.draw(scene, bounds)
         elseif isShockwaveSkill and enemy.intent.damage then
           -- Show damage for shockwave skill
           valueText = tostring(enemy.intent.damage)
-        elseif enemy.intent.type == "attack" and enemy.intent.damage then
-          -- Show fixed damage (e.g., shockwave)
-          valueText = tostring(enemy.intent.damage)
-        elseif enemy.intent.type == "attack" and enemy.intent.damageMin and enemy.intent.damageMax then
-          -- Show damage range for normal attacks
-          valueText = enemy.intent.damageMin == enemy.intent.damageMax and 
-            tostring(enemy.intent.damageMin) or 
-            (tostring(enemy.intent.damageMin) .. "-" .. tostring(enemy.intent.damageMax))
+        elseif enemy.intent.type == "attack" then
+          local hits = enemy.intent.hits or 1
+          if enemy.intent.damage then
+            -- Fixed damage (e.g., shockwave or scripted attack)
+            if hits > 1 then
+              -- Show fixed damage per hit with hit count (e.g., "5 x 2")
+              valueText = tostring(enemy.intent.damage) .. " x " .. tostring(hits)
+            else
+              valueText = tostring(enemy.intent.damage)
+            end
+          elseif enemy.intent.damageMin and enemy.intent.damageMax then
+            if hits > 1 then
+              -- For multi-hit attacks, show damage range with hit count (e.g., "4-6 x 2")
+              valueText = enemy.intent.damageMin == enemy.intent.damageMax and 
+                (tostring(enemy.intent.damageMin) .. " x " .. tostring(hits)) or 
+                (tostring(enemy.intent.damageMin) .. "-" .. tostring(enemy.intent.damageMax) .. " x " .. tostring(hits))
+            else
+              -- Show damage range for normal attacks
+              valueText = enemy.intent.damageMin == enemy.intent.damageMax and 
+                tostring(enemy.intent.damageMin) or 
+                (tostring(enemy.intent.damageMin) .. "-" .. tostring(enemy.intent.damageMax))
+            end
+          end
         elseif enemy.intent.type == "armor" and enemy.intent.amount then
           valueText = tostring(enemy.intent.amount)
         elseif enemy.intent.type == "skill" and enemy.intent.effect then

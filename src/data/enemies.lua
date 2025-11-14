@@ -8,6 +8,7 @@ local ENEMIES = {
 	fawn = { id = "fawn", name = "Fawn", sprite = "enemy_3.png", maxHP = 40, damageMin = 2, damageMax = 3, spriteScale = 4, scaleMul = 1 },
 	stagmaw = { id = "stagmaw", name = "Stagmaw", sprite = "enemy_4.png", maxHP = 120, damageMin = 7, damageMax = 9, spriteScale = 6, scaleMul = 1 },
 	deranged_boar = { id = "deranged_boar", name = "Deranged Boar", sprite = "enemy_boar.png", maxHP = 60, damageMin = 4, damageMax = 6, spriteScale = 4.5, scaleMul = 1 },
+	bloodhound = { id = "bloodhound", name = "Bloodhound", sprite = "enemy_bloodhound.png", maxHP = 60, damageMin = 4, damageMax = 6, spriteScale = 4.5, scaleMul = 1 },
 	mender = { id = "mender", name = "Mender", sprite = "enemy_monkey.png", maxHP = 55, damageMin = 2, damageMax = 4, spriteScale = 4, scaleMul = 1 },
 }
 

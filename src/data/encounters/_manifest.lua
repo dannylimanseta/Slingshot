@@ -18,5 +18,6 @@ return {
   { "difficulty_2", "boar_fawn" },
   { "difficulty_2", "solo_mender" },
   { "difficulty_2", "mender_boar" },
+  { "difficulty_2", "solo_bloodhound" },
 }
 
