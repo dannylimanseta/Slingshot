@@ -72,6 +72,9 @@ function BattleScene:calculateEnemyIntents()
     if enemy.hp > 0 and not enemy.disintegrating then
       -- Determine intent based on enemy type and behavior
       local isEnemy1 = enemy.spritePath == "enemy_1.png"
+      local isBoar = enemy.spritePath == "enemy_boar.png"
+        or enemy.name == "Deranged Boar"
+        or (enemy.spritePath and enemy.spritePath:find("enemy_boar"))
       local isStagmaw = enemy.spritePath == "enemy_4.png" or 
                         enemy.name == "Stagmaw" or 
                         (enemy.spritePath and enemy.spritePath:find("enemy_4"))
@@ -79,13 +82,33 @@ function BattleScene:calculateEnemyIntents()
       -- Stagmaw has 30% chance to use calcify skill
       local shouldCalcify = isStagmaw and (love.math.random() < 0.3)
       local shouldShockwave = isEnemy1 and (love.math.random() < 0.3)
+      -- Deranged Boar has 30% chance to start charging (if not already charged)
+      local shouldCharge = isBoar and not enemy.chargeReady and (love.math.random() < 0.3)
       
-      if shouldCalcify then
+      -- If this enemy has a pending charged attack, force a heavy attack intent
+      if isBoar and enemy.chargeReady then
+        enemy.intent = {
+          type = "attack",
+          attackType = "charged",
+          damageMin = 12,
+          damageMax = 16,
+        }
+        -- Consume the charge so it only applies once
+        enemy.chargeReady = false
+      elseif shouldCalcify then
         -- Calcify skill: calcify 3 random blocks for 1 turn
         enemy.intent = {
           type = "skill",
           skillType = "calcify",
           blockCount = 3,
+        }
+      elseif shouldCharge then
+        -- Charge skill: this turn the boar charges and spawns armor blocks,
+        -- next turn it will perform a heavy attack (12–16 damage)
+        enemy.intent = {
+          type = "skill",
+          skillType = "charge",
+          armorBlockCount = 5,
         }
       elseif shouldShockwave then
         -- Shockwave attack (still counts as attack type)
@@ -1315,6 +1338,9 @@ function BattleScene:update(dt, bounds)
           if intent and intent.type == "skill" and intent.skillType == "calcify" then
             -- Execute calcify for delayed enemies too
             self:performEnemyCalcify(enemy, intent.blockCount or 3)
+          elseif intent and intent.type == "skill" and intent.skillType == "charge" then
+            -- Execute charge skill for delayed enemies too
+            self:performEnemyCharge(enemy, (intent and intent.armorBlockCount) or 5)
           else
             local dmg
             if intent and intent.type == "attack" and intent.damageMin and intent.damageMax then
@@ -1780,9 +1806,12 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
         local intent = enemy.intent
         local shouldShockwave = false
         local shouldCalcify = false
+        local shouldCharge = false
         
         if intent and intent.type == "skill" and intent.skillType == "calcify" then
           shouldCalcify = true
+        elseif intent and intent.type == "skill" and intent.skillType == "charge" then
+          shouldCharge = true
         elseif intent and intent.type == "attack" and intent.attackType == "shockwave" then
           shouldShockwave = true
         else
@@ -1794,6 +1823,9 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
         if shouldCalcify then
           -- Perform calcify skill
           self:performEnemyCalcify(enemy, intent.blockCount or 3)
+        elseif shouldCharge then
+          -- Perform charge skill (Deranged Boar)
+          self:performEnemyCharge(enemy, (intent and intent.armorBlockCount) or 5)
         elseif shouldShockwave then
           -- Perform shockwave attack
           self:performEnemyShockwave(enemy)
@@ -1913,6 +1945,37 @@ function BattleScene:performEnemyCalcify(enemy, blockCount)
   end
   
   pushLog(self, "Stagmaw is calcifying " .. blockCount .. " blocks!")
+end
+
+-- Perform enemy charge skill (Deranged Boar special ability)
+-- This turn: boar charges and spawns armor blocks on the board.
+-- Next turn: its intent will be a heavy attack (12–16 damage) via calculateEnemyIntents.
+function BattleScene:performEnemyCharge(enemy, armorBlockCount)
+  armorBlockCount = armorBlockCount or 5
+  
+  -- Find enemy index
+  local enemyIndex = nil
+  for i, e in ipairs(self.enemies or {}) do
+    if e == enemy then
+      enemyIndex = i
+      break
+    end
+  end
+  
+  if not enemyIndex then enemyIndex = 1 end
+  
+  -- Set this enemy as the attacking enemy (for darkening others)
+  self._attackingEnemyIndex = enemyIndex
+  
+  -- Mark this boar as having a charged attack ready for its next turn
+  enemy.chargeReady = true
+  
+  -- Spawn armor blocks on the breakout board via SplitScene/GamePlayScene
+  if self.turnManager then
+    self.turnManager:emit("enemy_charge_spawn_armor_blocks", { count = armorBlockCount })
+  end
+  
+  pushLog(self, (enemy.name or "Boar") .. " is charging up!")
 end
 
 -- Start calcify particle animation (called from SplitScene when block positions are ready)

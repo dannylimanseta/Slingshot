@@ -477,16 +477,8 @@ function GameplayScene:handleBallWallCollision(ball, a, b, aType, bType, contact
   local wallData = (aType == "wall" and a) or (bType == "wall" and b)
   
   if ball.pierce then
-    -- Pierce orbs: destroy when hitting walls (after piercing blocks)
-    local bx, by = ball.body:getPosition()
-    local dx = bx - (ball.spawnX or bx)
-    local dy = by - (ball.spawnY or by)
-    local distFromSpawn = math.sqrt(dx * dx + dy * dy)
-    local hasPierced = (ball.pierces or 0) > 0
-    
-    if distFromSpawn >= 3 and hasPierced then
-      ball:destroy()
-    end
+    -- Pierce orbs: destroy immediately when hitting any edge/wall
+    ball:destroy()
   else
     -- Regular orbs: bounce
     ball:onBounce()
@@ -771,6 +763,33 @@ function GameplayScene:respawnDestroyedBlocks(bounds, count)
   end
   BattleState.resetBlocksDestroyedThisTurn()
   self.destroyedThisTurn = 0
+end
+
+-- Spawn a specific number of armor blocks at random positions on the board
+-- Used by enemy skills (e.g., Deranged Boar's Charge)
+function GameplayScene:spawnArmorBlocks(bounds, count)
+  if not (self.blocks and self.blocks.addRandomBlocks) then return end
+  count = count or 0
+  if count <= 0 then return end
+  
+  local width = (bounds and bounds.w) or love.graphics.getWidth()
+  local height = (bounds and bounds.h) or love.graphics.getHeight()
+
+  -- Let BlockManager decide how many can actually be placed without overlap.
+  -- We request `count` blocks; it will clamp based on available space and playfield bounds.
+  local newBlocks = self.blocks:addRandomBlocks(self.physics:getWorld(), width, height, count)
+  for _, nb in ipairs(newBlocks) do
+    -- Force these blocks to be armor blocks
+    nb.kind = "armor"
+    nb.onDestroyed = function()
+      if self.particles and not nb._suckedByBlackHole then
+        local blockColor = theme.colors.blockArmor
+        self.particles:emitExplosion(nb.cx, nb.cy, blockColor)
+      end
+      BattleState.registerBlockHit(nb, { destroyed = true, kind = nb.kind })
+      self.destroyedThisTurn = BattleState.get().blocks.destroyedThisTurn or 0
+    end
+  end
 end
 
 -- Set projectile ID

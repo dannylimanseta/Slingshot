@@ -342,6 +342,16 @@ function SplitScene:setupTurnManagerEvents()
       end
     end
   end)
+
+  -- Enemy charge skill: spawn armor blocks on the board
+  self.turnManager:on("enemy_charge_spawn_armor_blocks", function(data)
+    if self.left and self.left.spawnArmorBlocks then
+      local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
+      local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
+      local centerRect = self.layoutManager:getCenterRect(vw, vh)
+      self.left:spawnArmorBlocks({ x = 0, y = 0, w = centerRect.w, h = vh }, (data and data.count) or 5)
+    end
+  end)
 end
 
 -- Helper function to end player turn using TurnManager
