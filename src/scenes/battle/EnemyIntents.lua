@@ -207,25 +207,17 @@ function EnemyIntents.calculate(scene)
 end
 
 function EnemyIntents.apply(scene, intents)
-  for i, intent in ipairs(intents or {}) do
-    local enemy = scene.enemies and scene.enemies[i]
+  local enemyCount = scene.enemies and #scene.enemies or 0
+  for i = 1, enemyCount do
+    local enemy = scene.enemies[i]
+    local intent = intents and intents[i] or nil
     if enemy then
-      enemy.intent = intent
       if intent then
+        enemy.intent = intent
         intent._hitCount = getHitCount(enemy, intent)
         enemy.intentFadeTime = 0
-      end
-      scene:_registerEnemyIntent(i, intent)
-      if not intent then
-        enemy.intentFadeTime = nil
-      end
-    end
-  end
-
-  for i = 1, (scene.enemies and #scene.enemies or 0) do
-    if not intents or not intents[i] then
-      local enemy = scene.enemies[i]
-      if enemy then
+        scene:_registerEnemyIntent(i, intent)
+      else
         enemy.intent = nil
         enemy.intentFadeTime = nil
         scene:_registerEnemyIntent(i, nil)

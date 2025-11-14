@@ -9,12 +9,12 @@ local ImpactSystem = require("scenes.battle.ImpactSystem")
 local Visuals = require("scenes.battle.Visuals")
 local EnemySkills = require("scenes.battle.EnemySkills")
 local EnemyIntents = require("scenes.battle.EnemyIntents")
+local StateBridge = require("scenes.battle.StateBridge")
 local TurnManager = require("core.TurnManager")
 local TopBar = require("ui.TopBar")
 local PlayerState = require("core.PlayerState")
 local battle_profiles = require("data.battle_profiles")
 local ParticleManager = require("managers.ParticleManager")
-local BattleState = require("core.BattleState")
 
 local BattleScene = {}
 BattleScene.__index = BattleScene
@@ -232,135 +232,6 @@ function BattleScene.new()
     -- Shockwave smoke effect
     smokeImage = nil,
   }, BattleScene)
-end
-
-function BattleScene:_ensureBattleState(battleProfile)
-  if not self.battleState then
-    self.battleState = BattleState.get()
-  end
-  if not self.battleState then
-    self.battleState = BattleState.new({ profile = battleProfile })
-  end
-  return self.battleState
-end
-
-function BattleScene:_syncPlayerFromState()
-  local state = self.battleState or BattleState.get()
-  if not state or not state.player then return end
-  self.playerHP = state.player.hp or self.playerHP
-  self.displayPlayerHP = self.displayPlayerHP or self.playerHP
-  self.playerArmor = state.player.armor or self.playerArmor or 0
-  self.battleState = state
-end
-
-function BattleScene:_syncEnemiesFromState()
-  local state = self.battleState or BattleState.get()
-  if not state or not state.enemies then return end
-  for i, enemy in ipairs(self.enemies or {}) do
-    local stateEnemy = state.enemies[i]
-    if not stateEnemy then
-      stateEnemy = {
-        id = enemy.id or ("enemy_" .. i),
-        index = i,
-        name = enemy.name,
-        hp = enemy.hp,
-        maxHP = enemy.maxHP,
-        armor = enemy.armor or 0,
-        damageMin = enemy.damageMin,
-        damageMax = enemy.damageMax,
-        intent = enemy.intent,
-        status = {
-          disintegrating = enemy.disintegrating,
-          pendingDisintegration = enemy.pendingDisintegration,
-          buffs = {},
-          debuffs = {},
-        },
-        timers = {
-          flash = enemy.flash,
-          knockback = enemy.knockbackTime,
-          lunge = enemy.lungeTime,
-          jump = enemy.jumpTime,
-        },
-        visuals = {
-          pulseTime = enemy.pulseTime,
-        },
-      }
-      state.enemies[i] = stateEnemy
-    else
-      enemy.hp = stateEnemy.hp or enemy.hp
-      enemy.maxHP = stateEnemy.maxHP or enemy.maxHP
-      enemy.armor = stateEnemy.armor or enemy.armor
-      enemy.intent = stateEnemy.intent or enemy.intent
-      stateEnemy.damageMin = stateEnemy.damageMin or enemy.damageMin
-      stateEnemy.damageMax = stateEnemy.damageMax or enemy.damageMax
-    end
-    enemy.stateRef = stateEnemy
-  end
-  self.battleState = state
-end
-
-function BattleScene:_applyPlayerDamage(amount)
-  local state = self.battleState or BattleState.get()
-  if not state then return 0, 0 end
-  local armorBefore = state.player.armor or 0
-  local hpBefore = state.player.hp or 0
-  BattleState.applyPlayerDamage(amount)
-  self:_syncPlayerFromState()
-  self.prevPlayerArmor = self.playerArmor or 0
-  local armorAfter = state.player.armor or 0
-  local hpAfter = state.player.hp or 0
-  return armorBefore - armorAfter, hpBefore - hpAfter
-end
-
-function BattleScene:_applyPlayerHeal(amount)
-  if not amount or amount <= 0 then return end
-  BattleState.applyPlayerHeal(amount)
-  self:_syncPlayerFromState()
-  -- Trigger heal glow effect (fades out over 1 second)
-  self.playerHealGlowTimer = 1.0
-end
-
-function BattleScene:_setPlayerArmor(value)
-  BattleState.setPlayerArmor(value)
-  self:_syncPlayerFromState()
-  self.prevPlayerArmor = self.playerArmor or 0
-end
-
-function BattleScene:_addPlayerArmor(amount)
-  if not amount or amount == 0 then return end
-  BattleState.addPlayerArmor(amount)
-  self:_syncPlayerFromState()
-  self.prevPlayerArmor = self.playerArmor or 0
-end
-
-function BattleScene:_applyEnemyDamage(index, amount)
-  if not amount or amount <= 0 then return end
-  BattleState.applyEnemyDamage(index, amount)
-  local state = self.battleState or BattleState.get()
-  if not state or not state.enemies then return end
-  local stateEnemy = state.enemies[index]
-  local enemy = self.enemies and self.enemies[index]
-  if enemy and stateEnemy then
-    enemy.hp = stateEnemy.hp or enemy.hp
-    -- Track armor changes for border shatter effect
-    local prevArmor = enemy.armor or 0
-    enemy.armor = stateEnemy.armor or enemy.armor
-    -- Initialize prevEnemyArmor if not set
-    if not self.prevEnemyArmor[index] then
-      self.prevEnemyArmor[index] = prevArmor
-    end
-    enemy.intent = stateEnemy.intent or enemy.intent
-  end
-end
-
-function BattleScene:_registerEnemyIntent(index, intent)
-  BattleState.registerEnemyIntent(index, intent)
-  local state = self.battleState or BattleState.get()
-  if state and state.enemies and state.enemies[index] then
-    state.enemies[index].intent = intent
-  end
-  local enemy = self.enemies and self.enemies[index]
-  if enemy then enemy.intent = intent end
 end
 
 function BattleScene:load(bounds, battleProfile)
@@ -657,17 +528,13 @@ end
 
 function BattleScene:applyHealing(amount)
   if not amount or amount <= 0 then return end
-  -- Heal player via BattleState
   self:_applyPlayerHeal(amount)
-  
-  -- Show healing popup
   table.insert(self.popups, { x = 0, y = 0, kind = "heal", value = amount, t = config.battle.popupLifetime, who = "player" })
 end
 
 function BattleScene:update(dt, bounds)
-  -- Cache latest bounds for positioning helper usage from other methods
   self._lastBounds = bounds or self._lastBounds
-  self.battleState = self.battleState or BattleState.get()
+  StateBridge.get(self)
   self:_syncPlayerFromState()
   self:_syncEnemiesFromState()
 
@@ -1408,6 +1275,7 @@ function BattleScene:update(dt, bounds)
             if isChargedAttack then
               -- Store damage (scaled by hit count) to apply later when forward charge phase starts
               enemy.pendingChargedDamage = dmg * hitCount
+              enemy.chargedDamageApplied = nil
               enemy.chargeLungeTime = 1e-6
               enemy.chargeLunge = {
                 windupDuration = 0.55,
@@ -1846,7 +1714,7 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
         elseif shouldCalcify then
           EnemySkills.performCalcify(self, enemy, intent.blockCount or 3)
         elseif shouldCharge then
-          EnemySkills.performCharge(self, enemy, (intent and intent.armorBlockCount) or 5)
+          EnemySkills.performCharge(self, enemy, (intent and intent.armorBlockCount) or 3)
         elseif shouldSpawnSpores then
           EnemySkills.performSpore(self, enemy, (intent and intent.sporeCount) or 2)
         elseif shouldShockwave then
@@ -2628,6 +2496,16 @@ function BattleScene:mousepressed(x, y, button, bounds)
     ::continue::
   end
 end
+
+BattleScene._ensureBattleState = StateBridge.ensure
+BattleScene._syncPlayerFromState = StateBridge.syncPlayer
+BattleScene._syncEnemiesFromState = StateBridge.syncEnemies
+BattleScene._applyPlayerDamage = StateBridge.applyPlayerDamage
+BattleScene._applyPlayerHeal = StateBridge.applyPlayerHeal
+BattleScene._setPlayerArmor = StateBridge.setPlayerArmor
+BattleScene._addPlayerArmor = StateBridge.addPlayerArmor
+BattleScene._applyEnemyDamage = StateBridge.applyEnemyDamage
+BattleScene._registerEnemyIntent = StateBridge.registerEnemyIntent
 
 return BattleScene
 
