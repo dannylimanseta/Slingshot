@@ -72,6 +72,9 @@ function BattleScene:calculateEnemyIntents()
     if enemy.hp > 0 and not enemy.disintegrating then
       -- Determine intent based on enemy type and behavior
       local isEnemy1 = enemy.spritePath == "enemy_1.png"
+      local isEnemy2 = enemy.spritePath == "enemy_2.png" or 
+                       enemy.name == "Fungloom" or 
+                       (enemy.spritePath and enemy.spritePath:find("enemy_2"))
       local isBoar = enemy.spritePath == "enemy_boar.png"
         or enemy.name == "Deranged Boar"
         or (enemy.spritePath and enemy.spritePath:find("enemy_boar"))
@@ -85,6 +88,13 @@ function BattleScene:calculateEnemyIntents()
       -- Deranged Boar has 30% chance to start charging (if not already charged)
       local shouldCharge = isBoar and not enemy.chargeReady and (love.math.random() < 0.3)
       
+      -- Fungloom gains armor every 2 turns
+      -- Initialize armor turn counter if not set
+      if isEnemy2 and not enemy.armorTurnCounter then
+        enemy.armorTurnCounter = 0
+      end
+      local shouldGainArmor = isEnemy2 and (enemy.armorTurnCounter or 0) >= 2
+      
       -- If this enemy has a pending charged attack, force a heavy attack intent
       if isBoar and enemy.chargeReady then
         enemy.intent = {
@@ -95,6 +105,14 @@ function BattleScene:calculateEnemyIntents()
         }
         -- Consume the charge so it only applies once
         enemy.chargeReady = false
+      elseif shouldGainArmor then
+        -- Fungloom gains armor every 2 turns
+        enemy.intent = {
+          type = "armor",
+          amount = 5,
+        }
+        -- Reset counter after using armor ability
+        enemy.armorTurnCounter = 0
       elseif shouldCalcify then
         -- Calcify skill: calcify 3 random blocks for 1 turn
         enemy.intent = {
@@ -127,17 +145,14 @@ function BattleScene:calculateEnemyIntents()
         }
       end
       
+      -- Increment armor turn counter for Fungloom if not gaining armor this turn
+      if isEnemy2 and not shouldGainArmor then
+        enemy.armorTurnCounter = (enemy.armorTurnCounter or 0) + 1
+      end
+      
       -- Initialize fade timer for intent (starts at 0, fades in)
       enemy.intentFadeTime = 0
       self:_registerEnemyIntent(i, enemy.intent)
-      
-      -- TODO: Add support for armor-gaining moves and skill/buff moves
-      -- Example for future:
-      -- if enemy.spritePath == "enemy_2.png" and turnNumber % 3 == 0 then
-      --   enemy.intent = { type = "armor", amount = 5 }
-      -- elseif enemy.spritePath == "enemy_3.png" and turnNumber % 2 == 0 then
-      --   enemy.intent = { type = "skill", effect = "buff_strength" }
-      -- end
     else
       -- Dead or disintegrating enemies have no intent
       enemy.intent = nil
@@ -186,6 +201,14 @@ function BattleScene.new()
     borderFadeInTime = 0, -- Fade-in animation timer for border
     armorIconFlashTimer = 0, -- Timer for armor icon flash when damage is fully blocked
     borderFadeInDuration = 0.2, -- Fade-in duration in seconds
+    -- Enemy armor border tracking (arrays indexed by enemy index)
+    prevEnemyArmor = {}, -- Previous armor values for each enemy
+    enemyBorderFragments = {}, -- Shatter fragments for each enemy
+    enemyBorderFadeInTime = {}, -- Fade-in timers for each enemy
+    enemyBarX = {}, -- Bar X positions for each enemy
+    enemyBarY = {}, -- Bar Y positions for each enemy
+    enemyBarW = {}, -- Bar widths for each enemy
+    enemyBarH = {}, -- Bar heights for each enemy
     _lastBounds = nil,
     -- Turn indicator state
     turnIndicator = nil, -- { text = "PLAYER'S TURN" or "ENEMY'S TURN", t = lifetime }
@@ -334,7 +357,13 @@ function BattleScene:_applyEnemyDamage(index, amount)
   local enemy = self.enemies and self.enemies[index]
   if enemy and stateEnemy then
     enemy.hp = stateEnemy.hp or enemy.hp
+    -- Track armor changes for border shatter effect
+    local prevArmor = enemy.armor or 0
     enemy.armor = stateEnemy.armor or enemy.armor
+    -- Initialize prevEnemyArmor if not set
+    if not self.prevEnemyArmor[index] then
+      self.prevEnemyArmor[index] = prevArmor
+    end
     enemy.intent = stateEnemy.intent or enemy.intent
   end
 end
@@ -1279,6 +1308,61 @@ function BattleScene:update(dt, bounds)
     end
   end
   self.borderFragments = aliveFragments
+  
+  -- Update enemy armor borders and detect armor break/gain for each enemy
+  for i, enemy in ipairs(self.enemies or {}) do
+    if enemy then
+      local prevArmor = self.prevEnemyArmor[i] or 0
+      local currentArmor = enemy.armor or 0
+      local enemyArmorBroken = prevArmor > 0 and currentArmor == 0
+      local enemyArmorGained = prevArmor == 0 and currentArmor > 0
+      
+      if enemyArmorBroken and self.enemyBarX[i] and self.enemyBarY[i] and self.enemyBarW[i] and self.enemyBarH[i] then
+        -- Create shatter fragments for this enemy
+        local gap = 3
+        self.enemyBorderFragments[i] = createBorderFragments(self.enemyBarX[i], self.enemyBarY[i], self.enemyBarW[i], self.enemyBarH[i], gap, 6)
+      end
+      
+      -- Start fade-in animation when armor is gained
+      if enemyArmorGained then
+        self.enemyBorderFadeInTime[i] = self.borderFadeInDuration
+      end
+      
+      -- Update border fade-in timer
+      if self.enemyBorderFadeInTime[i] and self.enemyBorderFadeInTime[i] > 0 then
+        self.enemyBorderFadeInTime[i] = math.max(0, self.enemyBorderFadeInTime[i] - dt)
+      end
+      
+      -- Store previous armor value
+      self.prevEnemyArmor[i] = currentArmor
+      
+      -- Update fragments with easing
+      if self.enemyBorderFragments[i] then
+        local aliveEnemyFragments = {}
+        for _, frag in ipairs(self.enemyBorderFragments[i]) do
+          frag.lifetime = frag.lifetime - dt
+          if frag.lifetime > 0 then
+            -- Easing: calculate progress (0 to 1, where 1 is just spawned, 0 is about to disappear)
+            local progress = frag.lifetime / frag.maxLifetime
+            
+            -- Ease-out for velocity (fragments slow down over time)
+            local easeOut = progress * progress -- Quadratic ease-out
+            local velScale = 0.3 + easeOut * 0.7 -- Start at 100% speed, end at 30% speed
+            
+            frag.x = frag.x + frag.vx * dt * velScale
+            frag.y = frag.y + frag.vy * dt * velScale
+            frag.rotation = frag.rotation + frag.rotationSpeed * dt * (0.5 + progress * 0.5) -- Rotation also slows
+            
+            -- Store progress for alpha calculation in draw
+            frag.progress = progress
+            
+            table.insert(aliveEnemyFragments, frag)
+          end
+        end
+        self.enemyBorderFragments[i] = aliveEnemyFragments
+      end
+    end
+  end
 
   -- Handle enemy turn delay (for armor popup timing and player attack completion)
   if self._enemyTurnDelay and self._enemyTurnDelay > 0 then
@@ -1413,7 +1497,10 @@ function BattleScene:update(dt, bounds)
         if enemy and enemy.hp > 0 then
           -- Use stored intent if available, otherwise fall back to default damage
           local intent = enemy.intent
-          if intent and intent.type == "skill" and intent.skillType == "calcify" then
+          if intent and intent.type == "armor" then
+            -- Execute armor gain for delayed enemies too
+            self:performEnemyArmorGain(enemy, intent.amount or 5)
+          elseif intent and intent.type == "skill" and intent.skillType == "calcify" then
             -- Execute calcify for delayed enemies too
             self:performEnemyCalcify(enemy, intent.blockCount or 3)
           elseif intent and intent.type == "skill" and intent.skillType == "charge" then
@@ -1908,8 +1995,11 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
         local shouldShockwave = false
         local shouldCalcify = false
         local shouldCharge = false
+        local shouldGainArmor = false
         
-        if intent and intent.type == "skill" and intent.skillType == "calcify" then
+        if intent and intent.type == "armor" then
+          shouldGainArmor = true
+        elseif intent and intent.type == "skill" and intent.skillType == "calcify" then
           shouldCalcify = true
         elseif intent and intent.type == "skill" and intent.skillType == "charge" then
           shouldCharge = true
@@ -1922,7 +2012,10 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
           shouldShockwave = isEnemy1 and (love.math.random() < 0.3)
         end
         
-        if shouldCalcify then
+        if shouldGainArmor then
+          -- Perform armor gain (Fungloom)
+          self:performEnemyArmorGain(enemy, intent.amount or 5)
+        elseif shouldCalcify then
           -- Perform calcify skill
           self:performEnemyCalcify(enemy, intent.blockCount or 3)
         elseif shouldCharge then
@@ -2097,6 +2190,57 @@ function BattleScene:performEnemyCharge(enemy, armorBlockCount)
   end
   
   pushLog(self, (enemy.name or "Boar") .. " is charging up!")
+end
+
+-- Perform enemy armor gain (Fungloom special ability)
+-- Fungloom gains armor every 2 turns
+function BattleScene:performEnemyArmorGain(enemy, amount)
+  amount = amount or 5
+  
+  -- Find enemy index
+  local enemyIndex = nil
+  for i, e in ipairs(self.enemies or {}) do
+    if e == enemy then
+      enemyIndex = i
+      break
+    end
+  end
+  
+  if not enemyIndex then enemyIndex = 1 end
+  
+  -- Set this enemy as the attacking enemy (for darkening others)
+  self._attackingEnemyIndex = enemyIndex
+  
+  -- Track previous armor for shatter effect
+  local prevArmor = enemy.armor or 0
+  if not self.prevEnemyArmor[enemyIndex] then
+    self.prevEnemyArmor[enemyIndex] = prevArmor
+  end
+  
+  -- Add armor to enemy via BattleState
+  BattleState.addEnemyArmor(enemyIndex, amount)
+  
+  -- Sync armor from state
+  local state = self.battleState or BattleState.get()
+  if state and state.enemies and state.enemies[enemyIndex] then
+    enemy.armor = state.enemies[enemyIndex].armor or 0
+  end
+  
+  -- Show armor popup
+  local enemyX, enemyY = self:getEnemyCenterPivot(enemyIndex, self._lastBounds)
+  if enemyX and enemyY then
+    table.insert(self.popups, {
+      x = enemyX,
+      y = enemyY,
+      kind = "armor",
+      value = amount,
+      t = config.battle.popupLifetime or 0.8,
+      who = "enemy",
+      enemyIndex = enemyIndex,
+    })
+  end
+  
+  pushLog(self, (enemy.name or "Fungloom") .. " gained " .. amount .. " armor!")
 end
 
 -- Start calcify particle animation (called from SplitScene when block positions are ready)

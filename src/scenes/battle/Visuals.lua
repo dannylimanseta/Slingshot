@@ -287,6 +287,12 @@ function Visuals.draw(scene, bounds)
       local enemyBarW = pos.width * 0.7 -- 70% of sprite width
       local enemyBarX = pos.curX - enemyBarW * 0.5
       
+      -- Store bar positions for border fragment creation
+      scene.enemyBarX[i] = enemyBarX
+      scene.enemyBarY[i] = barY
+      scene.enemyBarW[i] = enemyBarW
+      scene.enemyBarH[i] = barH
+      
       local barAlpha = 1.0
       if enemy.disintegrating then
         local cfg = config.battle.disintegration or {}
@@ -296,6 +302,20 @@ function Visuals.draw(scene, bounds)
       end
 
       if barAlpha > 0 then
+        -- Draw border fragments if armor was broken
+        if scene.enemyBorderFragments and scene.enemyBorderFragments[i] and #scene.enemyBorderFragments[i] > 0 then
+          drawBorderFragments(scene.enemyBorderFragments[i])
+        end
+        
+        -- Draw border glow if enemy has armor
+        if (enemy.armor or 0) > 0 and (not scene.enemyBorderFragments[i] or #scene.enemyBorderFragments[i] == 0) then
+          local alpha = 1.0
+          if scene.enemyBorderFadeInTime and scene.enemyBorderFadeInTime[i] and scene.borderFadeInDuration and scene.enemyBorderFadeInTime[i] > 0 and scene.borderFadeInDuration > 0 then
+            alpha = 1.0 - (scene.enemyBorderFadeInTime[i] / scene.borderFadeInDuration)
+          end
+          drawBarGlow(enemyBarX, barY, enemyBarW, barH, alpha * barAlpha)
+        end
+        
         love.graphics.push()
         love.graphics.setColor(1, 1, 1, barAlpha)
 
@@ -306,6 +326,52 @@ function Visuals.draw(scene, bounds)
 
         -- Enemy name will be drawn after fog shader to appear above it
         love.graphics.pop()
+        love.graphics.setColor(1, 1, 1, 1)
+      end
+    end
+  end
+
+  -- Draw enemy armor beside HP bars (similar to player armor)
+  for i, pos in ipairs(enemyPositions) do
+    local enemy = pos.enemy
+    if enemy and (enemy.armor or 0) > 0 and enemy.hp > 0 then
+      local enemyBarW = pos.width * 0.7 -- 70% of sprite width
+      local enemyBarX = pos.curX - enemyBarW * 0.5
+      
+      local barAlpha = 1.0
+      if enemy.disintegrating then
+        local cfg = config.battle.disintegration or {}
+        local duration = cfg.duration or 1.5
+        local progress = math.min(1, (enemy.disintegrationTime or 0) / duration)
+        barAlpha = math.max(0, 1.0 - (progress / 0.7))
+      end
+
+      if barAlpha > 0 and enemyBarW > 0 then
+        local valueStr = tostring(enemy.armor)
+        local textW = theme.fonts.base:getWidth(valueStr)
+        local iconW, iconH, s = 0, 0, 1
+        if scene.iconArmor then
+          iconW, iconH = scene.iconArmor:getWidth(), scene.iconArmor:getHeight()
+          s = 20 / math.max(1, iconH)
+        end
+        local barLeftEdge = enemyBarX
+        local armorSpacing = 8
+        local startX = barLeftEdge - (textW + (scene.iconArmor and (iconW * s + 6) or 0) + armorSpacing)
+        local y = barY + (barH - theme.fonts.base:getHeight()) * 0.5
+        
+        if scene.iconArmor then
+          local iconX = startX
+          local iconY = y + (theme.fonts.base:getHeight() - iconH * s) * 0.5
+          love.graphics.push()
+          love.graphics.translate(iconX + iconW * s * 0.5, iconY + iconH * s * 0.5)
+          love.graphics.translate(-iconW * s * 0.5, -iconH * s * 0.5)
+          love.graphics.setColor(1, 1, 1, barAlpha)
+          love.graphics.draw(scene.iconArmor, 0, 0, 0, s, s)
+          love.graphics.pop()
+          startX = startX + iconW * s + 6
+        end
+        love.graphics.setColor(1, 1, 1, barAlpha * 0.9)
+        theme.drawTextWithOutline(valueStr, startX, y, 1, 1, 1, barAlpha * 0.9, 2)
         love.graphics.setColor(1, 1, 1, 1)
       end
     end

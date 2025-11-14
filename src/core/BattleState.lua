@@ -430,6 +430,18 @@ function BattleState.applyEnemyDamage(enemyId, amount)
   end
 end
 
+function BattleState.addEnemyArmor(enemyId, amount)
+  local state = assert(_currentState, "BattleState not initialized")
+  for _, enemy in ipairs(state.enemies) do
+    if enemy.id == enemyId or enemy.index == enemyId then
+      local armor = math.max(0, amount or 0)
+      enemy.armor = (enemy.armor or 0) + armor
+      BattleState._emit("enemy_armor_changed", enemy)
+      break
+    end
+  end
+end
+
 function BattleState.updateCombo(count, timeout, timestamp)
   local state = assert(_currentState, "BattleState not initialized")
   state.player.combo.count = count or state.player.combo.count
