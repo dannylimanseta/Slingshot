@@ -108,7 +108,7 @@ function BattleScene:calculateEnemyIntents()
         enemy.intent = {
           type = "skill",
           skillType = "charge",
-          armorBlockCount = 5,
+          armorBlockCount = 3,
         }
       elseif shouldShockwave then
         -- Shockwave attack (still counts as attack type)
@@ -1330,7 +1330,8 @@ function BattleScene:update(dt, bounds)
       local f = enemy.chargeLunge.forwardDuration or 0.2
       
       -- Check if we just entered the forward phase (windup just finished)
-      -- Apply damage once when forward phase starts
+      -- Apply damage once when forward phase starts (not during windup)
+      -- Apply when we cross the threshold from windup to forward phase
       if t >= w and not enemy.chargedDamageApplied then
         enemy.chargedDamageApplied = true -- Mark as applied to prevent multiple applications
         
@@ -1410,8 +1411,11 @@ function BattleScene:update(dt, bounds)
             self:performEnemyCalcify(enemy, intent.blockCount or 3)
           elseif intent and intent.type == "skill" and intent.skillType == "charge" then
             -- Execute charge skill for delayed enemies too
-            self:performEnemyCharge(enemy, (intent and intent.armorBlockCount) or 5)
+            self:performEnemyCharge(enemy, (intent and intent.armorBlockCount) or 3)
           else
+            -- Check if this is a charged attack - delay damage until forward phase
+            local isChargedAttack = intent and intent.type == "attack" and intent.attackType == "charged"
+            
             local dmg
             if intent and intent.type == "attack" and intent.damageMin and intent.damageMax then
               -- Use intent damage range (but still randomize the actual damage)
@@ -1420,30 +1424,6 @@ function BattleScene:update(dt, bounds)
               -- Fallback to enemy's default damage range
               dmg = love.math.random(enemy.damageMin, enemy.damageMax)
             end
-            
-            local blocked, net = self:_applyPlayerDamage(dmg)
-            
-            if net <= 0 then
-              self.armorIconFlashTimer = 0.5
-              table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
-            else
-              self.playerFlash = config.battle.hitFlashDuration
-              self.playerKnockbackTime = 1e-6
-              table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
-              pushLog(self, "Enemy " .. delayData.index .. " dealt " .. net)
-              -- Emit hit burst particles from player center
-              if self.particles then
-                local px, py = self:getPlayerCenterPivot(self._lastBounds)
-                if px and py then
-                  self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
-                end
-              end
-              if self.onPlayerDamage then
-                self.onPlayerDamage()
-              end
-            end
-            -- Check if this is a charged attack - delay damage until forward charge phase
-            local isChargedAttack = intent and intent.type == "attack" and intent.attackType == "charged"
             
             if isChargedAttack then
               -- Store damage to apply later when forward charge phase starts
@@ -1458,6 +1438,28 @@ function BattleScene:update(dt, bounds)
                 forwardDistance = ((config.battle and config.battle.lungeDistance) or 80) * 2.8,
               }
             else
+              -- Apply damage immediately for normal attacks
+              local blocked, net = self:_applyPlayerDamage(dmg)
+              
+              if net <= 0 then
+                self.armorIconFlashTimer = 0.5
+                table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+              else
+                self.playerFlash = config.battle.hitFlashDuration
+                self.playerKnockbackTime = 1e-6
+                table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
+                pushLog(self, "Enemy " .. delayData.index .. " dealt " .. net)
+                -- Emit hit burst particles from player center
+                if self.particles then
+                  local px, py = self:getPlayerCenterPivot(self._lastBounds)
+                  if px and py then
+                    self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
+                  end
+                end
+                if self.onPlayerDamage then
+                  self.onPlayerDamage()
+                end
+              end
               -- Trigger normal lunge animation
               enemy.lungeTime = 1e-6
               self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
@@ -2056,7 +2058,7 @@ end
 -- This turn: boar charges and spawns armor blocks on the board.
 -- Next turn: its intent will be a heavy attack (12–16 damage) via calculateEnemyIntents.
 function BattleScene:performEnemyCharge(enemy, armorBlockCount)
-  armorBlockCount = armorBlockCount or 5
+  armorBlockCount = armorBlockCount or 3
   
   -- Find enemy index
   local enemyIndex = nil
