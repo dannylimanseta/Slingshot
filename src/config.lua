@@ -346,7 +346,7 @@ config.battle = {
   },
   -- Enemy death disintegration effect
   disintegration = {
-    duration = 1.5,          -- seconds for full disintegration
+    duration = 0.8,          -- seconds for full disintegration (reduced from 1.5 for faster effect)
     noiseScale = 20,         -- noise scale for disintegration pattern
     thickness = 0.25,        -- thickness of disintegration edge
     lineColor = {1.0, 0.3, 0.1, 1.0}, -- RGBA color of disintegration lines (orange)

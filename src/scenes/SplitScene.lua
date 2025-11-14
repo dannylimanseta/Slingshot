@@ -1154,11 +1154,75 @@ function SplitScene:update(dt)
     end
   end
   
+  -- Helper function to check if all actions are complete
+  local function areAllActionsComplete()
+    if not self.right then return false end
+    
+    -- Check if any enemies are still disintegrating
+    if self.right.enemies then
+      local config = require("config")
+      local cfg = config.battle and config.battle.disintegration or {}
+      local duration = cfg.duration or 0.8
+      
+      for _, enemy in ipairs(self.right.enemies) do
+        -- Check if disintegrating and not yet complete
+        if enemy.disintegrating then
+          local disintegrationTime = enemy.disintegrationTime or 0
+          if disintegrationTime < duration then
+            return false -- Still disintegrating
+          end
+        end
+        -- Check if pending disintegration (waiting for other animations)
+        if enemy.pendingDisintegration then
+          return false -- Waiting for other animations
+        end
+      end
+    end
+    
+    -- Check if impact animations are still active
+    if self.right.impactInstances and #self.right.impactInstances > 0 then
+      return false -- Impact animations still playing
+    end
+    if self.right.blackHoleAttacks and #self.right.blackHoleAttacks > 0 then
+      return false -- Black hole attacks still active
+    end
+    
+    -- Check if any popups are still active
+    if self.right.popups and #self.right.popups > 0 then
+      for _, popup in ipairs(self.right.popups) do
+        if popup.t and popup.t > 0 then
+          -- Check if it's an animated damage popup that's still in sequence
+          if popup.kind == "animated_damage" and popup.sequence then
+            local sequenceIndex = popup.sequenceIndex or 1
+            if sequenceIndex < #popup.sequence then
+              return false -- Sequence still in progress
+            end
+            -- Check if sequence timer indicates it's still showing
+            if popup.sequenceTimer and popup.sequenceTimer > 0 then
+              local lastStep = popup.sequence[#popup.sequence]
+              if lastStep then
+                local hasExclamation = lastStep.text and string.find(lastStep.text, "!") ~= nil
+                local lingerTime = hasExclamation and 0.2 or 0.05
+                local totalDisplayTime = (lastStep.duration or 0.15) + lingerTime
+                if popup.sequenceTimer < totalDisplayTime then
+                  return false -- Still showing final number
+                end
+              end
+            end
+          elseif popup.t > 0 then
+            return false -- Other popups still active
+          end
+        end
+      end
+    end
+    
+    return true -- All actions complete
+  end
+  
   if isVictory then
-    -- Only start timer if not already started
+    -- Mark victory detected, but only start timer when all actions are complete
     if not self._victoryDetected then
       self._victoryDetected = true
-      self._returnToMapTimer = 2.5 -- Wait for disintegration animation to complete
       -- Ensure TurnManager is in VICTORY state
       if self.turnManager then
         local state = self.turnManager:getState()
@@ -1180,6 +1244,13 @@ function SplitScene:update(dt)
           -- Store gold reward for display in RewardsScene; actual add happens on Rewards click
           self._battleGoldReward = goldReward
         end
+      end
+    end
+    
+    -- Only start timer after all actions (disintegration, impacts, popups) are complete
+    if self._victoryDetected and (not self._returnToMapTimer or self._returnToMapTimer == 0) then
+      if areAllActionsComplete() then
+        self._returnToMapTimer = 0.05 -- Very short delay after all actions complete
       end
     end
   end

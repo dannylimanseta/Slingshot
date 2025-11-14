@@ -54,8 +54,8 @@ vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
     // Progress goes from 0 (start) to 1 (fully disintegrated)
     // Map progress to disintegration value: higher progress = more disintegrated
     // Start low so disintegration begins from bottom, increase to make enemy disappear
-    // Slower animation: reduced time multiplier (0.5) and progress multiplier (2.5)
-    float val = sin(u_time * 0.5) * 0.5 + u_progress * 2.5;
+    // Faster animation: increased time multiplier (1.0) and progress multiplier (4.0)
+    float val = sin(u_time * 1.0) * 0.5 + u_progress * 4.0;
     
     // Inverted: pixels disappear when heightCalc > val (instead of < val)
     // This makes the enemy actually disintegrate and disappear

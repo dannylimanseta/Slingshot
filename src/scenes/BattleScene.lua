@@ -970,7 +970,7 @@ function BattleScene:update(dt, bounds)
     if enemy.disintegrating then
     local cfg = config.battle.disintegration or {}
     local duration = cfg.duration or 1.5
-      enemy.disintegrationTime = enemy.disintegrationTime + dt * 0.85
+      enemy.disintegrationTime = enemy.disintegrationTime + dt * 0.5
       if enemy.disintegrationTime >= duration then
         enemy.disintegrating = false
         -- If this was the selected enemy, select next one
