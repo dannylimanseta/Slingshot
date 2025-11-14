@@ -3353,6 +3353,14 @@ local ENCOUNTERS = {
 --   1. Create the encounter file in the appropriate subdirectory
 --   2. Add it to _manifest.lua: { "subdirectory", "filename" }
 --   3. It will automatically appear in the encounter menu!
+-- Build a set of existing encounter IDs to prevent duplicates
+local existingIds = {}
+for _, enc in ipairs(ENCOUNTERS) do
+	if enc and enc.id then
+		existingIds[enc.id] = true
+	end
+end
+
 local ok_manifest, manifest = pcall(require, "data.encounters._manifest")
 if ok_manifest and type(manifest) == "table" then
 	for _, entry in ipairs(manifest) do
@@ -3363,7 +3371,11 @@ if ok_manifest and type(manifest) == "table" then
 			local ok_mod, mod = pcall(require, modulePath)
 			if ok_mod and type(mod) == "table" then
 				for _, enc in ipairs(mod) do
-					table.insert(ENCOUNTERS, enc)
+					-- Only add if encounter ID doesn't already exist
+					if enc and enc.id and not existingIds[enc.id] then
+						table.insert(ENCOUNTERS, enc)
+						existingIds[enc.id] = true -- Mark as added
+					end
 				end
 			end
 		end
