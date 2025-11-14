@@ -2179,42 +2179,6 @@ function BattleScene:triggerShake(mag, dur)
   self.shakeTime = self.shakeDuration
 end
 
-local function drawCenteredText(text, x, y, w)
-  theme.printfWithOutline(text, x, y, w, "center", theme.colors.uiText[1], theme.colors.uiText[2], theme.colors.uiText[3], theme.colors.uiText[4], 2)
-end
-
-local function drawBarGlow(x, y, w, h, alpha)
-  -- Draw white border around bar with 3px gap
-  local gap = 3
-  local radius = 8
-  alpha = alpha or 1.0
-  love.graphics.setColor(1, 1, 1, alpha)
-  love.graphics.setLineWidth(2)
-  love.graphics.rectangle("line", x - gap, y - gap, w + gap * 2, h + gap * 2, radius, radius)
-  love.graphics.setColor(1, 1, 1, 1)
-end
-
-local function drawBorderFragments(fragments)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.setLineWidth(2)
-  for _, frag in ipairs(fragments) do
-    -- Use eased alpha fade (ease-out curve for smooth fade)
-    local progress = frag.progress or (frag.lifetime / frag.maxLifetime)
-    local easeOut = progress * progress -- Quadratic ease-out
-    local alpha = easeOut -- Fade out smoothly
-    
-    if alpha > 0 then
-      love.graphics.push()
-      love.graphics.translate(frag.x, frag.y)
-      love.graphics.rotate(frag.rotation)
-      love.graphics.setColor(1, 1, 1, alpha)
-      love.graphics.line(0, 0, frag.length, 0)
-      love.graphics.pop()
-    end
-  end
-  love.graphics.setColor(1, 1, 1, 1)
-end
-
 function BattleScene:draw(bounds)
   Visuals.draw(self, bounds)
   
