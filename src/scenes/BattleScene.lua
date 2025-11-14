@@ -6,7 +6,6 @@ local DisintegrationShader = require("utils.DisintegrationShader")
 local WhiteSilhouetteShader = require("utils.WhiteSilhouetteShader")
 local FogShader = require("utils.FogShader")
 local ImpactSystem = require("scenes.battle.ImpactSystem")
-local Animations = require("scenes.battle.Animations")
 local Visuals = require("scenes.battle.Visuals")
 local TurnManager = require("core.TurnManager")
 local TopBar = require("ui.TopBar")
@@ -2076,7 +2075,7 @@ function BattleScene:update(dt, bounds)
   end
 
   -- Delegate animation timers and streaks
-  Animations.update(self, dt)
+  Visuals.update(self, dt)
 
 end
 
