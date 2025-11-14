@@ -1572,7 +1572,7 @@ local ENCOUNTERS = {
     },
   {
       id = "ENCOUNTER_SOLO_DERANGED_BOAR",
-      difficulty = 1,
+      difficulty = 2,
       centerWidthFactor = 0.43,
       enemies = {
             "deranged_boar"
@@ -1681,7 +1681,7 @@ local ENCOUNTERS = {
     },
   {
       id = "ENCOUNTER_DOUBLE_DERANGED_BOAR",
-      difficulty = 1,
+      difficulty = 2,
       centerWidthFactor = 0.43,
       enemies = {
             "deranged_boar",
@@ -1875,7 +1875,7 @@ local ENCOUNTERS = {
     },
   {
       id = "ENCOUNTER_DERANGED_BOAR_DOUBLE_FAWN",
-      difficulty = 1,
+      difficulty = 2,
       centerWidthFactor = 0.43,
       enemies = {
             "deranged_boar",

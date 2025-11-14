@@ -3,22 +3,35 @@ local theme = require("theme")
 local encounters = require("data.encounters")
 local enemies = require("data.enemies")
 local EncounterManager = require("core.EncounterManager")
+local Progress = require("core.Progress")
 
 local EncounterSelectScene = {}
 EncounterSelectScene.__index = EncounterSelectScene
 
 local MIN_SCROLLBAR_HEIGHT = 32
+local DIFFICULTY_FILTER_MODES = {
+  { key = "all", label = "All" },
+  { key = "1", label = "Difficulty 1" },
+  { key = "2", label = "Difficulty 2" },
+  { key = "3", label = "Difficulty 3" },
+}
+local DIFFICULTY_FILTER_LOOKUP = {}
+for _, mode in ipairs(DIFFICULTY_FILTER_MODES) do
+  DIFFICULTY_FILTER_LOOKUP[mode.key] = true
+end
 
 function EncounterSelectScene.new()
   return setmetatable({
     encounters = {},
-    selectedIndex = 1,
+    selectedIndex = 0,
     hoveredIndex = nil,
     previousScene = nil,
-    _isEliteFilter = nil, -- nil = show all, true = show only elite, false = show only non-elite
 
     layoutCache = nil,
     _deferScrollToSelection = true,
+    difficultyFilterMode = "all",
+    _difficultyFilterChipBounds = {},
+    _difficultyFilterHoverKey = nil,
 
     scroll = {
       y = 0,
@@ -44,40 +57,7 @@ end
 -- ============================================================================
 
 function EncounterSelectScene:load()
-  local allEncounters = encounters.list() or {}
-  
-  -- Filter encounters based on elite status
-  if self._isEliteFilter ~= nil then
-    self.encounters = {}
-    for _, enc in ipairs(allEncounters) do
-      local isElite = (enc.elite == true)
-      if self._isEliteFilter then
-        -- Show only elite encounters
-        if isElite then
-          table.insert(self.encounters, enc)
-        end
-      else
-        -- Show only non-elite encounters
-        if not isElite then
-          table.insert(self.encounters, enc)
-        end
-      end
-    end
-  else
-    -- Show all encounters
-    self.encounters = allEncounters
-  end
-
-  if #self.encounters == 0 then
-    self.selectedIndex = 0
-  else
-    self.selectedIndex = math.max(1, math.min(self.selectedIndex, #self.encounters))
-  end
-
-  self.scroll.y = 0
-  self.scroll.target = 0
-  self._deferScrollToSelection = true
-  self.hoveredIndex = nil
+  self:_reloadEncounters(false)
 end
 
 -- ============================================================================
@@ -118,22 +98,6 @@ function EncounterSelectScene:draw()
   love.graphics.setColor(0, 0, 0, 0.82)
   love.graphics.rectangle("fill", 0, 0, w, h)
 
-  -- Title
-  local titleFont = theme.fonts.large or theme.fonts.base
-  love.graphics.setFont(titleFont)
-  love.graphics.setColor(1, 1, 1, 1)
-  local title = "Select Encounter"
-  local titleW = titleFont:getWidth(title)
-  love.graphics.print(title, (w - titleW) * 0.5, 48)
-
-  -- Instructions
-  local infoFont = theme.fonts.base
-  love.graphics.setFont(infoFont)
-  love.graphics.setColor(0.82, 0.82, 0.82, 1)
-  local instructions = "Arrow Keys / Scroll: Navigate   Enter / Click: Start   Esc: Back"
-  local instW = infoFont:getWidth(instructions)
-  love.graphics.print(instructions, (w - instW) * 0.5, h - 48)
-
   -- Layout
   local layout = self:_computeLayout(w, h)
   self.layoutCache = layout
@@ -143,12 +107,11 @@ function EncounterSelectScene:draw()
     self._deferScrollToSelection = false
   end
 
+  self:_drawFilterControls(layout)
+
   -- List container
   love.graphics.setColor(0, 0, 0, 0.45)
   love.graphics.rectangle("fill", layout.x, layout.y, layout.w, layout.h, layout.cornerRadius, layout.cornerRadius)
-  love.graphics.setColor(1, 1, 1, 0.08)
-  love.graphics.setLineWidth(1)
-  love.graphics.rectangle("line", layout.x, layout.y, layout.w, layout.h, layout.cornerRadius, layout.cornerRadius)
 
   if #self.encounters == 0 then
     self:_drawEmptyState(layout)
@@ -157,6 +120,45 @@ function EncounterSelectScene:draw()
 
   self:_drawEncounters(layout)
   self:_drawScrollBar(layout)
+end
+
+function EncounterSelectScene:_drawFilterControls(layout)
+  local font = theme.fonts.small or theme.fonts.base
+  local paddingX = 18
+  local paddingY = 7
+  local chipWidth = math.max(140, font:getWidth("Difficulty 3") + paddingX * 2)
+  local chipHeight = font:getHeight() + paddingY * 2
+  local spacingY = 10
+  local startX = math.max(20, layout.x - 200)
+  local startY = 70
+
+  -- Draw difficulty filters
+  self._difficultyFilterChipBounds = {}
+  for index, mode in ipairs(DIFFICULTY_FILTER_MODES) do
+    local isActive = (self.difficultyFilterMode == mode.key)
+    local isHovered = (self._difficultyFilterHoverKey == mode.key)
+    local baseFill = isActive and { 0.32, 0.58, 0.96, 0.95 } or { 0.12, 0.16, 0.24, isHovered and 0.92 or 0.78 }
+    local outline = isActive and { 1, 1, 1, 0.85 } or { 1, 1, 1, isHovered and 0.45 or 0.25 }
+
+    local x = startX
+    local y = startY + (index - 1) * (chipHeight + spacingY)
+
+    love.graphics.setColor(baseFill[1], baseFill[2], baseFill[3], baseFill[4])
+    love.graphics.rectangle("fill", x, y, chipWidth, chipHeight, chipHeight * 0.5, chipHeight * 0.5)
+
+    love.graphics.setLineWidth(1)
+    love.graphics.setColor(outline[1], outline[2], outline[3], outline[4])
+    love.graphics.rectangle("line", x, y, chipWidth, chipHeight, chipHeight * 0.5, chipHeight * 0.5)
+
+    love.graphics.setFont(font)
+    love.graphics.setColor(1, 1, 1, isActive and 1 or (isHovered and 0.9 or 0.75))
+    local textW = font:getWidth(mode.label)
+    local textX = x + (chipWidth - textW) * 0.5
+    local textY = y + (chipHeight - font:getHeight()) * 0.5
+    love.graphics.print(mode.label, textX, textY)
+
+    table.insert(self._difficultyFilterChipBounds, { key = mode.key, x = x, y = y, w = chipWidth, h = chipHeight })
+  end
 end
 
 function EncounterSelectScene:_drawEmptyState(layout)
@@ -172,12 +174,15 @@ end
 
 function EncounterSelectScene:_drawEncounters(layout)
   local primaryFont = theme.fonts.base
-  local secondaryFont = theme.fonts.small or theme.fonts.base
+  local secondaryFont = theme.fonts.tiny or theme.fonts.small or theme.fonts.base
+  local statusFont = theme.fonts.tiny or theme.fonts.small or theme.fonts.base
   local rowHeight = layout.rowHeight
   local spacing = layout.rowSpacing
   local radius = layout.cornerRadius
-  local innerX = layout.x + 8
-  local innerWidth = layout.w - 16
+  local innerPadding = 16
+  local innerX = layout.x + innerPadding
+  local innerWidth = layout.w - innerPadding * 2
+  local shadowOffset = 3
 
   for index, enc in ipairs(self.encounters) do
     local itemY = layout.y + (index - 1) * (rowHeight + spacing) - self.scroll.y
@@ -187,28 +192,60 @@ function EncounterSelectScene:_drawEncounters(layout)
       local isSelected = (index == self.selectedIndex)
       local isHovered = (index == self.hoveredIndex)
 
-      local baseAlpha = isSelected and 0.95 or (isHovered and 0.8 or 0.6)
-      love.graphics.setColor(0.16, 0.2, 0.28, baseAlpha)
+      local fillAlpha = isSelected and 0.95 or (isHovered and 0.78 or 0.58)
+      love.graphics.setColor(0, 0, 0, fillAlpha * 0.35)
+      love.graphics.rectangle("fill", innerX, itemY + shadowOffset, innerWidth, rowHeight, radius, radius)
+
+      love.graphics.setColor(0.12, 0.16, 0.24, fillAlpha)
       love.graphics.rectangle("fill", innerX, itemY, innerWidth, rowHeight, radius, radius)
 
       if isSelected or isHovered then
-        love.graphics.setColor(0.45, 0.65, 0.95, isSelected and 0.9 or 0.55)
+        local outlineAlpha = isSelected and 0.95 or 0.6
+        love.graphics.setColor(0.45, 0.65, 0.95, outlineAlpha)
         love.graphics.setLineWidth(isSelected and 2 or 1)
         love.graphics.rectangle("line", innerX, itemY, innerWidth, rowHeight, radius, radius)
       end
 
-      local textX = innerX + 16
+      local textX = innerX + 18
       local textY = itemY + 12
 
       love.graphics.setFont(primaryFont)
-      love.graphics.setColor(1, 1, 1, isSelected and 1 or 0.88)
+      love.graphics.setColor(1, 1, 1, isSelected and 1 or 0.9)
 
       local label = enc.name or enc.id or ("Encounter " .. index)
       love.graphics.print(label, textX, textY)
 
+      local statusText, statusDescription, statusFill, statusOutline = self:_encounterStatus(enc)
+      if statusText then
+        love.graphics.setFont(statusFont)
+
+        local pillPaddingX, pillPaddingY = 12, 4
+        local statusW = statusFont:getWidth(statusText)
+        local statusH = statusFont:getHeight()
+        local pillW = statusW + pillPaddingX * 2
+        local pillH = statusH + pillPaddingY * 2
+        local pillRadius = pillH * 0.5
+        local pillX = innerX + innerWidth - pillW - 14
+        local pillY = textY - 4
+
+        love.graphics.setColor(statusFill[1], statusFill[2], statusFill[3], statusFill[4])
+        love.graphics.rectangle("fill", pillX, pillY, pillW, pillH, pillRadius, pillRadius)
+
+        if statusOutline then
+          love.graphics.setLineWidth(1)
+          love.graphics.setColor(statusOutline[1], statusOutline[2], statusOutline[3], statusOutline[4])
+          love.graphics.rectangle("line", pillX, pillY, pillW, pillH, pillRadius, pillRadius)
+        end
+
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.print(statusText, pillX + pillPaddingX, pillY + pillPaddingY)
+      end
+
       local metaParts = {}
-      -- Show difficulty from Progress system (what will actually be used) instead of static encounter difficulty
-      local Progress = require("core.Progress")
+      if statusDescription then
+        table.insert(metaParts, statusDescription)
+      end
+
       local actualDifficulty = Progress.peekDifficultyLevel() or (enc.difficulty or 1)
       table.insert(metaParts, "Difficulty: " .. tostring(actualDifficulty))
 
@@ -219,9 +256,9 @@ function EncounterSelectScene:_drawEncounters(layout)
 
       if #metaParts > 0 then
         love.graphics.setFont(secondaryFont)
-        love.graphics.setColor(1, 1, 1, isSelected and 0.85 or 0.65)
+        love.graphics.setColor(1, 1, 1, isSelected and 0.88 or 0.68)
         local metaText = table.concat(metaParts, "  |  ")
-        love.graphics.print(metaText, textX, textY + primaryFont:getHeight() + 4)
+        love.graphics.print(metaText, textX, textY + primaryFont:getHeight() + 6)
       end
     end
   end
@@ -288,6 +325,7 @@ end
 
 function EncounterSelectScene:mousemoved(x, y, dx, dy, isTouch)
   self.mouse.x, self.mouse.y = x, y
+  self:_updateDifficultyFilterHover(x, y)
   local layout = self:_ensureLayout()
 
   if self.drag.pending or self.drag.active then
@@ -307,7 +345,7 @@ function EncounterSelectScene:mousemoved(x, y, dx, dy, isTouch)
 
   if self.drag.active then
     local delta = y - self.drag.startY
-    self:_setScrollTarget(layout, self.drag.startScroll - delta, true)
+    self:_setScrollTarget(layout, self.drag.startScroll + delta, true)
     self.scroll.y = self.scroll.target
     return
   end
@@ -320,7 +358,7 @@ function EncounterSelectScene:wheelmoved(dx, dy)
 
   local layout = self:_ensureLayout()
   local step = (layout.rowHeight + layout.rowSpacing) * 0.6
-  self:_setScrollTarget(layout, self.scroll.target + dy * step, false)
+  self:_setScrollTarget(layout, self.scroll.target - dy * step, false)
 
   local hovered = self:_positionToIndex(self.mouse.x, self.mouse.y)
   if hovered then
@@ -333,6 +371,14 @@ function EncounterSelectScene:mousepressed(x, y, button, isTouch, presses)
   if button ~= 1 then return nil end
 
   self.mouse.x, self.mouse.y = x, y
+  self:_updateDifficultyFilterHover(x, y)
+
+  local difficultyFilterKey = self:_difficultyFilterChipAt(x, y)
+  if difficultyFilterKey then
+    self:_setDifficultyFilterMode(difficultyFilterKey, true)
+    return nil
+  end
+
   local layout = self:_ensureLayout()
 
   if not self:_pointInRect(x, y, layout) then
@@ -417,8 +463,7 @@ function EncounterSelectScene:setPreviousScene(scene)
 end
 
 function EncounterSelectScene:setEliteFilter(isElite)
-  -- nil = show all, true = show only elite, false = show only non-elite
-  self._isEliteFilter = isElite
+  -- Elite filters removed; this function kept for compatibility but does nothing
 end
 
 function EncounterSelectScene:_virtualSize()
@@ -442,6 +487,63 @@ function EncounterSelectScene:_computeLayout(w, h)
     rowSpacing = 10,
     cornerRadius = 10,
   }
+end
+
+function EncounterSelectScene:_reloadEncounters(preserveSelection)
+  local previousId = nil
+  if preserveSelection and self.selectedIndex > 0 then
+    local current = self.encounters[self.selectedIndex]
+    previousId = current and current.id or nil
+  end
+
+  local allEncounters = encounters.list() or {}
+  local filtered = {}
+  local difficultyFilter = self.difficultyFilterMode
+
+  for _, enc in ipairs(allEncounters) do
+    local includeDifficulty = false
+    if difficultyFilter == "all" then
+      includeDifficulty = true
+    else
+      local encDifficulty = enc.difficulty or 1
+      includeDifficulty = (tostring(encDifficulty) == difficultyFilter)
+    end
+
+    if includeDifficulty then
+      table.insert(filtered, enc)
+    end
+  end
+
+  self.encounters = filtered
+
+  if #filtered == 0 then
+    self.selectedIndex = 0
+  else
+    local newIndex = 0
+    if previousId then
+      for idx, enc in ipairs(filtered) do
+        if enc.id == previousId then
+          newIndex = idx
+          break
+        end
+      end
+    else
+      -- Don't auto-select when reloading
+      newIndex = 0
+    end
+    self.selectedIndex = newIndex
+  end
+
+  self.hoveredIndex = nil
+  self._difficultyFilterHoverKey = nil
+
+  if not preserveSelection then
+    self.scroll.y = 0
+    self.scroll.target = 0
+    self._deferScrollToSelection = true
+  else
+    self._deferScrollToSelection = true
+  end
 end
 
 function EncounterSelectScene:_ensureLayout()
@@ -604,6 +706,55 @@ function EncounterSelectScene:_updateHover()
   self.hoveredIndex = self:_positionToIndex(self.mouse.x, self.mouse.y)
 end
 
+function EncounterSelectScene:_updateDifficultyFilterHover(x, y)
+  if not self._difficultyFilterChipBounds or #self._difficultyFilterChipBounds == 0 then
+    self._difficultyFilterHoverKey = nil
+    return
+  end
+
+  for _, bounds in ipairs(self._difficultyFilterChipBounds) do
+    if x >= bounds.x and x <= bounds.x + bounds.w and y >= bounds.y and y <= bounds.y + bounds.h then
+      self._difficultyFilterHoverKey = bounds.key
+      return
+    end
+  end
+
+  self._difficultyFilterHoverKey = nil
+end
+
+function EncounterSelectScene:_difficultyFilterChipAt(x, y)
+  if not self._difficultyFilterChipBounds or #self._difficultyFilterChipBounds == 0 then
+    return nil
+  end
+
+  for _, bounds in ipairs(self._difficultyFilterChipBounds) do
+    if x >= bounds.x and x <= bounds.x + bounds.w and y >= bounds.y and y <= bounds.y + bounds.h then
+      return bounds.key
+    end
+  end
+
+  return nil
+end
+
+function EncounterSelectScene:_setDifficultyFilterMode(mode, preserveSelection)
+  if not DIFFICULTY_FILTER_LOOKUP[mode] then
+    mode = "all"
+  end
+
+  if self.difficultyFilterMode == mode then
+    return
+  end
+
+  self.difficultyFilterMode = mode
+
+  local keepSelection = preserveSelection
+  if keepSelection == nil then
+    keepSelection = true
+  end
+
+  self:_reloadEncounters(keepSelection)
+end
+
 function EncounterSelectScene:_enemySummary(enc)
   if not enc.enemies or type(enc.enemies) ~= "table" then
     return nil
@@ -627,6 +778,15 @@ function EncounterSelectScene:_enemySummary(enc)
   else
     return string.format("Enemies: %s, %s (+%d)", names[1], names[2], count - 2)
   end
+end
+
+function EncounterSelectScene:_encounterStatus(enc)
+  local isElite = enc and enc.elite == true
+  if isElite then
+    return "ELITE", "Elite encounter", { 0.94, 0.36, 0.22, 0.95 }, { 1, 1, 1, 0.65 }
+  end
+
+  return "NORMAL", "Normal encounter", { 0.24, 0.65, 0.48, 0.92 }, { 1, 1, 1, 0.35 }
 end
 
 function EncounterSelectScene:_onSelectionChanged(immediate)
