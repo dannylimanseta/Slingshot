@@ -506,6 +506,7 @@ config.assets = {
     block_crit_2 = "assets/images/block_crit_2.png",
     block_aoe = "assets/images/block_aoe.png",
     block_heal = "assets/images/block_heal.png",
+    block_spore = "assets/images/block_spore.png",
     icon_armor = "assets/images/icon_armor.png",
     icon_attack = "assets/images/icon_attack.png",
     icon_heal = "assets/images/icon_heal.png",

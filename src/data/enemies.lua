@@ -10,6 +10,7 @@ local ENEMIES = {
 	deranged_boar = { id = "deranged_boar", name = "Deranged Boar", sprite = "enemy_boar.png", maxHP = 60, damageMin = 4, damageMax = 6, spriteScale = 4.5, scaleMul = 1 },
 	bloodhound = { id = "bloodhound", name = "Bloodhound", sprite = "enemy_bloodhound.png", maxHP = 60, damageMin = 4, damageMax = 6, spriteScale = 4.5, scaleMul = 1 },
 	mender = { id = "mender", name = "Mender", sprite = "enemy_monkey.png", maxHP = 55, damageMin = 2, damageMax = 4, spriteScale = 4, scaleMul = 1 },
+	spore_caller = { id = "spore_caller", name = "Spore Caller", sprite = "enemy_spore_caller.png", maxHP = 50, damageMin = 3, damageMax = 5, spriteScale = 3.5, scaleMul = 1 },
 }
 
 function M.get(id)

@@ -54,6 +54,13 @@ block_types.types = {
     hotkey = 6,
     description = "Potion block (heals player for 8 HP)"
   },
+  {
+    key = "spore",
+    displayName = "Spore",
+    spritePath = "block_spore",
+    hotkey = 7,
+    description = "Spore block (destroys orb on hit)"
+  },
 }
 
 -- Get block type by key

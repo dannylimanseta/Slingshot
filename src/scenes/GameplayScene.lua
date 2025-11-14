@@ -695,6 +695,26 @@ function GameplayScene:handleBallBlockCollision(ball, block, contact)
   -- Mark block as hit
   self._blocksHitThisFrame[block] = true
   
+  -- Spore blocks destroy the orb when hit
+  if block.kind == "spore" then
+    -- Emit purple circular burst at hit point
+    local hx, hy = contact and contact:getPositions()
+    local px = hx or block.cx
+    local py = hy or block.cy
+    if self.particles and px and py then
+      -- Purple color
+      self.particles:emitHitBurst(px, py, {0.75, 0.45, 1.0})
+    end
+    -- Destroy the ball/orb immediately
+    if ball and ball.destroy then
+      ball:destroy()
+    end
+    -- Still process the block hit (destroy the spore block)
+    block:hit()
+    -- Don't award rewards for spore blocks
+    return
+  end
+  
   -- For lightning, add a small delay so block stays visible until streak reaches it
   local lightningFirstHit = false
   if ball.lightning and ball.alive and not ball._lightningHidden then
@@ -1099,6 +1119,231 @@ function GameplayScene:spawnArmorBlocks(bounds, count)
       end
     end
   end
+end
+
+-- Spawn spore blocks (Spore Caller ability)
+function GameplayScene:spawnSporeBlocks(bounds, count)
+  if not (self.blocks and self.blocks.addRandomBlocks) then return end
+  count = count or 0
+  if count <= 0 then return end
+  
+  local width = (bounds and bounds.w) or love.graphics.getWidth()
+  local height = (bounds and bounds.h) or love.graphics.getHeight()
+  
+  -- Request more blocks than needed since some may be filtered out due to collisions
+  local requestedCount = math.max(count, count * 2)
+  
+  -- Spawn blocks in the full area - BlockManager will handle margin
+  local newBlocks = self.blocks:addRandomBlocks(self.physics:getWorld(), width, height, requestedCount)
+  
+  -- Immediately set all spawned blocks to spore type before filtering
+  for _, block in ipairs(newBlocks) do
+    if block then
+      block.kind = "spore"
+    end
+  end
+  
+  -- Helper function to check if a block overlaps with existing blocks
+  local function checkBlockOverlap(block, allBlocks)
+    if not block or not block.cx or not block.cy then return false end
+    
+    local pad = (config.blocks and config.blocks.minGap) or 0
+    local scaleMul = math.max(1, (config.blocks and config.blocks.spriteScale) or 1)
+    local size = config.blocks.baseSize
+    local visSize = size * scaleMul
+    local halfVis = visSize * 0.5
+    
+    local blockX = block.cx - halfVis
+    local blockY = block.cy - halfVis
+    
+    for _, otherBlock in ipairs(allBlocks) do
+      if otherBlock ~= block and otherBlock and otherBlock.alive then
+        local bx, by, bw, bh
+        if type(otherBlock.getPlacementAABB) == "function" then
+          bx, by, bw, bh = otherBlock:getPlacementAABB()
+        end
+        if type(bx) ~= "number" or type(by) ~= "number" or type(bw) ~= "number" or type(bh) ~= "number" then
+          if type(otherBlock.getAABB) == "function" then
+            bx, by, bw, bh = otherBlock:getAABB()
+          end
+        end
+        if type(bx) == "number" and type(by) == "number" and type(bw) == "number" and type(bh) == "number" then
+          -- Check expanded overlap (with padding)
+          if blockX < bx + bw + pad and bx - pad < blockX + visSize and
+             blockY < by + bh + pad and by - pad < blockY + visSize then
+            return true -- Overlap detected
+          end
+        end
+      end
+    end
+    return false
+  end
+  
+  -- Get all existing blocks for collision checking
+  local allBlocks = {}
+  if self.blocks and self.blocks.blocks then
+    for _, b in ipairs(self.blocks.blocks) do
+      if b and b.alive then
+        table.insert(allBlocks, b)
+      end
+    end
+  end
+  
+  -- Filter blocks: remove ones too close to edges or overlapping with existing blocks
+  local edgeBuffer = 50 -- Minimum distance from edges
+  local validBlocks = {}
+  for _, block in ipairs(newBlocks) do
+    if block and block.cx and block.cy then
+      -- Check if block is too close to edges
+      local tooCloseToEdge = 
+        block.cx < edgeBuffer or block.cx > width - edgeBuffer or
+        block.cy < edgeBuffer or block.cy > height - edgeBuffer
+      
+      -- Check if block overlaps with existing blocks
+      local overlaps = checkBlockOverlap(block, allBlocks)
+      
+      if not tooCloseToEdge and not overlaps then
+        -- Block is valid: far enough from edges and no overlap
+        if block.rebuildFixture then
+          block:rebuildFixture()
+        end
+        table.insert(validBlocks, block)
+        table.insert(allBlocks, block) -- Add to allBlocks for subsequent checks
+        
+        -- Stop once we have enough valid blocks
+        if #validBlocks >= count then
+          break
+        end
+      else
+        -- Block is invalid: too close to edge or overlaps, remove it
+        if block.body then
+          block.body:destroy()
+        end
+        block.alive = false
+        -- Remove from BlockManager's blocks list
+        if self.blocks and self.blocks.blocks then
+          for i, b in ipairs(self.blocks.blocks) do
+            if b == block then
+              table.remove(self.blocks.blocks, i)
+              break
+            end
+          end
+        end
+      end
+    end
+  end
+  
+  -- Update newBlocks to only include valid (non-overlapping) blocks
+  newBlocks = validBlocks
+  
+  -- Add staggered spawn delays
+  local staggerDelay = 0.2 -- Delay between each block spawn
+  for i, nb in ipairs(newBlocks) do
+    -- Force these blocks to be spore blocks
+    nb.kind = "spore"
+    
+    -- Enable spawn animation with staggered delay
+    nb.spawnAnimating = true
+    nb.spawnAnimT = 0
+    nb.spawnAnimDelay = (i - 1) * staggerDelay
+    nb.spawnAnimDuration = (config.blocks and config.blocks.spawnAnim and config.blocks.spawnAnim.duration) or 0.35
+    -- Set fixture to sensor during spawn animation (blocks can't be hit until fully spawned)
+    if nb.fixture then
+      nb.fixture:setSensor(true)
+    end
+    
+    nb.onDestroyed = function()
+      if self.particles and not nb._suckedByBlackHole then
+        local blockColor = {0.5, 0.8, 0.3, 1} -- Green/purple spore color
+        self.particles:emitExplosion(nb.cx, nb.cy, blockColor)
+      end
+      BattleState.registerBlockHit(nb, { destroyed = true, kind = nb.kind })
+      self.destroyedThisTurn = BattleState.get().blocks.destroyedThisTurn or 0
+    end
+  end
+end
+
+-- Compute candidate positions for spore block spawning (no creation)
+function GameplayScene:getSporeSpawnPositions(count)
+  count = count or 0
+  if count <= 0 then return {} end
+  if not (self.blocks and self.blocks.addRandomBlocks) then return {} end
+  local width = love.graphics.getWidth()
+  local height = love.graphics.getHeight()
+  local requestedCount = math.max(count, count * 2)
+  local tempBlocks = self.blocks:addRandomBlocks(self.physics:getWorld(), width, height, requestedCount)
+  
+  -- Helper to test overlap
+  local function getAABB(block)
+    if type(block.getPlacementAABB) == "function" then
+      return block:getPlacementAABB()
+    end
+    return block:getAABB()
+  end
+  local function overlaps(block, others)
+    local pad = (config.blocks and config.blocks.minGap) or 0
+    local bx, by, bw, bh = getAABB(block)
+    for _, ob in ipairs(others) do
+      if ob ~= block and ob.alive then
+        local ox, oy, ow, oh = getAABB(ob)
+        if bx < ox + ow + pad and ox - pad < bx + bw and
+           by < oy + oh + pad and oy - pad < by + bh then
+          return true
+        end
+      end
+    end
+    return false
+  end
+  
+  -- Existing blocks
+  local existing = {}
+  if self.blocks and self.blocks.blocks then
+    for _, b in ipairs(self.blocks.blocks) do
+      if b and b.alive then table.insert(existing, b) end
+    end
+  end
+  
+  local edgeBuffer = 50
+  local positions = {}
+  for _, b in ipairs(tempBlocks) do
+    if b and b.cx and b.cy then
+      local tooEdge = (b.cx < edgeBuffer or b.cx > width - edgeBuffer or b.cy < edgeBuffer or b.cy > height - edgeBuffer)
+      if not tooEdge and not overlaps(b, existing) then
+        table.insert(positions, { x = b.cx, y = b.cy })
+        table.insert(existing, b) -- reserve space
+        if #positions >= count then break end
+      end
+    end
+  end
+  
+  -- Cleanup temp blocks
+  for _, b in ipairs(tempBlocks) do
+    if b and b.body then pcall(function() b.body:destroy() end) end
+    b.alive = false
+  end
+  -- Remove any references to temp blocks from manager list
+  if self.blocks and self.blocks.blocks then
+    local remaining = {}
+    for _, b in ipairs(self.blocks.blocks) do
+      if b and b.alive then table.insert(remaining, b) end
+    end
+    self.blocks.blocks = remaining
+  end
+  return positions
+end
+
+-- Spawn a single spore block at exact coordinates
+function GameplayScene:spawnSporeBlockAt(x, y)
+  if not (self.blocks and self.blocks.blocks and self.physics and self.physics.getWorld) then return end
+  local world = self.physics:getWorld()
+  local Block = require("entities.Block")
+  local block = Block.new(world, x, y, 1, "spore", { animateSpawn = true, spawnDelay = 0 })
+  block.spawnAnimating = true
+  block.spawnAnimT = 0
+  block.spawnAnimDelay = 0
+  block.spawnAnimDuration = (config.blocks and config.blocks.spawnAnim and config.blocks.spawnAnim.duration) or 0.35
+  if block.fixture then block.fixture:setSensor(true) end
+  table.insert(self.blocks.blocks, block)
 end
 
 -- Set projectile ID

@@ -3,7 +3,7 @@ local config = require("config")
 local IridescentShader = require("utils.IridescentShader")
 
 -- Shared sprites for blocks (loaded once)
-local SPRITES = { attack = nil, armor = nil, crit = nil, multiplier = nil, aoe = nil, potion = nil }
+local SPRITES = { attack = nil, armor = nil, crit = nil, multiplier = nil, aoe = nil, potion = nil, spore = nil }
 local ICON_ATTACK = nil
 local ICON_ARMOR = nil
 local ICON_HEAL = nil
@@ -32,6 +32,10 @@ do
   if imgs.block_heal then
     local ok, img = pcall(love.graphics.newImage, imgs.block_heal)
     if ok then SPRITES.potion = img end
+  end
+  if imgs.block_spore then
+    local ok, img = pcall(love.graphics.newImage, imgs.block_spore)
+    if ok then SPRITES.spore = img end
   end
   -- Load attack icon
   if imgs.icon_attack then
@@ -127,6 +131,9 @@ function Block.new(world, cx, cy, hp, kind, opts)
     spawnAnimOffset = (config.blocks and config.blocks.spawnAnim and config.blocks.spawnAnim.offset) or 28,
     -- pulse animation
     pulseTime = love.math.random() * (2 * math.pi), -- random phase offset for different timings
+    -- bobbing animation (for spore blocks)
+    bobTime = love.math.random() * (2 * math.pi), -- random phase offset for different timings
+    bobScale = 1.0, -- size multiplier for bobbing (1.0 +/- 0.05)
     -- shader timing offset so iridescence isn't synchronized across blocks
     shaderTimeOffset = love.math.random() * 10.0,
     -- calcify state (indestructible for 1 turn)
@@ -263,6 +270,16 @@ function Block:update(dt)
     self.pulseTime = (self.pulseTime or 0) + dt * speed * 2 * math.pi
   end
   
+  -- Update bobbing animation for spore blocks
+  if self.kind == "spore" then
+    local bobSpeed = 1.5 -- Oscillations per second
+    self.bobTime = (self.bobTime or 0) + dt * bobSpeed * 2 * math.pi
+    -- Bob scale: oscillate between 0.95 and 1.05 (5% variation)
+    self.bobScale = 1.0 + math.sin(self.bobTime) * 0.05
+  else
+    self.bobScale = 1.0
+  end
+  
   -- Update bounce animation
   if self.bounceTime > 0 then
     self.bounceTime = math.max(0, self.bounceTime - dt)
@@ -340,6 +357,8 @@ function Block:draw()
     sprite = SPRITES.aoe or SPRITES.attack
   elseif self.kind == "potion" then
     sprite = SPRITES.potion or SPRITES.attack
+  elseif self.kind == "spore" then
+    sprite = SPRITES.spore or SPRITES.attack
   else
     sprite = SPRITES.attack
   end
@@ -347,7 +366,7 @@ function Block:draw()
     local iw, ih = sprite:getWidth(), sprite:getHeight()
     local s = self.size / math.max(1, math.max(iw, ih))
     local mul = (config.blocks and config.blocks.spriteScale) or 1
-    s = s * mul * (self.bounceScale or 1.0) -- Apply bounce scale
+    s = s * mul * (self.bounceScale or 1.0) * (self.bobScale or 1.0) -- Apply bounce scale and bob scale
     local rotation = self.dropRotation or self._bhTwistAngle or 0
     local centerX = self.cx + xOffset
     local centerY = self.cy + yOffset
@@ -492,12 +511,18 @@ function Block:draw()
     local rotation = self.dropRotation or 0
     local centerX = self.cx + xOffset
     local centerY = self.cy + yOffset
+    -- Apply bob scale for spore blocks (visual effect only)
+    local bobScale = (self.kind == "spore" and self.bobScale) or 1.0
+    local scaledW = w * bobScale
+    local scaledH = h * bobScale
+    local scaledX = centerX - scaledW * 0.5
+    local scaledY = centerY - scaledH * 0.5
     if rotation ~= 0 then
       love.graphics.push()
       love.graphics.translate(centerX, centerY)
       love.graphics.rotate(rotation)
       love.graphics.translate(-centerX, -centerY)
-      love.graphics.rectangle("fill", x + xOffset, y + yOffset, w, h, 4, 4)
+      love.graphics.rectangle("fill", scaledX, scaledY, scaledW, scaledH, 4, 4)
       love.graphics.setColor(
         (theme.colors.blockOutline[1] or 1) * brightnessMultiplier,
         (theme.colors.blockOutline[2] or 1) * brightnessMultiplier,
@@ -505,10 +530,10 @@ function Block:draw()
         (theme.colors.blockOutline[4] or 1) * alpha
       )
       love.graphics.setLineWidth(2)
-      love.graphics.rectangle("line", x + xOffset, y + yOffset, w, h, 4, 4)
+      love.graphics.rectangle("line", scaledX, scaledY, scaledW, scaledH, 4, 4)
       love.graphics.pop()
     else
-      love.graphics.rectangle("fill", x + xOffset, y + yOffset, w, h, 4, 4)
+      love.graphics.rectangle("fill", scaledX, scaledY, scaledW, scaledH, 4, 4)
       love.graphics.setColor(
         (theme.colors.blockOutline[1] or 1) * brightnessMultiplier,
         (theme.colors.blockOutline[2] or 1) * brightnessMultiplier,
@@ -516,7 +541,7 @@ function Block:draw()
         (theme.colors.blockOutline[4] or 1) * alpha
       )
       love.graphics.setLineWidth(2)
-      love.graphics.rectangle("line", x + xOffset, y + yOffset, w, h, 4, 4)
+      love.graphics.rectangle("line", scaledX, scaledY, scaledW, scaledH, 4, 4)
     end
     love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
     if self.flashTime > 0 then
@@ -531,10 +556,10 @@ function Block:draw()
           love.graphics.translate(centerX, centerY)
           love.graphics.rotate(rotation)
           love.graphics.translate(-centerX, -centerY)
-          love.graphics.rectangle("fill", x + xOffset, y + yOffset, w, h, 4, 4)
+          love.graphics.rectangle("fill", scaledX, scaledY, scaledW, scaledH, 4, 4)
           love.graphics.pop()
         else
-          love.graphics.rectangle("fill", x + xOffset, y + yOffset, w, h, 4, 4)
+          love.graphics.rectangle("fill", scaledX, scaledY, scaledW, scaledH, 4, 4)
         end
       end
       love.graphics.setBlendMode("alpha")

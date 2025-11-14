@@ -352,6 +352,52 @@ function SplitScene:setupTurnManagerEvents()
       self.left:spawnArmorBlocks({ x = 0, y = 0, w = centerRect.w, h = vh }, (data and data.count) or 3)
     end
   end)
+
+  -- Enemy spore skill: spawn spore blocks on the board
+  self.turnManager:on("enemy_spore_spawn_blocks", function(data)
+    if self.left and self.left.spawnSporeBlocks then
+      local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
+      local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
+      local centerRect = self.layoutManager:getCenterRect(vw, vh)
+      self.left:spawnSporeBlocks({ x = 0, y = 0, w = centerRect.w, h = vh }, (data and data.count) or 2)
+    end
+  end)
+
+  -- Enemy spore request positions (for particle animation)
+  self.turnManager:on("enemy_spore_request_positions", function(data)
+    if self.left and self.left.getSporeSpawnPositions and self.right and self.right.startSporeAnimation then
+      local positions = self.left:getSporeSpawnPositions((data and data.count) or 2)
+      if positions and #positions > 0 then
+        -- Convert block positions from GameplayScene local coordinates to screen coordinates
+        local w = (config.video and config.video.virtualWidth) or 1280
+        local h = (config.video and config.video.virtualHeight) or 720
+        local centerRect = self.layoutManager:getCenterRect(w, h)
+        local centerX = centerRect.x - 100 -- Shift breakout canvas 100px to the left (matching draw)
+        
+        -- Convert each block position to screen coordinates
+        for _, blockPos in ipairs(positions) do
+          blockPos.x = blockPos.x + centerX -- Convert from local to screen X
+          -- Y doesn't need conversion as it's the same
+        end
+        
+        -- Send block positions back to BattleScene
+        self.right:startSporeAnimation((data and data.enemyX) or 0, (data and data.enemyY) or 0, positions)
+      end
+    end
+  end)
+
+  -- Enemy spore: spawn a single block at provided coordinates
+  self.turnManager:on("enemy_spore_spawn_block_at", function(data)
+    if self.left and self.left.spawnSporeBlockAt and data and data.x and data.y then
+      -- Convert from screen coordinates back to GameplayScene local coordinates
+      local w = (config.video and config.video.virtualWidth) or 1280
+      local h = (config.video and config.video.virtualHeight) or 720
+      local centerRect = self.layoutManager:getCenterRect(w, h)
+      local centerX = centerRect.x - 100 -- Same offset as used in conversion
+      local localX = data.x - centerX -- Convert back to local coordinates
+      self.left:spawnSporeBlockAt(localX, data.y) -- Y doesn't need conversion
+    end
+  end)
 end
 
 -- Helper function to end player turn using TurnManager
@@ -573,6 +619,11 @@ function SplitScene:draw()
   -- Draw heal particles after blocks (highest z-order for particles)
   if self.right and self.right._drawHealParticles then
     self.right:_drawHealParticles()
+  end
+
+  -- Draw spore particles after blocks (highest z-order for particles)
+  if self.right and self.right._drawSporeParticles then
+    self.right:_drawSporeParticles()
   end
 
   -- Draw edge glow effects when ball hits edges (after gameplay scene, outside scissor so they're not clipped)

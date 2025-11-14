@@ -58,7 +58,7 @@ function BattleScene:areEnemyAttacksActive()
     return true
   end
   -- Any special sequences active?
-  if self._shockwaveSequence or self._calcifySequence or self._healSequence then
+  if self._shockwaveSequence or self._calcifySequence or self._healSequence or self._sporeSequence then
     return true
   end
   -- Any enemy lunge/jump/knockback in progress?
@@ -152,6 +152,7 @@ function BattleScene:calculateEnemyIntents()
                         (enemy.spritePath and enemy.spritePath:find("enemy_4"))
       local isMender = enemy.name == "Mender" or enemy.id == "mender"
       local isBloodhound = enemy.name == "Bloodhound" or enemy.id == "bloodhound"
+      local isSporeCaller = enemy.name == "Spore Caller" or enemy.id == "spore_caller"
       
       -- Stagmaw has 30% chance to use calcify skill
       local shouldCalcify = isStagmaw and (love.math.random() < 0.3)
@@ -165,6 +166,13 @@ function BattleScene:calculateEnemyIntents()
         enemy.armorTurnCounter = 0
       end
       local shouldGainArmor = isEnemy2 and (enemy.armorTurnCounter or 0) >= 2
+      
+      -- Spore Caller spawns spores every other turn
+      -- Initialize spore turn counter if not set
+      if isSporeCaller and not enemy.sporeTurnCounter then
+        enemy.sporeTurnCounter = 0
+      end
+      local shouldSpawnSpores = isSporeCaller and (enemy.sporeTurnCounter or 0) >= 1
       
       -- Mender heals allies or itself when below 50% HP, or every 3 turns
       local shouldHeal = false
@@ -239,6 +247,15 @@ function BattleScene:calculateEnemyIntents()
         if isMender then
           enemy.healTurnCounter = 0
         end
+      elseif shouldSpawnSpores then
+        -- Spore Caller spawns spores every other turn
+        enemy.intent = {
+          type = "skill",
+          skillType = "spore",
+          sporeCount = love.math.random(2, 3), -- Spawn 2-3 spores
+        }
+        -- Reset counter after using spore ability
+        enemy.sporeTurnCounter = 0
       elseif shouldGainArmor then
         -- Fungloom gains armor every 2 turns
         enemy.intent = {
@@ -318,6 +335,11 @@ function BattleScene:calculateEnemyIntents()
       -- Increment heal turn counter for Mender if not healing this turn
       if isMender and not shouldHeal then
         enemy.healTurnCounter = (enemy.healTurnCounter or 0) + 1
+      end
+      
+      -- Increment spore turn counter for Spore Caller if not spawning spores this turn
+      if isSporeCaller and not shouldSpawnSpores then
+        enemy.sporeTurnCounter = (enemy.sporeTurnCounter or 0) + 1
       end
       
       -- Initialize fade timer for intent (starts at 0, fades in)
@@ -1613,6 +1635,11 @@ function BattleScene:update(dt, bounds)
   -- Update calcify particle animation
   self:_updateCalcifySequence(dt)
   
+  -- Update spore particle animation
+  if self._sporeSequence then
+    self:_updateSporeSequence(dt)
+  end
+  
   -- Update heal particle animation
   self:_updateHealSequence(dt)
   
@@ -1775,6 +1802,9 @@ function BattleScene:update(dt, bounds)
           elseif intent and intent.type == "skill" and intent.skillType == "charge" then
             -- Execute charge skill for delayed enemies too
             self:performEnemyCharge(enemy, (intent and intent.armorBlockCount) or 3)
+          elseif intent and intent.type == "skill" and intent.skillType == "spore" then
+            -- Execute spore skill for delayed enemies too
+            self:performEnemySpore(enemy, (intent and intent.sporeCount) or 2)
           elseif (intent and intent.type == "skill" and intent.skillType == "shockwave") or
                  (intent and intent.type == "attack" and intent.attackType == "shockwave") then
             -- Execute shockwave for delayed enemies too
@@ -2240,6 +2270,7 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
         local shouldCalcify = false
         local shouldCharge = false
         local shouldGainArmor = false
+        local shouldSpawnSpores = false
         
         if intent and intent.type == "armor" then
           shouldGainArmor = true
@@ -2247,6 +2278,8 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
           shouldCalcify = true
         elseif intent and intent.type == "skill" and intent.skillType == "charge" then
           shouldCharge = true
+        elseif intent and intent.type == "skill" and intent.skillType == "spore" then
+          shouldSpawnSpores = true
         elseif (intent and intent.type == "skill" and intent.skillType == "shockwave") or
                (intent and intent.type == "attack" and intent.attackType == "shockwave") then
           shouldShockwave = true
@@ -2270,6 +2303,9 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
         elseif shouldCharge then
           -- Perform charge skill (Deranged Boar)
           self:performEnemyCharge(enemy, (intent and intent.armorBlockCount) or 5)
+        elseif shouldSpawnSpores then
+          -- Perform spore skill (Spore Caller)
+          self:performEnemySpore(enemy, (intent and intent.sporeCount) or 2)
         elseif shouldShockwave then
           -- Perform shockwave attack
           self:performEnemyShockwave(enemy)
@@ -2411,6 +2447,60 @@ function BattleScene:performEnemyCharge(enemy, armorBlockCount)
   end
   
   pushLog(self, (enemy.name or "Boar") .. " is charging up!")
+end
+
+-- Perform enemy spore skill (Spore Caller special ability)
+-- Spawns spore blocks on the playfield that destroy the orb when hit
+function BattleScene:performEnemySpore(enemy, sporeCount)
+  sporeCount = sporeCount or 2
+  
+  -- Find enemy index
+  local enemyIndex = nil
+  for i, e in ipairs(self.enemies or {}) do
+    if e == enemy then
+      enemyIndex = i
+      break
+    end
+  end
+  
+  if not enemyIndex then enemyIndex = 1 end
+  
+  -- Set this enemy as the attacking enemy (for darkening others)
+  self._attackingEnemyIndex = enemyIndex
+  
+  -- Get enemy position for particle start
+  local enemyX, enemyY = self:getEnemyCenterPivot(enemyIndex, self._lastBounds)
+  if not enemyX or not enemyY then
+    -- Fallback: spawn immediately if we can't get enemy position
+    if self.turnManager then
+      self.turnManager:emit("enemy_spore_spawn_blocks", { count = sporeCount })
+    end
+    pushLog(self, (enemy.name or "Spore Caller") .. " summoned " .. sporeCount .. " spores!")
+    return
+  end
+  
+  -- Initialize spore particle animation sequence (similar to calcify)
+  self._sporeSequence = {
+    timer = 0,
+    phase = "selecting", -- selecting -> animating -> complete
+    enemy = enemy,
+    enemyX = enemyX,
+    enemyY = enemyY,
+    sporeCount = sporeCount,
+    particles = {},
+    targets = nil, -- to be set by SplitScene with positions
+  }
+  
+  -- Request target positions from GameplayScene (via SplitScene)
+  if self.turnManager then
+    self.turnManager:emit("enemy_spore_request_positions", {
+      count = sporeCount,
+      enemyX = enemyX,
+      enemyY = enemyY,
+    })
+  end
+  
+  pushLog(self, (enemy.name or "Spore Caller") .. " is summoning spores...")
 end
 
 -- Perform enemy armor gain (Fungloom special ability)
@@ -2801,6 +2891,135 @@ function BattleScene:_drawCalcifyParticles()
       love.graphics.setColor(1, 1, 1, 0.95)
       love.graphics.circle("fill", particle.x, particle.y, 5)
       
+      love.graphics.setBlendMode("alpha")
+    end
+  end
+end
+
+-- Start spore particle animation (positions provided by SplitScene)
+function BattleScene:startSporeAnimation(enemyX, enemyY, targetPositions)
+  if not self._sporeSequence then return end
+  local seq = self._sporeSequence
+  seq.targets = targetPositions or {}
+  seq.phase = "animating"
+  seq.timer = 0
+  seq.particles = {}
+  
+  -- Create purple-glow particles for each target
+  for _, pos in ipairs(seq.targets) do
+    local dx = pos.x - enemyX
+    local dy = pos.y - enemyY
+    local dist = math.sqrt(dx * dx + dy * dy)
+    local perpX = -dy / math.max(0.001, dist)
+    local perpY = dx / math.max(0.001, dist)
+    local curveAmount = dist * 0.45
+    local randomOffset1 = (love.math.random() - 0.5) * 1.0
+    local randomOffset2 = (love.math.random() - 0.5) * 1.0
+    local swerveAmount = dist * 0.22
+    local swerveDir = love.math.random() > 0.5 and 1 or -1
+    
+    local cp1x = enemyX + dx * 0.25 + perpX * curveAmount * (1 + randomOffset1) * swerveDir
+    local cp1y = enemyY + dy * 0.25 + perpY * curveAmount * (1 + randomOffset1) * swerveDir
+    local cp2x = enemyX + dx * 0.75 + perpX * curveAmount * (1 - randomOffset2) * -swerveDir + perpX * swerveAmount * 0.3
+    local cp2y = enemyY + dy * 0.75 + perpY * curveAmount * (1 - randomOffset2) * -swerveDir + perpY * swerveAmount * 0.3
+    
+    local trail = Trail.new({
+      enabled = true,
+      width = 22,
+      taperPower = 1.2,
+      softness = 0.35,
+      colorStart = { 0.8, 0.4, 1.0, 0.9 }, -- purple head
+      colorEnd = { 0.6, 0.3, 0.9, 0.35 }, -- purple tail
+      additive = true,
+      sampleInterval = 0.01,
+      maxPoints = 40,
+    })
+    
+    table.insert(seq.particles, {
+      x = enemyX, y = enemyY,
+      startX = enemyX, startY = enemyY,
+      targetX = pos.x, targetY = pos.y,
+      cp1x = cp1x, cp1y = cp1y,
+      cp2x = cp2x, cp2y = cp2y,
+      trail = trail,
+      progress = 0,
+      speed = 0.98,
+      hit = false,
+    })
+  end
+end
+
+-- Update spore particle sequence; spawn blocks on impact
+function BattleScene:_updateSporeSequence(dt)
+  local seq = self._sporeSequence
+  if not seq then return end
+  
+  if seq.phase == "selecting" then
+    return
+  elseif seq.phase == "animating" then
+    seq.timer = seq.timer + dt
+    
+    local allHit = true
+    for _, p in ipairs(seq.particles or {}) do
+      if not p.hit then
+        allHit = false
+        p.progress = math.min(1.0, p.progress + p.speed * dt)
+        local t = p.progress
+        local mt = 1 - t
+        local mt2 = mt * mt
+        local mt3 = mt2 * mt
+        local t2 = t * t
+        local t3 = t2 * t
+        p.x = mt3 * p.startX + 3 * mt2 * t * p.cp1x + 3 * mt * t2 * p.cp2x + t3 * p.targetX
+        p.y = mt3 * p.startY + 3 * mt2 * t * p.cp1y + 3 * mt * t2 * p.cp2y + t3 * p.targetY
+        if p.trail then p.trail:update(dt, p.x, p.y) end
+        
+        local dx = p.x - p.targetX
+        local dy = p.y - p.targetY
+        if (dx * dx + dy * dy) < (10 * 10) or p.progress >= 1.0 then
+          p.hit = true
+          -- Request spawning a single spore block at this position
+          if self.turnManager then
+            self.turnManager:emit("enemy_spore_spawn_block_at", { x = p.targetX, y = p.targetY })
+          end
+        end
+      else
+        if p.trail then p.trail:update(dt, p.x, p.y) end
+      end
+    end
+    
+    if allHit then
+      -- Track when all particles hit, then wait 1.2 seconds after that
+      if not seq.allHitTime then
+        seq.allHitTime = seq.timer
+      end
+      if seq.timer >= (seq.allHitTime + 1.2) then
+        self._sporeSequence = nil
+        if #self._enemyAttackDelays == 0 then
+          self._attackingEnemyIndex = nil
+        end
+      end
+    end
+  end
+end
+
+-- Draw spore particles (purple glow circles)
+function BattleScene:_drawSporeParticles()
+  if not self._sporeSequence or not self._sporeSequence.particles then return end
+  for _, p in ipairs(self._sporeSequence.particles) do
+    if p.trail then p.trail:draw() end
+    if not p.hit then
+      love.graphics.setBlendMode("add")
+      -- Outer purple glows
+      love.graphics.setColor(0.6, 0.3, 0.9, 0.16)
+      love.graphics.circle("fill", p.x, p.y, 16)
+      love.graphics.setColor(0.7, 0.35, 1.0, 0.26)
+      love.graphics.circle("fill", p.x, p.y, 12)
+      love.graphics.setColor(0.8, 0.4, 1.0, 0.42)
+      love.graphics.circle("fill", p.x, p.y, 9)
+      -- Core
+      love.graphics.setColor(0.95, 0.7, 1.0, 0.95)
+      love.graphics.circle("fill", p.x, p.y, 5)
       love.graphics.setBlendMode("alpha")
     end
   end

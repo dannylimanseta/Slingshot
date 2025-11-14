@@ -1082,9 +1082,13 @@ function Visuals.draw(scene, bounds)
         local isChargeSkill = (enemy.intent.type == "skill" and enemy.intent.skillType == "charge")
         local isShockwaveSkill = (enemy.intent.type == "skill" and enemy.intent.skillType == "shockwave")
         local isHealSkill = (enemy.intent.type == "skill" and enemy.intent.skillType == "heal")
+        local isSporeSkill = (enemy.intent.type == "skill" and enemy.intent.skillType == "spore")
         if isChargeSkill then
           -- Show charging label for boar Charge skill
           valueText = "Charging..."
+        elseif isSporeSkill then
+          -- Show "Spores" label for Spore Caller skill
+          valueText = "Spores"
         elseif isHealSkill and enemy.intent.amount then
           -- Show heal amount for heal skill
           valueText = "+" .. tostring(enemy.intent.amount)
@@ -1137,11 +1141,17 @@ function Visuals.draw(scene, bounds)
         -- To center: enemyCenterX = iconX + (gapWidth + textW) / 2
         -- Therefore: iconX = enemyCenterX - (gapWidth + textW) / 2
         local enemyCenterX = pos.curX or pos.x -- Enemy sprite center X (pivot point)
-        -- Optional nudge to compensate for sprite visual padding; only apply for charge label
+        -- Optional nudge to compensate for sprite visual padding; apply for charge and spore labels
         local isBoarSprite = enemy and (enemy.name == "Deranged Boar" or (enemy.spritePath and enemy.spritePath:find("enemy_boar")))
-        local nudgeX = isChargeSkill and (isBoarSprite and 44 or 12) or 0
+        local isSporeCallerSprite = enemy and (enemy.name == "Spore Caller" or enemy.id == "spore_caller" or (enemy.spritePath and enemy.spritePath:find("enemy_spore_caller")))
+        local nudgeX = 0
+        if isChargeSkill then
+          nudgeX = isBoarSprite and 44 or 12
+        elseif isSporeSkill then
+          nudgeX = isSporeCallerSprite and 44 or 12
+        end
         local iconX
-        if isChargeSkill and valueText and textW > 0 then
+        if (isChargeSkill or isSporeSkill) and valueText and textW > 0 then
           -- Center the text visually on the enemy, then place the icon to the left
           local textCenterX = enemyCenterX + nudgeX
           -- love.print draws from left baseline; convert center to left X
@@ -1161,7 +1171,7 @@ function Visuals.draw(scene, bounds)
         if valueText then
           -- Position text
           local textX
-          if isChargeSkill and textW > 0 then
+          if (isChargeSkill or isSporeSkill) and textW > 0 then
             -- Use the same centered text position as above
             local textCenterX = (pos.curX or pos.x) + nudgeX
             textX = textCenterX - textW * 0.5

@@ -3347,6 +3347,14 @@ local ENCOUNTERS = {
     }
 }
 
+-- Load additional encounters from modular files (if present)
+local ok_spore, extra_spore = pcall(require, "data.encounters.difficulty_2.spore_caller_boar")
+if ok_spore and type(extra_spore) == "table" then
+	for _, enc in ipairs(extra_spore) do
+		table.insert(ENCOUNTERS, enc)
+	end
+end
+
 -- Index by id for quick lookup
 local INDEX = {}
 for _, enc in ipairs(ENCOUNTERS) do
