@@ -611,19 +611,8 @@ function SplitScene:draw()
     if self.left and self.left.draw then self.left:draw({ x = 0, y = 0, w = centerW, h = h }) end
   love.graphics.pop()
   
-  -- Draw calcify particles after blocks (highest z-order for particles)
-  if self.right and self.right._drawCalcifyParticles then
-    self.right:_drawCalcifyParticles()
-  end
-  
-  -- Draw heal particles after blocks (highest z-order for particles)
-  if self.right and self.right._drawHealParticles then
-    self.right:_drawHealParticles()
-  end
-
-  -- Draw spore particles after blocks (highest z-order for particles)
-  if self.right and self.right._drawSporeParticles then
-    self.right:_drawSporeParticles()
+  if self.right and self.right.drawSkillParticles then
+    self.right:drawSkillParticles()
   end
 
   -- Draw edge glow effects when ball hits edges (after gameplay scene, outside scissor so they're not clipped)
