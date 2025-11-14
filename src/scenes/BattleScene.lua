@@ -1919,6 +1919,113 @@ function BattleScene:getSelectedEnemy()
   return nil
 end
 
+function BattleScene:_getEnemyLungeOffset(enemy)
+  if not enemy or not enemy.lungeTime or enemy.lungeTime <= 0 then
+    return 0
+  end
+
+  local lungeDuration = config.battle.lungeDuration or 0
+  local returnDuration = config.battle.lungeReturnDuration or 0
+  local distance = config.battle.lungeDistance or 0
+
+  if enemy.lungeTime < lungeDuration then
+    return distance * (enemy.lungeTime / math.max(0.0001, lungeDuration))
+  elseif enemy.lungeTime < lungeDuration + returnDuration then
+    local t = (enemy.lungeTime - lungeDuration) / math.max(0.0001, returnDuration)
+    return distance * (1 - t)
+  else
+    return 0
+  end
+end
+
+function BattleScene:_computeEnemyLayout(bounds)
+  local fallbackBounds = self._lastBounds
+  local w = (bounds and bounds.w) or (fallbackBounds and fallbackBounds.w) or love.graphics.getWidth()
+  local h = (bounds and bounds.h) or (fallbackBounds and fallbackBounds.h) or love.graphics.getHeight()
+  local center = (bounds and bounds.center) or (fallbackBounds and fallbackBounds.center) or nil
+
+  local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
+  local centerW = center and center.w or math.floor(w * 0.5)
+  local rightStart = centerX + centerW
+  local rightWidth = math.max(0, w - rightStart)
+
+  local r = 24
+  local yOffset = (config.battle and config.battle.positionOffsetY) or 0
+  local baselineY = h * 0.55 + r + yOffset
+
+  local layout = {
+    w = w,
+    baselineY = baselineY,
+    rightStart = rightStart,
+    rightWidth = rightWidth,
+    radius = r,
+    entries = {},
+  }
+
+  if not self.enemies or #self.enemies == 0 then
+    return layout
+  end
+
+  local battleProfile = self._battleProfile or {}
+  local gapCfg = battleProfile.enemySpacing
+  local enemyCount = #self.enemies
+  local gap
+  if type(gapCfg) == "table" then
+    gap = gapCfg[enemyCount] or gapCfg.default or 0
+  else
+    gap = gapCfg or -20
+  end
+
+  local enemyWidths = {}
+  local enemyScales = {}
+  local totalWidth = 0
+
+  for i, enemy in ipairs(self.enemies) do
+    local scaleCfg = enemy.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
+    local scale = 1
+    if enemy.img then
+      local ih = enemy.img:getHeight()
+      scale = ((2 * r) / math.max(1, ih)) * scaleCfg * (enemy.scaleMul or 1)
+    end
+    enemyScales[i] = scale
+
+    local width = enemy.img and (enemy.img:getWidth() * scale) or (r * 2)
+    enemyWidths[i] = width
+
+    totalWidth = totalWidth + width
+    if i < enemyCount then
+      totalWidth = totalWidth + gap
+    end
+  end
+
+  local centerXPos = rightStart + rightWidth * 0.5
+  local startX = centerXPos - totalWidth * 0.5 - 70
+
+  for i, enemy in ipairs(self.enemies) do
+    local enemyX = startX
+    for j = 1, i - 1 do
+      enemyX = enemyX + enemyWidths[j] + gap
+    end
+    enemyX = enemyX + enemyWidths[i] * 0.5
+
+    local centerXPosEnemy = enemyX - self:_getEnemyLungeOffset(enemy)
+    local spriteHeight = enemy.img and (enemy.img:getHeight() * enemyScales[i]) or (r * 2)
+    local halfHeight = spriteHeight * 0.5
+    local halfWidth = enemyWidths[i] * 0.5
+
+    layout.entries[i] = {
+      centerX = centerXPosEnemy,
+      centerY = baselineY - halfHeight,
+      halfWidth = halfWidth,
+      halfHeight = halfHeight,
+      hitY = baselineY - halfHeight * 0.7,
+      boundingTop = baselineY - spriteHeight,
+    }
+  end
+
+  return layout
+end
+
 -- Get player sprite center pivot position (for particle effects)
 function BattleScene:getPlayerCenterPivot(bounds)
   local w = (bounds and bounds.w) or (self._lastBounds and self._lastBounds.w) or love.graphics.getWidth()
@@ -1985,86 +2092,17 @@ end
 
 -- Get enemy sprite center pivot position (for particle effects)
 function BattleScene:getEnemyCenterPivot(enemyIndex, bounds)
-  if not enemyIndex or not self.enemies or not self.enemies[enemyIndex] then
+  if not enemyIndex then
     return nil, nil
   end
-  
-  local enemy = self.enemies[enemyIndex]
-  local w = (bounds and bounds.w) or (self._lastBounds and self._lastBounds.w) or love.graphics.getWidth()
-  local h = (bounds and bounds.h) or (self._lastBounds and self._lastBounds.h) or love.graphics.getHeight()
-  local center = (bounds and bounds.center) or (self._lastBounds and self._lastBounds.center) or nil
-  local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
-  local centerW = center and center.w or math.floor(w * 0.5)
-  local rightStart = centerX + centerW
-  local rightWidth = math.max(0, w - rightStart)
-  local r = 24
-  local yOffset = (config.battle and config.battle.positionOffsetY) or 0
-  local baselineY = h * 0.55 + r + yOffset
-  
-  -- Calculate enemy position dynamically (matching Visuals.lua logic)
-  local enemyScales = {}
-  local enemyWidths = {}
-  local totalWidth = 0
-  local battleProfile = self._battleProfile or {}
-  local gapCfg = battleProfile.enemySpacing
-  local enemyCount = #self.enemies
-  local gap
-  if type(gapCfg) == "table" then
-    gap = gapCfg[enemyCount] or gapCfg.default or 0
-  else
-    gap = gapCfg or -20
+
+  local layout = self:_computeEnemyLayout(bounds)
+  local entry = layout.entries[enemyIndex]
+  if not entry then
+    return nil, nil
   end
-  
-  for i, e in ipairs(self.enemies) do
-    local scaleCfg = e.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
-    local scale = 1
-    if e.img then
-      local ih = e.img:getHeight()
-      scale = ((2 * r) / math.max(1, ih)) * scaleCfg * (e.scaleMul or 1)
-    end
-    enemyScales[i] = scale
-    enemyWidths[i] = e.img and (e.img:getWidth() * scale) or (r * 2)
-    totalWidth = totalWidth + enemyWidths[i]
-    if i < #self.enemies then
-      totalWidth = totalWidth + gap
-    end
-  end
-  
-  local centerXPos = rightStart + rightWidth * 0.5
-  local startX = centerXPos - totalWidth * 0.5 - 70 -- Shift enemies left by 70px
-  
-  -- Calculate X position for this enemy
-  local enemyX = startX
-  for j = 1, enemyIndex - 1 do
-    enemyX = enemyX + enemyWidths[j] + gap
-  end
-  enemyX = enemyX + enemyWidths[enemyIndex] * 0.5
-  
-  -- Account for enemy lunge
-  local function lungeOffset(enemy, t)
-    if not t or t <= 0 then return 0 end
-    local d = config.battle.lungeDuration or 0
-    local rdur = config.battle.lungeReturnDuration or 0
-    local dist = config.battle.lungeDistance or 0
-    if t < d then
-      return dist * (t / math.max(0.0001, d))
-    elseif t < d + rdur then
-      local tt = (t - d) / math.max(0.0001, rdur)
-      return dist * (1 - tt)
-    else
-      return 0
-    end
-  end
-  
-  local enemyLunge = lungeOffset(enemy, enemy.lungeTime)
-  local curEnemyX = enemyX - enemyLunge
-  
-  -- Calculate enemy sprite visual center
-  local enemySpriteHeight = enemy.img and (enemy.img:getHeight() * enemyScales[enemyIndex]) or (r * 2)
-  local spriteCenterX = curEnemyX
-  local spriteCenterY = baselineY - enemySpriteHeight * 0.5
-  
-  return spriteCenterX, spriteCenterY
+
+  return entry.centerX, entry.centerY
 end
 
 -- Select next enemy to the right (or wrap to first if at end)
@@ -2093,188 +2131,45 @@ end
 -- Returns array of {x, y, enemyIndex} for all alive enemies
 function BattleScene:getAllEnemyHitPoints(bounds)
   local hitPoints = {}
-  local w = (bounds and bounds.w) or love.graphics.getWidth()
-  local h = (bounds and bounds.h) or love.graphics.getHeight()
-  local center = bounds and bounds.center or nil
-  local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
-  local centerW = center and center.w or math.floor(w * 0.5)
-  local leftWidth = math.max(0, centerX)
-  local rightStart = centerX + centerW
-  local rightWidth = math.max(0, w - rightStart)
-  local r = 24
-  local yOffset = (config.battle and config.battle.positionOffsetY) or 0
-  local baselineY = h * 0.55 + r + yOffset
-  
+  local layout = self:_computeEnemyLayout(bounds)
+
   if not self.enemies or #self.enemies == 0 then
     return hitPoints
   end
-  
-  -- Calculate enemy positions dynamically (matching Visuals.lua logic)
-  local enemyScales = {}
-  local enemyWidths = {}
-  local totalWidth = 0
-  local battleProfile = self._battleProfile or {}
-  local gapCfg = battleProfile.enemySpacing
-  local enemyCount = #self.enemies
-  local gap
-  if type(gapCfg) == "table" then
-    gap = gapCfg[enemyCount] or gapCfg.default or 0
-  else
-    gap = gapCfg or -20
-  end
-  
-  for i, e in ipairs(self.enemies) do
-    local scaleCfg = e.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
-    local scale = 1
-    if e.img then
-      local ih = e.img:getHeight()
-      scale = ((2 * r) / math.max(1, ih)) * scaleCfg * (e.scaleMul or 1)
-    end
-    enemyScales[i] = scale
-    enemyWidths[i] = e.img and (e.img:getWidth() * scale) or (r * 2)
-    totalWidth = totalWidth + enemyWidths[i]
-    if i < #self.enemies then
-      totalWidth = totalWidth + gap
-    end
-  end
-  
-  local centerXPos = rightStart + rightWidth * 0.5
-  local startX = centerXPos - totalWidth * 0.5 - 70 -- Shift enemies left by 70px (matching Visuals.lua)
-  
-  -- Account for current lunge
-  local function lungeOffset(enemy, t)
-    if not t or t <= 0 then return 0 end
-    local d = config.battle.lungeDuration or 0
-    local rdur = config.battle.lungeReturnDuration or 0
-    local dist = config.battle.lungeDistance or 0
-    if t < d then
-      return dist * (t / math.max(0.0001, d))
-    elseif t < d + rdur then
-      local tt = (t - d) / math.max(0.0001, rdur)
-      return dist * (1 - tt)
-    else
-      return 0
-    end
-  end
-  
-  -- Get hit points for all alive enemies
+
   for i, enemy in ipairs(self.enemies) do
     if enemy and (enemy.hp > 0 or enemy.disintegrating or enemy.pendingDisintegration) then
-      -- Calculate X position for this enemy
-      local enemyX = startX
-      for j = 1, i - 1 do
-        enemyX = enemyX + enemyWidths[j] + gap
+      local entry = layout.entries[i]
+      if entry then
+        table.insert(hitPoints, { x = entry.centerX, y = entry.hitY, enemyIndex = i })
       end
-      enemyX = enemyX + enemyWidths[i] * 0.5
-      
-      local enemyLunge = lungeOffset(enemy, enemy.lungeTime)
-      local curEnemyX = enemyX - enemyLunge
-      
-      -- Aim mid-height of sprite if available; else circle center
-      local enemyHalfH = r
-      if enemy.img then
-        enemyHalfH = (enemy.img:getHeight() * enemyScales[i]) * 0.5
-      end
-      local hitX = curEnemyX
-      local hitY = baselineY - enemyHalfH * 0.7 -- slightly above center
-      
-      table.insert(hitPoints, { x = hitX, y = hitY, enemyIndex = i })
     end
   end
-  
+
   return hitPoints
 end
 
 -- Compute current enemy hit point (screen coordinates), matching draw layout
 -- Returns hit point for selected enemy
 function BattleScene:getEnemyHitPoint(bounds)
-  local w = (bounds and bounds.w) or love.graphics.getWidth()
-  local h = (bounds and bounds.h) or love.graphics.getHeight()
-  local center = bounds and bounds.center or nil
-  local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
-  local centerW = center and center.w or math.floor(w * 0.5)
-  local leftWidth = math.max(0, centerX)
-  local rightStart = centerX + centerW
-  local rightWidth = math.max(0, w - rightStart)
-  local r = 24
-  local yOffset = (config.battle and config.battle.positionOffsetY) or 0
-  local baselineY = h * 0.55 + r + yOffset
-  
-  -- Get selected enemy position (or first enemy as fallback)
+  local layout = self:_computeEnemyLayout(bounds)
   local selectedEnemy = self:getSelectedEnemy()
   if selectedEnemy and self.enemies and #self.enemies > 0 then
     local enemy = selectedEnemy
     local enemyIndex = self.selectedEnemyIndex
-    -- Calculate enemy position dynamically (matching Visuals.lua logic)
-    local enemyScales = {}
-    local enemyWidths = {}
-    local totalWidth = 0
-    local battleProfile = self._battleProfile or {}
-    local gapCfg = battleProfile.enemySpacing
-    local enemyCount = #self.enemies
-    local gap
-    if type(gapCfg) == "table" then
-      gap = gapCfg[enemyCount] or gapCfg.default or 0
-    else
-      gap = gapCfg or -20
+    local entry = layout.entries[enemyIndex]
+    if entry then
+      return entry.centerX, entry.hitY
     end
-    
-    for i, e in ipairs(self.enemies) do
-      local scaleCfg = e.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
-      local scale = 1
-      if e.img then
-        local ih = e.img:getHeight()
-        scale = ((2 * r) / math.max(1, ih)) * scaleCfg * (e.scaleMul or 1)
-      end
-      enemyScales[i] = scale
-      enemyWidths[i] = e.img and (e.img:getWidth() * scale) or (r * 2)
-      totalWidth = totalWidth + enemyWidths[i]
-      if i < #self.enemies then
-        totalWidth = totalWidth + gap
-      end
-    end
-    
-    local centerX = rightStart + rightWidth * 0.5
-    local startX = centerX - totalWidth * 0.5 - 70 -- Shift enemies left by 70px (matching Visuals.lua)
-    
-    -- Calculate X position for the selected enemy
-    local enemyX = startX
-    for i = 1, enemyIndex - 1 do
-      enemyX = enemyX + enemyWidths[i] + gap
-    end
-    enemyX = enemyX + enemyWidths[enemyIndex] * 0.5
-
-  -- Account for current lunge
-  local function lungeOffset(t)
-    if not t or t <= 0 then return 0 end
-    local d = config.battle.lungeDuration or 0
-    local rdur = config.battle.lungeReturnDuration or 0
-    local dist = config.battle.lungeDistance or 0
-    if t < d then
-      return dist * (t / math.max(0.0001, d))
-    elseif t < d + rdur then
-      local tt = (t - d) / math.max(0.0001, rdur)
-      return dist * (1 - tt)
-    else
-      return 0
-    end
-  end
-    local enemyLunge = lungeOffset(enemy.lungeTime)
-  local curEnemyX = enemyX - enemyLunge
-
-    -- Aim mid-height of sprite if available; else circle center
-    local enemyHalfH = r
-    if enemy.img then
-      local ih = enemy.img:getHeight()
-      enemyHalfH = (enemy.img:getHeight() * enemyScales[enemyIndex]) * 0.5
-    end
-    local hitX = curEnemyX
-    local hitY = baselineY - enemyHalfH * 0.7 -- slightly above center
-    return hitX, hitY
   else
     -- Fallback if no enemies
-    local enemyX = (rightWidth > 0) and (rightStart + rightWidth * 0.5) or (w - 12 - r)
-    return enemyX, baselineY - r * 0.7
+    local fallbackX
+    if layout.rightWidth > 0 then
+      fallbackX = layout.rightStart + layout.rightWidth * 0.5
+    else
+      fallbackX = layout.w - 12 - layout.radius
+    end
+    return fallbackX, layout.baselineY - layout.radius * 0.7
   end
 end
 
@@ -2404,96 +2299,30 @@ end
 function BattleScene:mousepressed(x, y, button, bounds)
   if button ~= 1 then return end -- Only handle left mouse button
   
-  -- Get enemy positions to check which one was clicked
-  local w = (bounds and bounds.w) or love.graphics.getWidth()
-  local h = (bounds and bounds.h) or love.graphics.getHeight()
-  local center = bounds and bounds.center or nil
-  local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
-  local centerW = center and center.w or math.floor(w * 0.5)
-  local rightStart = centerX + centerW
-  local rightWidth = math.max(0, w - rightStart)
-  local r = 24
-  local yOffset = (config.battle and config.battle.positionOffsetY) or 0
-  local baselineY = h * 0.55 + r + yOffset
-  
-  -- Calculate enemy positions (matching Visuals.lua logic)
-  local enemyPositions = {}
-  local battleProfile = self._battleProfile or {}
-  local gapCfg = battleProfile.enemySpacing
-  local enemyCount = #self.enemies
-  local gap
-  if type(gapCfg) == "table" then
-    gap = gapCfg[enemyCount] or gapCfg.default or 0
-  else
-    gap = gapCfg or -20
+  local layout = self:_computeEnemyLayout(bounds)
+  if not self.enemies or #self.enemies == 0 then
+    return
   end
-  local enemyScales = {}
-  local enemyWidths = {}
-  local totalWidth = 0
-  
-  for i, enemy in ipairs(self.enemies or {}) do
-    local scaleCfg = enemy.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
-    local scale = 1
-    if enemy.img then
-      local ih = enemy.img:getHeight()
-      scale = ((2 * r) / math.max(1, ih)) * scaleCfg * (enemy.scaleMul or 1)
-    end
-    enemyScales[i] = scale
-    enemyWidths[i] = enemy.img and (enemy.img:getWidth() * scale) or (r * 2)
-    totalWidth = totalWidth + enemyWidths[i]
-    if i < #self.enemies then
-      totalWidth = totalWidth + gap
-    end
-  end
-  
-  local centerXPos = rightStart + rightWidth * 0.5
-  local startX = centerXPos - totalWidth * 0.5 - 70 -- Shift enemies left by 70px (matching Visuals.lua)
-  
+
+  local clickPadding = 30 -- Increased padding for easier clicking
+
   -- Check enemies in reverse order (right to left) so rightmost enemy gets priority when overlapping
   for i = #self.enemies, 1, -1 do
     local enemy = self.enemies[i]
-    if not enemy then goto continue end
-    
-    -- Calculate currentX position for this enemy (matching Visuals.lua logic exactly)
-    local currentX = startX
-    for j = 1, i - 1 do
-      currentX = currentX + enemyWidths[j] + (j < #self.enemies and gap or 0)
-    end
-    
-    -- Calculate enemy X position (matching Visuals.lua logic exactly)
-    local enemyX = currentX + enemyWidths[i] * 0.5
-    local enemyHalfW = enemyWidths[i] * 0.5
-    local enemyHalfH = enemy.img and ((enemy.img:getHeight() * enemyScales[i]) * 0.5) or r
-    
-    -- Account for enemy lunge animation offset (enemies can move during attacks)
-    local enemyLunge = 0
-    if enemy.lungeTime and enemy.lungeTime > 0 then
-      local lungeD = config.battle.lungeDuration or 0
-      local lungeRD = config.battle.lungeReturnDuration or 0
-      local lungeDist = config.battle.lungeDistance or 0
-      if enemy.lungeTime < lungeD then
-        enemyLunge = lungeDist * (enemy.lungeTime / math.max(0.0001, lungeD))
-      elseif enemy.lungeTime < lungeD + lungeRD then
-        local tt = (enemy.lungeTime - lungeD) / math.max(0.0001, lungeRD)
-        enemyLunge = lungeDist * (1 - tt)
+    local entry = layout.entries[i]
+    if enemy and entry then
+      local left = entry.centerX - entry.halfWidth - clickPadding
+      local right = entry.centerX + entry.halfWidth + clickPadding
+      local top = entry.boundingTop - clickPadding
+      local bottom = layout.baselineY + clickPadding
+
+      if x >= left and x <= right and y >= top and y <= bottom then
+        if enemy.hp > 0 or enemy.disintegrating or enemy.pendingDisintegration then
+          self.selectedEnemyIndex = i
+          return
+        end
       end
     end
-    local curEnemyX = enemyX - enemyLunge
-    
-    -- Check if click is within enemy bounds (with some padding)
-    local clickPadding = 30 -- Increased padding for easier clicking
-    if x >= curEnemyX - enemyHalfW - clickPadding and 
-       x <= curEnemyX + enemyHalfW + clickPadding and
-       y >= baselineY - enemyHalfH * 2 - clickPadding and
-       y <= baselineY + clickPadding then
-      -- Clicked on this enemy, select it if it's alive
-      if enemy.hp > 0 or enemy.disintegrating or enemy.pendingDisintegration then
-        self.selectedEnemyIndex = i
-        return
-      end
-    end
-    
-    ::continue::
   end
 end
 
