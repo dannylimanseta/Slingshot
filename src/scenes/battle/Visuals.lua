@@ -205,17 +205,51 @@ function Visuals.draw(scene, bounds)
   -- Apply lunge, jump, and knockback offsets to enemy positions
   for i, pos in ipairs(enemyPositions) do
     local enemy = pos.enemy
+    -- Default lunge
     local enemyLunge = lungeOffset(enemy.lungeTime, false)
-    local enemyJump = jumpOffset(enemy.jumpTime)
-    local enemyKB = 0
-    for _, event in ipairs(scene.enemyKnockbackEvents or {}) do
-      if event.startTime then
-        enemyKB = enemyKB + knockbackOffset(event.startTime)
+    -- Charged lunge override: windup backwards then forward further
+    if enemy.chargeLungeTime and enemy.chargeLungeTime > 0 and enemy.chargeLunge then
+      -- Ease-in-ease-out function (smoothstep)
+      local function easeInOut(t)
+        return t * t * (3 - 2 * t)
       end
+      
+      local t = enemy.chargeLungeTime
+      local w = enemy.chargeLunge.windupDuration or 0.55
+      local f = enemy.chargeLunge.forwardDuration or 0.2
+      local rret = enemy.chargeLunge.returnDuration or 0.2
+      local back = enemy.chargeLunge.backDistance or ((config.battle and config.battle.lungeDistance) or 80) * 0.6
+      local fwd = enemy.chargeLunge.forwardDistance or ((config.battle and config.battle.lungeDistance) or 80) * 2.8
+      local leftward = 0 -- positive = toward player (left), negative = away (right)
+      if t < w then
+        -- Windup: move right (negative leftward) with ease-in-ease-out
+        local p = t / math.max(0.0001, w)
+        p = easeInOut(p)
+        leftward = -back * p
+      elseif t < w + f then
+        -- Charge forward: move left with ease-in-ease-out
+        local p = (t - w) / math.max(0.0001, f)
+        p = easeInOut(p)
+        leftward = fwd * p
+      else
+        -- Return to origin with ease-in-ease-out
+        local p = (t - w - f) / math.max(0.0001, rret)
+        p = easeInOut(p)
+        leftward = fwd * (1 - p)
+      end
+      pos.curX = pos.x - leftward -- apply charged leftward offset
+    else
+      local enemyJump = jumpOffset(enemy.jumpTime)
+      local enemyKB = 0
+      for _, event in ipairs(scene.enemyKnockbackEvents or {}) do
+        if event.startTime then
+          enemyKB = enemyKB + knockbackOffset(event.startTime)
+        end
+      end
+      enemyKB = enemyKB + knockbackOffset(enemy.knockbackTime)
+      pos.curX = pos.x - enemyLunge + enemyKB
+      pos.curY = pos.y + enemyJump -- Apply jump offset to Y position
     end
-    enemyKB = enemyKB + knockbackOffset(enemy.knockbackTime)
-    pos.curX = pos.x - enemyLunge + enemyKB
-    pos.curY = pos.y + enemyJump -- Apply jump offset to Y position
   end
 
   local playerHalfH = scene.playerImg and ((scene.playerImg:getHeight() * playerScale) * 0.5) or r

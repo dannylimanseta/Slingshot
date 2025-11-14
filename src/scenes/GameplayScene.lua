@@ -68,6 +68,12 @@ function GameplayScene.new()
     
     -- Edge hit callback (set by parent scene)
     onEdgeHit = nil,
+    
+    -- Puff images for armor block spawn
+    puffImageLeft = nil,
+    puffImageRight = nil,
+    -- Track puff animations for spawning armor blocks
+    armorBlockPuffs = {}, -- {block = block, puffTime = 0, ...}
   }, GameplayScene)
 end
 
@@ -80,6 +86,16 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
   self.particles = ParticleManager.new()
   self.visualEffects = VisualEffects.new()
   self.projectileEffects = ProjectileEffects.new(self)
+  
+  -- Load puff images for armor block spawn
+  do
+    local puffRPath = "assets/images/fx/fx_puff_r.png"
+    local puffLPath = "assets/images/fx/fx_puff_l.png"
+    local okR, puffRImg = pcall(love.graphics.newImage, puffRPath)
+    if okR then self.puffImageRight = puffRImg end
+    local okL, puffLImg = pcall(love.graphics.newImage, puffLPath)
+    if okL then self.puffImageLeft = puffLImg end
+  end
   
   -- Store reference to GameplayScene in projectile effects
   self.projectileEffects.scene = self
@@ -181,6 +197,18 @@ function GameplayScene:update(dt, bounds)
   self.projectileEffects:update(dt, self.ballManager)
   self.blackHoles = self.projectileEffects.blackHoles or {}
   BattleState.setBlackHoles(self.blackHoles)
+  
+  -- Update armor block puff animations
+  local alivePuffs = {}
+  for _, puffData in ipairs(self.armorBlockPuffs or {}) do
+    if puffData.block and puffData.block.alive then
+      puffData.puffTime = (puffData.puffTime or 0) + dt
+      if puffData.puffTime < puffData.puffDuration then
+        table.insert(alivePuffs, puffData)
+      end
+    end
+  end
+  self.armorBlockPuffs = alivePuffs
   
   -- Sync canShoot state
   local state = self.state or BattleState.get()
@@ -293,6 +321,69 @@ function GameplayScene:draw(bounds)
 
   -- Draw blocks (lightning streaks should appear above this layer)
   self.blocks:draw()
+
+  -- Draw puffs above blocks for spawning armor blocks (after blocks so they appear on top)
+  if self.armorBlockPuffs and #self.armorBlockPuffs > 0 then
+    for _, puffData in ipairs(self.armorBlockPuffs) do
+      local block = puffData.block
+      if block and block.alive and block.cx and block.cy then
+        local progress = math.min(1, puffData.puffTime / puffData.puffDuration)
+        local blockSize = block.size or (config.blocks and config.blocks.baseSize) or 32
+        local scaleMul = (config.blocks and config.blocks.spriteScale) or 1
+        local blockHeight = blockSize * scaleMul
+        
+        -- Puff position: above the block
+        local puffY = block.cy - blockHeight * 0.5 - 20 -- 20px above block top
+        local puffXLeft = block.cx - 30 -- Left puff offset
+        local puffXRight = block.cx + 30 -- Right puff offset
+        
+        -- Animate puffs: fade in quickly, then fade out, move upward diagonally
+        local fadeInDuration = 0.2 -- Quick fade in
+        local fadeOutStart = 0.6 -- Start fading out at 60% progress
+        local alpha = 1
+        if progress < fadeInDuration then
+          -- Fade in
+          alpha = progress / fadeInDuration
+        elseif progress > fadeOutStart then
+          -- Fade out
+          alpha = 1 - ((progress - fadeOutStart) / (1 - fadeOutStart))
+        end
+        
+        -- Move upward diagonally
+        local rise = progress * 40 -- Move up 40px over the duration
+        local leftOffsetX = -progress * 20 -- Left puff moves left
+        local rightOffsetX = progress * 20 -- Right puff moves right
+        
+        -- Draw left puff (flipped)
+        if self.puffImageLeft then
+          local pw, ph = self.puffImageLeft:getWidth(), self.puffImageLeft:getHeight()
+          local puffScale = 0.8
+          love.graphics.setColor(1, 1, 1, alpha)
+          love.graphics.draw(self.puffImageLeft, 
+            puffXLeft + leftOffsetX, 
+            puffY - rise, 
+            0, 
+            -puffScale, puffScale, -- Flip horizontally
+            pw * 0.5, ph * 0.5)
+        end
+        
+        -- Draw right puff
+        if self.puffImageRight then
+          local pw, ph = self.puffImageRight:getWidth(), self.puffImageRight:getHeight()
+          local puffScale = 0.8
+          love.graphics.setColor(1, 1, 1, alpha)
+          love.graphics.draw(self.puffImageRight, 
+            puffXRight + rightOffsetX, 
+            puffY - rise, 
+            0, 
+            puffScale, puffScale,
+            pw * 0.5, ph * 0.5)
+        end
+        
+        love.graphics.setColor(1, 1, 1, 1) -- Reset color
+      end
+    end
+  end
 
   -- Draw lightning streaks above blocks for clarity
   self.projectileEffects:drawLightningStreaks(self.ballManager)
@@ -774,13 +865,138 @@ function GameplayScene:spawnArmorBlocks(bounds, count)
   
   local width = (bounds and bounds.w) or love.graphics.getWidth()
   local height = (bounds and bounds.h) or love.graphics.getHeight()
-
-  -- Let BlockManager decide how many can actually be placed without overlap.
-  -- We request `count` blocks; it will clamp based on available space and playfield bounds.
-  local newBlocks = self.blocks:addRandomBlocks(self.physics:getWorld(), width, height, count)
-  for _, nb in ipairs(newBlocks) do
+  
+  -- Request more blocks than needed since some may be filtered out due to collisions
+  -- This accounts for blocks that might overlap with existing blocks after positioning
+  local requestedCount = math.max(count, count * 2) -- Request 2x to account for filtering
+  
+  -- Spawn blocks in the full area - BlockManager will handle margin
+  -- We'll filter out blocks that are too close to edges or overlap existing blocks
+  local newBlocks = self.blocks:addRandomBlocks(self.physics:getWorld(), width, height, requestedCount)
+  
+  -- Immediately set all spawned blocks to armor type before filtering
+  for _, block in ipairs(newBlocks) do
+    if block then
+      block.kind = "armor"
+    end
+  end
+  
+  -- Helper function to check if a block overlaps with existing blocks
+  local function checkBlockOverlap(block, allBlocks)
+    if not block or not block.cx or not block.cy then return false end
+    
+    local pad = (config.blocks and config.blocks.minGap) or 0
+    local scaleMul = math.max(1, (config.blocks and config.blocks.spriteScale) or 1)
+    local size = config.blocks.baseSize
+    local visSize = size * scaleMul
+    local halfVis = visSize * 0.5
+    
+    local blockX = block.cx - halfVis
+    local blockY = block.cy - halfVis
+    
+    for _, otherBlock in ipairs(allBlocks) do
+      if otherBlock ~= block and otherBlock and otherBlock.alive then
+        local bx, by, bw, bh
+        if type(otherBlock.getPlacementAABB) == "function" then
+          bx, by, bw, bh = otherBlock:getPlacementAABB()
+        end
+        if type(bx) ~= "number" or type(by) ~= "number" or type(bw) ~= "number" or type(bh) ~= "number" then
+          if type(otherBlock.getAABB) == "function" then
+            bx, by, bw, bh = otherBlock:getAABB()
+          end
+        end
+        if type(bx) == "number" and type(by) == "number" and type(bw) == "number" and type(bh) == "number" then
+          -- Check expanded overlap (with padding)
+          if blockX < bx + bw + pad and bx - pad < blockX + visSize and
+             blockY < by + bh + pad and by - pad < blockY + visSize then
+            return true -- Overlap detected
+          end
+        end
+      end
+    end
+    return false
+  end
+  
+  -- Get all existing blocks for collision checking
+  local allBlocks = {}
+  if self.blocks and self.blocks.blocks then
+    for _, b in ipairs(self.blocks.blocks) do
+      if b and b.alive then
+        table.insert(allBlocks, b)
+      end
+    end
+  end
+  
+  -- Filter blocks: remove ones too close to edges or overlapping with existing blocks
+  local edgeBuffer = 50 -- Minimum distance from edges
+  local validBlocks = {}
+  for _, block in ipairs(newBlocks) do
+    if block and block.cx and block.cy then
+      -- Check if block is too close to edges
+      local tooCloseToEdge = 
+        block.cx < edgeBuffer or block.cx > width - edgeBuffer or
+        block.cy < edgeBuffer or block.cy > height - edgeBuffer
+      
+      -- Check if block overlaps with existing blocks
+      local overlaps = checkBlockOverlap(block, allBlocks)
+      
+      if not tooCloseToEdge and not overlaps then
+        -- Block is valid: far enough from edges and no overlap
+        if block.rebuildFixture then
+          block:rebuildFixture()
+        end
+        table.insert(validBlocks, block)
+        table.insert(allBlocks, block) -- Add to allBlocks for subsequent checks
+        
+        -- Stop once we have enough valid blocks
+        if #validBlocks >= count then
+          break
+        end
+      else
+        -- Block is invalid: too close to edge or overlaps, remove it
+        if block.body then
+          block.body:destroy()
+        end
+        block.alive = false
+        -- Remove from BlockManager's blocks list
+        if self.blocks and self.blocks.blocks then
+          for i, b in ipairs(self.blocks.blocks) do
+            if b == block then
+              table.remove(self.blocks.blocks, i)
+              break
+            end
+          end
+        end
+      end
+    end
+  end
+  
+  -- Update newBlocks to only include valid (non-overlapping) blocks
+  newBlocks = validBlocks
+  
+  -- Add staggered spawn delays and puff animations
+  local staggerDelay = 0.2 -- Delay between each block spawn (in seconds) - increased for more noticeable stagger
+  for i, nb in ipairs(newBlocks) do
     -- Force these blocks to be armor blocks
     nb.kind = "armor"
+    
+    -- Enable spawn animation with staggered delay
+    nb.spawnAnimating = true
+    nb.spawnAnimT = 0
+    nb.spawnAnimDelay = (i - 1) * staggerDelay -- Each block spawns 0.1s after the previous
+    nb.spawnAnimDuration = (config.blocks and config.blocks.spawnAnim and config.blocks.spawnAnim.duration) or 0.35
+    -- Set fixture to sensor during spawn animation (blocks can't be hit until fully spawned)
+    if nb.fixture then
+      nb.fixture:setSensor(true)
+    end
+    
+    -- Add puff animation tracking
+    table.insert(self.armorBlockPuffs, {
+      block = nb,
+      puffTime = 0,
+      puffDuration = nb.spawnAnimDelay + nb.spawnAnimDuration, -- Puff lasts for spawn delay + animation
+    })
+    
     nb.onDestroyed = function()
       if self.particles and not nb._suckedByBlackHole then
         local blockColor = theme.colors.blockArmor
@@ -788,6 +1004,14 @@ function GameplayScene:spawnArmorBlocks(bounds, count)
       end
       BattleState.registerBlockHit(nb, { destroyed = true, kind = nb.kind })
       self.destroyedThisTurn = BattleState.get().blocks.destroyedThisTurn or 0
+      
+      -- Remove puff tracking when block is destroyed
+      for j, puffData in ipairs(self.armorBlockPuffs) do
+        if puffData.block == nb then
+          table.remove(self.armorBlockPuffs, j)
+          break
+        end
+      end
     end
   end
 end

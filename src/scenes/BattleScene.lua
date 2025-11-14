@@ -28,7 +28,7 @@ local function createEnemyFromConfig(enemyConfig, index)
     img = nil, -- Loaded in load() function
     flash = 0,
     knockbackTime = 0,
-    lungeTime = 0,
+    lungeTime = 0, -- Jump animation timer (for shockwave attack)
     jumpTime = 0, -- Jump animation timer (for shockwave attack)
     rotation = 0, -- Current rotation angle in radians (tweens back to 0)
     pulseTime = love.math.random() * (2 * math.pi), -- Different phase offsets for visual variety
@@ -58,7 +58,7 @@ function BattleScene:areEnemyAttacksActive()
   end
   -- Any enemy lunge/jump/knockback in progress?
   for _, enemy in ipairs(self.enemies or {}) do
-    if (enemy.lungeTime and enemy.lungeTime > 0) or (enemy.jumpTime and enemy.jumpTime > 0) or (enemy.knockbackTime and enemy.knockbackTime > 0) then
+    if (enemy.lungeTime and enemy.lungeTime > 0) or (enemy.jumpTime and enemy.jumpTime > 0) or (enemy.knockbackTime and enemy.knockbackTime > 0) or (enemy.chargeLungeTime and enemy.chargeLungeTime > 0) then
       return true
     end
   end
@@ -1321,6 +1321,56 @@ function BattleScene:update(dt, bounds)
   
   -- Update calcify particle animation
   self:_updateCalcifySequence(dt)
+  
+  -- Check for charged attacks entering forward phase and apply damage
+  for _, enemy in ipairs(self.enemies or {}) do
+    if enemy.pendingChargedDamage and enemy.chargeLungeTime and enemy.chargeLungeTime > 0 and enemy.chargeLunge then
+      local t = enemy.chargeLungeTime
+      local w = enemy.chargeLunge.windupDuration or 0.55
+      local f = enemy.chargeLunge.forwardDuration or 0.2
+      
+      -- Check if we just entered the forward phase (windup just finished)
+      -- Apply damage once when forward phase starts
+      if t >= w and not enemy.chargedDamageApplied then
+        enemy.chargedDamageApplied = true -- Mark as applied to prevent multiple applications
+        
+        local dmg = enemy.pendingChargedDamage
+        local blocked, net = self:_applyPlayerDamage(dmg)
+        
+        -- If damage is fully blocked, show armor icon popup and flash icon
+        if net <= 0 then
+          self.armorIconFlashTimer = 0.5 -- Flash duration
+          table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+        else
+          self.playerFlash = config.battle.hitFlashDuration
+          self.playerKnockbackTime = 1e-6
+          table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
+          -- Emit hit burst particles from player center
+          if self.particles then
+            local px, py = self:getPlayerCenterPivot(self._lastBounds)
+            if px and py then
+              self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
+            end
+          end
+          pushLog(self, (enemy.name or "Enemy") .. " dealt " .. net)
+          if self.onPlayerDamage then
+            self.onPlayerDamage()
+          end
+        end
+        
+        -- Trigger screenshake when damage is applied
+        self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+        
+        -- Clear pending damage
+        enemy.pendingChargedDamage = nil
+      end
+      
+      -- Reset flag when animation completes
+      if t >= w + f + (enemy.chargeLunge.returnDuration or 0.2) then
+        enemy.chargedDamageApplied = nil
+      end
+    end
+  end
 
   -- Update tweened darkness for non-attacking enemies
   local targetDarkness = (self._attackingEnemyIndex ~= nil) and 1.0 or 0.0 -- Darken fully (to 0% brightness) when enemy is attacking
@@ -1329,13 +1379,20 @@ function BattleScene:update(dt, bounds)
   self._nonAttackingEnemyDarkness = self._nonAttackingEnemyDarkness + darknessDelta * math.min(1, darknessSpeed * dt)
   
   -- Handle staggered enemy attack delays
-  -- Don't process staggered attacks while shockwave or calcify sequence is active
+  -- Don't process staggered attacks while shockwave, calcify, or charged attack is active
   local shockwaveActive = self._shockwaveSequence ~= nil
   local calcifyActive = self._calcifySequence ~= nil
+  local chargedAttackActive = false
+  for _, enemy in ipairs(self.enemies or {}) do
+    if enemy.chargeLungeTime and enemy.chargeLungeTime > 0 then
+      chargedAttackActive = true
+      break
+    end
+  end
   local aliveAttackDelays = {}
   for _, delayData in ipairs(self._enemyAttackDelays or {}) do
-    if shockwaveActive or calcifyActive then
-      -- Shockwave or calcify is active, don't count down - just keep the delay data
+    if shockwaveActive or calcifyActive or chargedAttackActive then
+      -- Shockwave, calcify, or charged attack is active, don't count down - just keep the delay data
       table.insert(aliveAttackDelays, delayData)
     else
       delayData.delay = delayData.delay - dt
@@ -1385,8 +1442,26 @@ function BattleScene:update(dt, bounds)
                 self.onPlayerDamage()
               end
             end
-            enemy.lungeTime = 1e-6
-            self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+            -- Check if this is a charged attack - delay damage until forward charge phase
+            local isChargedAttack = intent and intent.type == "attack" and intent.attackType == "charged"
+            
+            if isChargedAttack then
+              -- Store damage to apply later when forward charge phase starts
+              enemy.pendingChargedDamage = dmg
+              -- Trigger charged lunge animation (damage will be applied during forward phase)
+              enemy.chargeLungeTime = 1e-6
+              enemy.chargeLunge = {
+                windupDuration = 0.55,
+                forwardDuration = 0.22,
+                returnDuration = 0.24,
+                backDistance = ((config.battle and config.battle.lungeDistance) or 80) * 0.6,
+                forwardDistance = ((config.battle and config.battle.lungeDistance) or 80) * 2.8,
+              }
+            else
+              -- Trigger normal lunge animation
+              enemy.lungeTime = 1e-6
+              self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+            end
             
             if self.playerHP <= 0 then
               self.state = "lose"
@@ -1853,32 +1928,49 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
             dmg = love.math.random(enemy.damageMin, enemy.damageMax)
           end
           
-          local blocked, net = self:_applyPlayerDamage(dmg)
+          -- Check if this is a charged attack - delay damage until forward charge phase
+          local isChargedAttack = intent and intent.type == "attack" and intent.attackType == "charged"
           
-          -- If damage is fully blocked, show armor icon popup and flash icon
-          if net <= 0 then
-            self.armorIconFlashTimer = 0.5 -- Flash duration
-            table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+          if isChargedAttack then
+            -- Store damage to apply later when forward charge phase starts
+            enemy.pendingChargedDamage = dmg
+            -- Trigger charged lunge animation (damage will be applied during forward phase)
+            enemy.chargeLungeTime = 1e-6
+            enemy.chargeLunge = {
+              windupDuration = 0.55,
+              forwardDuration = 0.22,
+              returnDuration = 0.24,
+              backDistance = ((config.battle and config.battle.lungeDistance) or 80) * 0.6,
+              forwardDistance = ((config.battle and config.battle.lungeDistance) or 80) * 2.8,
+            }
           else
-            self.playerFlash = config.battle.hitFlashDuration
-            self.playerKnockbackTime = 1e-6
-            table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
-            -- Emit hit burst particles from player center
-            if self.particles then
-              local px, py = self:getPlayerCenterPivot(self._lastBounds)
-              if px and py then
-                self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
+            -- Apply damage immediately for normal attacks
+            local blocked, net = self:_applyPlayerDamage(dmg)
+            
+            -- If damage is fully blocked, show armor icon popup and flash icon
+            if net <= 0 then
+              self.armorIconFlashTimer = 0.5 -- Flash duration
+              table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+            else
+              self.playerFlash = config.battle.hitFlashDuration
+              self.playerKnockbackTime = 1e-6
+              table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
+              -- Emit hit burst particles from player center
+              if self.particles then
+                local px, py = self:getPlayerCenterPivot(self._lastBounds)
+                if px and py then
+                  self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
+                end
+              end
+              pushLog(self, "Enemy " .. i .. " dealt " .. net)
+              if self.onPlayerDamage then
+                self.onPlayerDamage()
               end
             end
-            pushLog(self, "Enemy " .. i .. " dealt " .. net)
-            if self.onPlayerDamage then
-              self.onPlayerDamage()
-            end
+            -- Trigger normal lunge animation
+            enemy.lungeTime = 1e-6
+            self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
           end
-          -- Trigger enemy lunge animation
-          enemy.lungeTime = 1e-6
-          -- Trigger screenshake
-          self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
         end
       else
         -- Schedule delayed attack for subsequent enemies (0.3s delay between each enemy)

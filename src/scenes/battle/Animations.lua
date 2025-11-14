@@ -34,6 +34,21 @@ function Animations.update(scene, dt)
     end
   end
 
+  -- Advance charged lunge timers (windup -> charge -> return)
+  for _, enemy in ipairs(scene.enemies or {}) do
+    if enemy.chargeLungeTime and enemy.chargeLungeTime > 0 and enemy.chargeLunge then
+      local w = enemy.chargeLunge.windupDuration or 0.55
+      local f = enemy.chargeLunge.forwardDuration or 0.2
+      local r = enemy.chargeLunge.returnDuration or 0.2
+      local total = w + f + r
+      enemy.chargeLungeTime = enemy.chargeLungeTime + dt * enemySpeed
+      if enemy.chargeLungeTime > total then
+        enemy.chargeLungeTime = 0
+        enemy.chargeLunge = nil
+      end
+    end
+  end
+
   -- Advance enemy jump timers (for shockwave attack)
   local jumpUpDuration = 0.3 -- Time to jump up
   local jumpDownDuration = 0.2 -- Time to land
