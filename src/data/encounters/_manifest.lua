@@ -11,6 +11,7 @@ return {
   { "elite", "crawler_boar" },
   { "elite", "crawler_fawn" },
   { "elite", "stagmaw_fawn" },
+  { "elite", "bloodhound_menders" },
   
   -- Difficulty 2 encounters
   { "difficulty_2", "solo_boar" },
