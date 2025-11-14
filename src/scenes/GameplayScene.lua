@@ -97,6 +97,13 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
     if okL then self.puffImageLeft = puffLImg end
   end
   
+  -- Load smoke image for falling blocks
+  do
+    local smokePath = "assets/images/fx/fx_smoke.png"
+    local okSmoke, smokeImg = pcall(love.graphics.newImage, smokePath)
+    if okSmoke then self.smokeImage = smokeImg end
+  end
+  
   -- Store reference to GameplayScene in projectile effects
   self.projectileEffects.scene = self
   -- Initialize shared battle state
@@ -383,6 +390,84 @@ function GameplayScene:draw(bounds)
         love.graphics.setColor(1, 1, 1, 1) -- Reset color
       end
     end
+  end
+
+  -- Draw smoke sprites around blocks that are falling off
+  if self.smokeImage and self.blocks and self.blocks.blocks then
+    love.graphics.push("all")
+    love.graphics.setBlendMode("alpha")
+    
+    for _, block in ipairs(self.blocks.blocks) do
+      if block and block.alive and block.shakeTime and block.shakeTime > 0 and block.cx and block.cy then
+        local shakeDuration = 0.6 -- Match the duration from Block.lua
+        local progress = 1 - (block.shakeTime / shakeDuration) -- Progress from 0 to 1
+        
+        -- Calculate block position with offsets (for falling animation)
+        local blockX = block.cx + (block.shakeOffsetX or 0)
+        local blockY = block.cy + (block.dropOffsetY or 0) + (block.shakeOffsetY or 0)
+        
+        -- Fade in and out: quick fade in (0-0.2), hold (0.2-0.6), fade out (0.6-1.0)
+        local alpha = 1.0
+        if progress < 0.2 then
+          -- Fade in quickly
+          alpha = progress / 0.2
+        elseif progress > 0.6 then
+          -- Fade out
+          alpha = 1.0 - ((progress - 0.6) / 0.4)
+        end
+        
+        -- Scale: start small, grow, then shrink slightly (but less than before)
+        local baseScale = 0.5
+        local maxScale = 1.0
+        local scale = baseScale
+        if progress < 0.5 then
+          -- Grow from baseScale to maxScale
+          scale = baseScale + (maxScale - baseScale) * (progress / 0.5)
+        else
+          -- Slightly shrink from maxScale (reduced shrinkage - only to 95% of baseScale)
+          scale = maxScale - (maxScale - baseScale * 0.95) * ((progress - 0.5) / 0.5)
+        end
+        
+        -- Draw multiple smoke puffs around the block
+        local smokeImg = self.smokeImage
+        local smokeW, smokeH = smokeImg:getWidth(), smokeImg:getHeight()
+        local numPuffs = 4
+        local spreadRadius = 25 * (0.8 + progress * 0.4) -- Expands over time
+        
+        for j = 1, numPuffs do
+          -- Distribute puffs around the block in a circle
+          local angle = (j / numPuffs) * 2 * math.pi
+          -- Add slight random offset for more natural distribution
+          local angleOffset = (j % 2 == 0) and 0.15 or -0.15
+          local finalAngle = angle + angleOffset
+          
+          -- Horizontal and vertical spread
+          local offsetX = math.cos(finalAngle) * spreadRadius
+          local offsetY = math.sin(finalAngle) * spreadRadius * 0.6
+          
+          -- Slight rotation variation per puff
+          local rotation = finalAngle + progress * 0.5
+          
+          -- Individual puff scale variation
+          local puffScale = scale * (0.8 + (j % 3) * 0.1)
+          
+          love.graphics.setColor(1, 1, 1, alpha * 0.7) -- Slightly transparent
+          love.graphics.draw(
+            smokeImg,
+            blockX + offsetX,
+            blockY + offsetY,
+            rotation,
+            puffScale,
+            puffScale,
+            smokeW * 0.5,
+            smokeH * 0.5
+          )
+        end
+      end
+    end
+    
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.pop()
   end
 
   -- Draw lightning streaks above blocks for clarity

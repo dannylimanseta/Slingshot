@@ -111,10 +111,10 @@ function BattleScene:calculateEnemyIntents()
           armorBlockCount = 3,
         }
       elseif shouldShockwave then
-        -- Shockwave attack (still counts as attack type)
+        -- Shockwave skill: shows as skill icon with damage value
         enemy.intent = {
-          type = "attack",
-          attackType = "shockwave",
+          type = "skill",
+          skillType = "shockwave",
           damage = 6, -- Fixed shockwave damage
         }
       else
@@ -223,6 +223,8 @@ function BattleScene.new()
     -- Charge skill puff images (left/right variants)
     puffImageLeft = nil,
     puffImageRight = nil,
+    -- Shockwave smoke effect
+    smokeImage = nil,
   }, BattleScene)
 end
 
@@ -451,6 +453,11 @@ function BattleScene:load(bounds, battleProfile)
     local okL, puffLImg = pcall(love.graphics.newImage, puffLPath)
     if okL then self.puffImageLeft = puffLImg end
   end
+  
+  -- Load smoke image for shockwave effect
+  local smokePath = "assets/images/fx/fx_smoke.png"
+  local okSmoke, smokeImg = pcall(love.graphics.newImage, smokePath)
+  if okSmoke then self.smokeImage = smokeImg end
   
   -- Load disintegration shader
   local ok, shader = pcall(function() return DisintegrationShader.getShader() end)
@@ -1412,6 +1419,10 @@ function BattleScene:update(dt, bounds)
           elseif intent and intent.type == "skill" and intent.skillType == "charge" then
             -- Execute charge skill for delayed enemies too
             self:performEnemyCharge(enemy, (intent and intent.armorBlockCount) or 3)
+          elseif (intent and intent.type == "skill" and intent.skillType == "shockwave") or
+                 (intent and intent.type == "attack" and intent.attackType == "shockwave") then
+            -- Execute shockwave for delayed enemies too
+            self:performEnemyShockwave(enemy)
           else
             -- Check if this is a charged attack - delay damage until forward phase
             local isChargedAttack = intent and intent.type == "attack" and intent.attackType == "charged"
@@ -1902,10 +1913,11 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
           shouldCalcify = true
         elseif intent and intent.type == "skill" and intent.skillType == "charge" then
           shouldCharge = true
-        elseif intent and intent.type == "attack" and intent.attackType == "shockwave" then
+        elseif (intent and intent.type == "skill" and intent.skillType == "shockwave") or
+               (intent and intent.type == "attack" and intent.attackType == "shockwave") then
           shouldShockwave = true
-        else
-          -- Fallback: Check if enemy_1 (crawler) should do shockwave (30% chance)
+        elseif not intent then
+          -- Fallback: Only check for shockwave if no intent was set (shouldn't happen normally)
           local isEnemy1 = enemy.spritePath == "enemy_1.png"
           shouldShockwave = isEnemy1 and (love.math.random() < 0.3)
         end
@@ -1936,6 +1948,8 @@ function BattleScene:performEnemyAttack(minDamage, maxDamage)
           if isChargedAttack then
             -- Store damage to apply later when forward charge phase starts
             enemy.pendingChargedDamage = dmg
+            -- Reset damage applied flag for this new charge attack
+            enemy.chargedDamageApplied = nil
             -- Trigger charged lunge animation (damage will be applied during forward phase)
             enemy.chargeLungeTime = 1e-6
             enemy.chargeLunge = {
@@ -2294,6 +2308,8 @@ function BattleScene:performEnemyShockwave(enemy)
     timer = 0,
     phase = "jump", -- jump -> screenshake -> damage -> blocks
     enemy = enemy,
+    smokeTimer = 0, -- Timer for smoke effect (starts when jump lands)
+    smokeDuration = 0.8, -- Duration of smoke effect
   }
 end
 
@@ -2313,6 +2329,8 @@ function BattleScene:_updateShockwaveSequence(dt)
   if seq.phase == "jump" then
     -- Wait for jump to complete
     if seq.timer >= jumpDuration then
+      -- Start smoke effect when jump lands
+      seq.smokeTimer = 1e-6
       seq.phase = "screenshake"
       seq.timer = 0
     end
@@ -2380,6 +2398,14 @@ function BattleScene:_updateShockwaveSequence(dt)
       if #self._enemyAttackDelays == 0 then
         self._attackingEnemyIndex = nil
       end
+    end
+  end
+  
+  -- Update smoke effect timer
+  if seq.smokeTimer and seq.smokeTimer > 0 then
+    seq.smokeTimer = seq.smokeTimer + dt
+    if seq.smokeTimer >= seq.smokeDuration then
+      seq.smokeTimer = 0 -- Smoke effect complete
     end
   end
 end

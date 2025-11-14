@@ -682,6 +682,105 @@ function Visuals.draw(scene, bounds)
     end
   end
 
+  -- Draw smoke effect for shockwave attack (around enemy base when landing)
+  if scene._shockwaveSequence and scene._shockwaveSequence.smokeTimer and scene._shockwaveSequence.smokeTimer > 0 and scene.smokeImage then
+    local seq = scene._shockwaveSequence
+    local enemy = seq.enemy
+    if enemy then
+      -- Find enemy position
+      for i, pos in ipairs(enemyPositions) do
+        if pos.enemy == enemy then
+          local enemyY = pos.curY or pos.y -- Bottom of sprite (pivot point)
+          local enemyX = pos.curX or pos.x
+          local enemyHeight = 0
+          if enemy.img then
+            local spriteHeight = enemy.img:getHeight()
+            local baseScale = pos.scale
+            local bobA = (config.battle and config.battle.idleBobScaleY) or 0
+            local maxBobScale = 1 + bobA
+            local maxScaleY = baseScale * maxBobScale
+            enemyHeight = spriteHeight * maxScaleY
+          end
+          
+          -- Position smoke at base of enemy (bottom of sprite)
+          local smokeBaseY = enemyY -- Base of enemy sprite
+          
+          -- Calculate smoke animation progress (0 to 1)
+          local progress = seq.smokeTimer / seq.smokeDuration
+          
+          -- Fade in and out: quick fade in (0-0.2), hold (0.2-0.6), fade out (0.6-1.0)
+          local alpha = 1.0
+          if progress < 0.2 then
+            -- Fade in quickly
+            alpha = progress / 0.2
+          elseif progress > 0.6 then
+            -- Fade out
+            alpha = 1.0 - ((progress - 0.6) / 0.4)
+          end
+          
+          -- Scale: start small, grow, then shrink slightly
+          local baseScale = 0.6
+          local maxScale = 1.2
+          local scale = baseScale
+          if progress < 0.5 then
+            -- Grow from baseScale to maxScale
+            scale = baseScale + (maxScale - baseScale) * (progress / 0.5)
+          else
+            -- Slightly shrink from maxScale (reduced shrinkage - only to 95% of baseScale instead of 80%)
+            scale = maxScale - (maxScale - baseScale * 0.95) * ((progress - 0.5) / 0.5)
+          end
+          
+          -- Draw multiple smoke puffs around the base for better effect
+          local smokeImg = scene.smokeImage
+          local smokeW, smokeH = smokeImg:getWidth(), smokeImg:getHeight()
+          local numPuffs = 5
+          -- Increased spread radius - wider distribution around enemy base
+          local baseSpreadRadius = 50 -- Base spread radius in pixels
+          local spreadRadius = baseSpreadRadius * (0.8 + progress * 0.4) -- Expands over time
+          
+          love.graphics.push("all")
+          love.graphics.setBlendMode("alpha")
+          
+          for j = 1, numPuffs do
+            -- Distribute puffs around the enemy base in a wider circle
+            local angle = (j / numPuffs) * 2 * math.pi
+            -- Add slight random offset for more natural distribution
+            local angleOffset = (j % 2 == 0) and 0.15 or -0.15 -- Alternate puffs slightly offset
+            local finalAngle = angle + angleOffset
+            
+            -- Horizontal spread (full circle)
+            local offsetX = math.cos(finalAngle) * spreadRadius
+            -- Vertical spread (less vertical, more horizontal emphasis)
+            local offsetY = math.sin(finalAngle) * spreadRadius * 0.6
+            
+            -- Slight rotation variation per puff
+            local rotation = finalAngle + progress * 0.5
+            
+            -- Individual puff scale variation
+            local puffScale = scale * (0.8 + (j % 3) * 0.1)
+            
+            love.graphics.setColor(1, 1, 1, alpha * 0.7) -- Slightly transparent
+            love.graphics.draw(
+              smokeImg,
+              enemyX + offsetX,
+              smokeBaseY + offsetY,
+              rotation,
+              puffScale,
+              puffScale,
+              smokeW * 0.5,
+              smokeH * 0.5
+            )
+          end
+          
+          love.graphics.setColor(1, 1, 1, 1)
+          love.graphics.pop()
+          
+          break -- Only draw for the shockwave enemy
+        end
+      end
+    end
+  end
+
   -- Draw charge puffs for enemies that are currently using the Charge skill
   do
     local puffL = scene.puffImageLeft
@@ -807,9 +906,13 @@ function Visuals.draw(scene, bounds)
         -- Calculate text to display beside the icon
         local valueText = nil
         local isChargeSkill = (enemy.intent.type == "skill" and enemy.intent.skillType == "charge")
+        local isShockwaveSkill = (enemy.intent.type == "skill" and enemy.intent.skillType == "shockwave")
         if isChargeSkill then
           -- Show charging label for boar Charge skill
           valueText = "Charging..."
+        elseif isShockwaveSkill and enemy.intent.damage then
+          -- Show damage for shockwave skill
+          valueText = tostring(enemy.intent.damage)
         elseif enemy.intent.type == "attack" and enemy.intent.damage then
           -- Show fixed damage (e.g., shockwave)
           valueText = tostring(enemy.intent.damage)

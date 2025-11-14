@@ -939,7 +939,7 @@ local ENCOUNTERS = {
                     -- Left third row - strategic targets
                     {
                               hp = 1,
-                              kind = "damage",
+                              kind = "multiplier",
                               x = 0.216,
                               y = 0.334
                             },
@@ -983,7 +983,7 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "damage",
+                              kind = "multiplier",
                               x = 0.279,
                               y = 0.477
                             },
@@ -1072,7 +1072,7 @@ local ENCOUNTERS = {
                     -- Right third row
                     {
                               hp = 1,
-                              kind = "damage",
+                              kind = "multiplier",
                               x = 0.658,
                               y = 0.334
                             },
@@ -1122,7 +1122,7 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "damage",
+                              kind = "multiplier",
                               x = 0.784,
                               y = 0.477
                             },
@@ -1209,7 +1209,7 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "crit",
+                              kind = "multiplier",
                               x = 0.532,
                               y = 0.406
                             },
