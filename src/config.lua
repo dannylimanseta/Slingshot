@@ -368,10 +368,7 @@ config.player = {
   -- Array of projectile IDs that appear in the shooter carousel
   -- Order matters: this is the sequence they rotate through
   equippedProjectiles = {
-    "lightning",     -- Lightning Orb (Level 1) - 1st slot
-    "pierce",        -- Pierce (Level 1)
-    "black_hole",    -- Black Hole (Level 1)
-    "twin_strike",   -- Twin Strike (Level 1)
+    "strike",        -- Strike (basic projectile)
   },
 }
 
