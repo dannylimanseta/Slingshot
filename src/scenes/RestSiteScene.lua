@@ -3,6 +3,7 @@ local theme = require("theme")
 local Button = require("ui.Button")
 local TopBar = require("ui.TopBar")
 local PlayerState = require("core.PlayerState")
+local BattleState = require("core.BattleState")
 local ProjectileManager = require("managers.ProjectileManager")
 local ProjectileCard = require("ui.ProjectileCard")
 
@@ -78,8 +79,16 @@ function RestSiteScene:load()
       local playerState = PlayerState.getInstance()
       local currentHP = playerState:getHealth()
       local maxHP = playerState:getMaxHealth()
-      local newHP = math.min(maxHP, currentHP + 20)
+      local healAmount = 20
+      local newHP = math.min(maxHP, currentHP + healAmount)
       playerState:setHealth(newHP)
+      
+      -- Also update BattleState if it exists (for TopBar display)
+      local battleState = BattleState.get and BattleState.get()
+      if battleState and battleState.player then
+        BattleState.applyPlayerHeal(healAmount)
+      end
+      
       self._exitRequested = true
     end,
   })

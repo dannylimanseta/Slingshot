@@ -1,5 +1,6 @@
 local config = require("config")
 local EncounterManager = require("core.EncounterManager")
+local Progress = require("core.Progress")
 
 local MapManager = {}
 MapManager.__index = MapManager
@@ -1070,16 +1071,22 @@ function MapManager:completeMovement()
       -- Check if this is an elite enemy node (spriteVariant == 2)
       local isElite = tile.spriteVariant == 2
       
+      -- Get current difficulty level (for the next encounter)
+      local currentDifficulty = Progress.peekDifficultyLevel()
+      
       -- Filter encounters: elite node picks only elite encounters, normal node picks only non-elite encounters
+      -- Also filter by difficulty level
       local filterFn = nil
       if isElite then
         filterFn = function(enc)
-          return enc.elite == true
+          local encDifficulty = enc.difficulty or 1
+          return enc.elite == true and encDifficulty == currentDifficulty
         end
       else
-        -- Normal enemy tile: exclude elite encounters
+        -- Normal enemy tile: exclude elite encounters, match difficulty
         filterFn = function(enc)
-          return enc.elite ~= true
+          local encDifficulty = enc.difficulty or 1
+          return enc.elite ~= true and encDifficulty == currentDifficulty
         end
       end
       
