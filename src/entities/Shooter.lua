@@ -253,11 +253,17 @@ function Shooter:update(dt, bounds)
   local r = config.shooter.radius
   if bounds and bounds.gridStartX and bounds.gridEndX then
     -- Use grid bounds (matching editor)
-    self.x = math.max(bounds.gridStartX + r, math.min(bounds.gridEndX - r, self.x))
+    -- Reduce max width by 2% to prevent firing issues at right corner
+    local gridWidth = bounds.gridEndX - bounds.gridStartX
+    local maxXReduction = gridWidth * 0.02
+    local maxX = bounds.gridEndX - maxXReduction - r
+    self.x = math.max(bounds.gridStartX + r, math.min(maxX, self.x))
   else
     -- Fallback to full width bounds
     local w = (bounds and bounds.w) or love.graphics.getWidth()
-    self.x = math.max(r, math.min(w - r, self.x))
+    -- Reduce max width by 2% for fallback case too
+    local maxXReduction = w * 0.02
+    self.x = math.max(r, math.min(w - maxXReduction - r, self.x))
   end
   
   -- Get current turn number
