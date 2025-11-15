@@ -61,7 +61,16 @@ function StateBridge.syncEnemies(scene)
       state.enemies[i] = stateEnemy
     else
       enemy.hp = stateEnemy.hp or enemy.hp
-      enemy.maxHP = stateEnemy.maxHP or enemy.maxHP
+      -- Preserve BattleScene's maxHP if it's been reduced (elite relic effect)
+      -- Sync BattleState's maxHP to match BattleScene's if BattleScene has a lower value
+      if enemy.maxHP and stateEnemy.maxHP and enemy.maxHP < stateEnemy.maxHP then
+        -- BattleScene has reduced HP (from relic), update BattleState to match
+        stateEnemy.maxHP = enemy.maxHP
+        stateEnemy.hp = math.min(stateEnemy.hp or stateEnemy.maxHP, enemy.maxHP)
+      else
+        -- Normal sync: BattleState -> BattleScene
+        enemy.maxHP = stateEnemy.maxHP or enemy.maxHP
+      end
       enemy.armor = stateEnemy.armor or enemy.armor
       enemy.intent = stateEnemy.intent or enemy.intent
       stateEnemy.damageMin = stateEnemy.damageMin or enemy.damageMin

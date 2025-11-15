@@ -97,6 +97,17 @@ function RelicSystem.applyBattleEnd(context)
   end, context)
 end
 
+-- Returns a multiplier to apply to elite enemy HP (<= 1 reduces HP)
+function RelicSystem.getEliteEnemyHpMultiplier()
+  local multiplier = 1.0
+  forEachEffect("elite_enemy_hp_multiplier", function(effect)
+    local m = tonumber(effect.value) or 1.0
+    -- Combine multiplicatively to support future stacking relics
+    multiplier = multiplier * m
+  end)
+  return multiplier
+end
+
 function RelicSystem.debugEquip(id)
   local player = PlayerState.getInstance and PlayerState.getInstance()
   if player and player.addRelic then

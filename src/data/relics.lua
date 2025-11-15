@@ -70,6 +70,24 @@ local CATALOG = {
       },
     },
   },
+  hunters_mark = {
+    id = "hunters_mark",
+    name = "Hunter's Mark",
+    rarity = relics.Rarity.UNCOMMON,
+    slot = "passive",
+    type = "passive",
+    icon = "assets/images/relics/hunters_mark.png",
+    tags = { "elite", "offense" },
+    description = "Elite enemies have 20% less HP.",
+    flavor = "A sigil etched to cull the strongest before the charge.",
+    effects = {
+      {
+        trigger = "elite_enemy_hp_multiplier",
+        value = 0.8, -- 20% less HP
+        source = "hunters_mark",
+      },
+    },
+  },
 }
 
 function relics.get(id)

@@ -244,15 +244,53 @@ function BattleScene:load(bounds, battleProfile)
   -- Store battle profile for Visuals.lua to access
   self._battleProfile = battleProfile
   
+  -- Determine if current encounter is elite and compute relic multipliers
+  local isEliteEncounter = false
+  do
+    local ok, EncounterManager = pcall(require, "core.EncounterManager")
+    if ok and EncounterManager and EncounterManager.getCurrentEncounter then
+      local enc = EncounterManager.getCurrentEncounter()
+      isEliteEncounter = enc and enc.elite == true
+    end
+  end
+  local eliteHpMultiplier = 1.0
+  if isEliteEncounter then
+    local RelicSystem = require("core.RelicSystem")
+    if RelicSystem and RelicSystem.getEliteEnemyHpMultiplier then
+      eliteHpMultiplier = RelicSystem.getEliteEnemyHpMultiplier() or 1.0
+    end
+  end
+  
+  -- Create a modified battle profile copy with reduced HP for elite encounters
+  -- This ensures both BattleScene and BattleState use the same modified values
+  local modifiedProfile = battleProfile
+  if isEliteEncounter and eliteHpMultiplier ~= 1.0 and battleProfile.enemies then
+    modifiedProfile = {}
+    for k, v in pairs(battleProfile) do
+      modifiedProfile[k] = v
+    end
+    modifiedProfile.enemies = {}
+    for i, enemyConfig in ipairs(battleProfile.enemies) do
+      local modifiedEnemy = {}
+      for k, v in pairs(enemyConfig) do
+        modifiedEnemy[k] = v
+      end
+      if modifiedEnemy.maxHP then
+        modifiedEnemy.maxHP = math.max(1, math.floor(modifiedEnemy.maxHP * eliteHpMultiplier + 0.5))
+      end
+      table.insert(modifiedProfile.enemies, modifiedEnemy)
+    end
+  end
+  
   -- Initialize enemies from battle profile
   self.enemies = {}
-  local maxAvailableEnemies = battleProfile.enemies and #battleProfile.enemies or 0
+  local maxAvailableEnemies = modifiedProfile.enemies and #modifiedProfile.enemies or 0
   
   -- Use enemyCount from battle profile if specified, otherwise randomize (for backward compatibility)
   local enemyCount
-  if battleProfile.enemyCount and battleProfile.enemyCount > 0 then
+  if modifiedProfile.enemyCount and modifiedProfile.enemyCount > 0 then
     -- Use the specified enemy count from the battle profile
-    enemyCount = math.min(battleProfile.enemyCount, maxAvailableEnemies)
+    enemyCount = math.min(modifiedProfile.enemyCount, maxAvailableEnemies)
   else
     -- Fallback: Randomize enemy count between 1-3 for old battle profiles
     local randomEnemyCount = love.math.random(1, 3)
@@ -260,16 +298,30 @@ function BattleScene:load(bounds, battleProfile)
   end
   
   -- Select enemies sequentially from the battle profile (respects encounter order)
-  if battleProfile.enemies and maxAvailableEnemies > 0 then
+  if modifiedProfile.enemies and maxAvailableEnemies > 0 then
     for i = 1, enemyCount do
-      if battleProfile.enemies[i] then
-        local enemy = createEnemyFromConfig(battleProfile.enemies[i], i)
+      if modifiedProfile.enemies[i] then
+        local enemyConfig = modifiedProfile.enemies[i]
+        local enemy = createEnemyFromConfig(enemyConfig, i)
         table.insert(self.enemies, enemy)
       end
     end
   end
 
-  self:_ensureBattleState(battleProfile)
+  self:_ensureBattleState(modifiedProfile)
+  
+  -- Apply elite HP reduction to BattleState enemies directly
+  -- This ensures BattleState has the correct HP values matching our modified profile
+  if isEliteEncounter and eliteHpMultiplier ~= 1.0 and self.battleState and self.battleState.enemies and modifiedProfile.enemies then
+    for i, stateEnemy in ipairs(self.battleState.enemies) do
+      local modifiedEnemyConfig = modifiedProfile.enemies[i]
+      if modifiedEnemyConfig and modifiedEnemyConfig.maxHP then
+        stateEnemy.maxHP = modifiedEnemyConfig.maxHP
+        stateEnemy.hp = math.min(stateEnemy.hp or stateEnemy.maxHP, modifiedEnemyConfig.maxHP)
+      end
+    end
+  end
+  
   self:_syncEnemiesFromState()
   self:_syncPlayerFromState()
   
