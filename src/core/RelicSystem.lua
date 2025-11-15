@@ -108,6 +108,25 @@ function RelicSystem.getEliteEnemyHpMultiplier()
   return multiplier
 end
 
+-- Returns the total bonus damage to add to orb base damage
+-- @param baseValue number - The base damage value from the projectile
+-- @param context table|nil - Optional context (projectileId, etc.)
+-- @return number - The bonus damage to add
+function RelicSystem.getOrbBaseDamageBonus(baseValue, context)
+  local bonus = 0
+  forEachEffect("orb_base_damage_bonus", function(effect)
+    local mode = effect.mode or "add"
+    if mode == "add" then
+      bonus = bonus + (tonumber(effect.value) or 0)
+    elseif mode == "multiply" then
+      -- For multiply mode, apply to base value
+      local mult = tonumber(effect.value) or 1.0
+      bonus = bonus + ((baseValue or 0) * (mult - 1.0))
+    end
+  end, context)
+  return bonus
+end
+
 function RelicSystem.debugEquip(id)
   local player = PlayerState.getInstance and PlayerState.getInstance()
   if player and player.addRelic then

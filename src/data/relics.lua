@@ -88,6 +88,25 @@ local CATALOG = {
       },
     },
   },
+  power_core = {
+    id = "power_core",
+    name = "Power Core",
+    rarity = relics.Rarity.RARE,
+    slot = "passive",
+    type = "passive",
+    icon = "assets/images/relics/power_core.png",
+    tags = { "offense", "orb" },
+    description = "+1 base damage to all your orbs.",
+    flavor = "A crystalline core that resonates with every projectile, sharpening their impact.",
+    effects = {
+      {
+        trigger = "orb_base_damage_bonus",
+        mode = "add",
+        value = 1,
+        source = "power_core",
+      },
+    },
+  },
 }
 
 function relics.get(id)

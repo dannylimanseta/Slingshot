@@ -127,6 +127,16 @@ function BallManager:shoot(dirX, dirY, projectileId)
   local spritePath = projectileData and projectileData.icon or nil
   local baseDamage = (effective and effective.baseDamage) or ((config.score and config.score.baseSeed) or 0)
   
+  -- Apply relic bonuses to base damage
+  local RelicSystem = require("core.RelicSystem")
+  if RelicSystem and RelicSystem.getOrbBaseDamageBonus then
+    local bonus = RelicSystem.getOrbBaseDamageBonus(baseDamage, {
+      projectileId = projectileId,
+      projectileData = projectileData,
+    })
+    baseDamage = baseDamage + bonus
+  end
+  
   -- Create balls based on projectile type
   local spawnedBalls = {}
   local totalDamage = 0
