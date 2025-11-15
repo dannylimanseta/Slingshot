@@ -33,6 +33,9 @@ function InventoryScene.new()
     mouse = { x = 0, y = 0 },
     hoveredIndex = nil,
     fadeInAlpha = 0,
+    _itemHoverProgress = {}, -- Track hover progress for each item
+    _itemScale = {}, -- Track scale for each item
+    _glowTime = 0, -- For pulsing glow animation
     sidebarImage = nil,
     titleFont = nil,
     closeFont = nil,
@@ -163,6 +166,7 @@ end
 
 function InventoryScene:update(dt)
   self.time = self.time + dt
+  self._glowTime = (self._glowTime or 0) + dt
   
   -- Fade in animation
   self.fadeInAlpha = math.min(1, self.fadeInAlpha + dt * 3)
@@ -177,6 +181,7 @@ function InventoryScene:update(dt)
   
   self:_clampScroll()
   self:_updateHoverFromMouse()
+  self:_updateItemHoverStates(dt)
   
   return nil
 end
@@ -191,7 +196,10 @@ function InventoryScene:_clampScroll()
   
   local rows = math.ceil(#ownedRelics / self.gridColumns)
   local nameFont = theme.fonts.small or theme.fonts.base
-  local itemHeight = self.gridIconSize + 10 + nameFont:getHeight()
+  local paddingTop = 12
+  local paddingBottom = 12
+  local iconNameSpacing = 12
+  local itemHeight = paddingTop + self.gridIconSize + iconNameSpacing + nameFont:getHeight() + paddingBottom
   local contentHeight = rows * (itemHeight + self.gridIconSpacing)
   local maxScroll = math.max(0, contentHeight - gridHeight)
   
@@ -212,20 +220,51 @@ function InventoryScene:_updateHoverFromMouse()
     local col = ((i - 1) % self.gridColumns)
     local row = math.floor((i - 1) / self.gridColumns)
     local nameFont = theme.fonts.small or theme.fonts.base
-    local itemHeight = self.gridIconSize + 10 + nameFont:getHeight()
-    local x = gridStartX + col * (self.gridIconSize + self.gridIconSpacing)
+    local paddingTop = 12
+    local paddingBottom = 12
+    local iconNameSpacing = 12
+    local itemHeight = paddingTop + self.gridIconSize + iconNameSpacing + nameFont:getHeight() + paddingBottom
+    local itemW = self.gridIconSize * 1.5 -- Increased width by 50%
+    local baseX = gridStartX + col * (itemW + self.gridIconSpacing) -- Use wider box width for spacing
+    local x = baseX
     local y = gridStartY + row * (itemHeight + self.gridIconSpacing) - self.scroll.y
     
-    local iconX = x
-    local iconY = y
-    local iconW = self.gridIconSize
-    local iconH = itemHeight
+    local itemH = itemHeight
     
-    if self.mouse.x >= iconX and self.mouse.x <= iconX + iconW and
-       self.mouse.y >= iconY and self.mouse.y <= iconY + iconH then
+    if self.mouse.x >= x and self.mouse.x <= x + itemW and
+       self.mouse.y >= y and self.mouse.y <= y + itemH then
       self.hoveredIndex = i
       break
     end
+  end
+end
+
+function InventoryScene:_updateItemHoverStates(dt)
+  local ownedRelics = self:_getOwnedRelics()
+  
+  for i = 1, #ownedRelics do
+    local isHovered = (i == self.hoveredIndex)
+    local isSelected = (i == self.selectedIndex)
+    
+    -- Initialize hover progress if needed
+    if not self._itemHoverProgress[i] then
+      self._itemHoverProgress[i] = 0
+    end
+    if not self._itemScale[i] then
+      self._itemScale[i] = 1.0
+    end
+    
+    -- Update hover progress (smooth tween)
+    local targetProgress = (isHovered or isSelected) and 1.0 or 0.0
+    local currentProgress = self._itemHoverProgress[i]
+    local diff = targetProgress - currentProgress
+    self._itemHoverProgress[i] = currentProgress + diff * math.min(1, 10 * dt)
+    
+    -- Update scale (expand on hover/select)
+    local targetScale = (isHovered or isSelected) and 1.05 or 1.0
+    local currentScale = self._itemScale[i]
+    local scaleDiff = targetScale - currentScale
+    self._itemScale[i] = currentScale + scaleDiff * math.min(1, 10 * dt)
   end
 end
 
@@ -280,55 +319,107 @@ function InventoryScene:_drawGrid(ownedRelics, alpha)
   local gridStartX = self.gridPadding
   local gridStartY = 140
   local nameFont = theme.fonts.small or theme.fonts.base
-  local itemHeight = self.gridIconSize + 10 + nameFont:getHeight()
+  local paddingTop = 12
+  local paddingBottom = 12
+  local iconNameSpacing = 12
+  local itemHeight = paddingTop + self.gridIconSize + iconNameSpacing + nameFont:getHeight() + paddingBottom
+  local itemW = self.gridIconSize * 1.5 -- Wider box width
   
   for i, relicDef in ipairs(ownedRelics) do
     local col = ((i - 1) % self.gridColumns)
     local row = math.floor((i - 1) / self.gridColumns)
-    local x = gridStartX + col * (self.gridIconSize + self.gridIconSpacing)
-    local y = gridStartY + row * (itemHeight + self.gridIconSpacing) - self.scroll.y
+    local baseX = gridStartX + col * (itemW + self.gridIconSpacing) -- Use wider box width for spacing
+    local baseY = gridStartY + row * (itemHeight + self.gridIconSpacing) - self.scroll.y
     
     -- Only draw if visible
-    if y + itemHeight >= gridStartY - 50 and y <= vh + 50 then
+    if baseY + itemHeight >= gridStartY - 50 and baseY <= vh + 50 then
       local isSelected = (i == self.selectedIndex)
       local isHovered = (i == self.hoveredIndex)
+      local hoverProgress = self._itemHoverProgress[i] or 0
+      local itemScale = self._itemScale[i] or 1.0
       
-      -- Draw background for selected item (darker background)
-      if isSelected then
-        love.graphics.setColor(0.15, 0.15, 0.18, alpha * 0.8)
-        love.graphics.rectangle("fill", x - 4, y - 4, self.gridIconSize + 8, itemHeight + 8, 4, 4)
+      -- Calculate scaled dimensions and position (centered scaling)
+      local itemH = itemHeight
+      local scaledW = itemW * itemScale
+      local scaledH = itemH * itemScale
+      local boxX = baseX -- Left edge of the box (already positioned correctly)
+      local x = boxX + (itemW - scaledW) * 0.5 -- Scaled box position
+      local y = baseY + (itemH - scaledH) * 0.5
+      local centerX = boxX + itemW * 0.5 -- Center of the wider box
+      local centerY = baseY + itemH * 0.5
+      
+      -- Draw rounded box background (covers both icon and name)
+      local bgAlpha = isSelected and 0.8 or (isHovered and 0.6 or 0.4)
+      love.graphics.setColor(0, 0, 0, bgAlpha * alpha)
+      love.graphics.rectangle("fill", x, y, scaledW, scaledH, 10, 10)
+      
+      -- Draw border
+      local borderAlpha = isSelected and 1.0 or (isHovered and 0.6 or 0.3)
+      love.graphics.setColor(1, 1, 1, borderAlpha * alpha)
+      love.graphics.setLineWidth(2)
+      love.graphics.rectangle("line", x, y, scaledW, scaledH, 10, 10)
+      love.graphics.setLineWidth(1)
+      
+      -- Draw glow effect (similar to reward buttons)
+      if hoverProgress > 0.01 then
+        love.graphics.push()
+        love.graphics.translate(centerX, centerY)
+        love.graphics.scale(itemScale, itemScale)
+        love.graphics.setBlendMode("add")
+        
+        -- Pulsing animation
+        local pulseSpeed = 1.0
+        local pulseAmount = 0.15
+        local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
+        local baseAlpha = 0.12 * pulse * hoverProgress * alpha
+        local layers = {
+          { width = 4, alpha = 0.4 },
+          { width = 7, alpha = 0.25 },
+          { width = 10, alpha = 0.15 },
+        }
+        
+        for _, layer in ipairs(layers) do
+          local glowAlpha = baseAlpha * layer.alpha
+          if glowAlpha > 0 then
+            local glowWidth = layer.width * pulse
+            love.graphics.setColor(1, 1, 1, glowAlpha)
+            love.graphics.setLineWidth(glowWidth)
+            love.graphics.rectangle(
+              "line",
+              -itemW * 0.5 - glowWidth * 0.5,
+              -itemH * 0.5 - glowWidth * 0.5,
+              itemW + glowWidth,
+              itemH + glowWidth,
+              10 + glowWidth * 0.5,
+              10 + glowWidth * 0.5
+            )
+          end
+        end
+        
+        love.graphics.setBlendMode("alpha")
+        love.graphics.pop()
       end
       
-      -- Draw selection border (white, thicker)
-      if isSelected then
-        love.graphics.setColor(1, 1, 1, alpha)
-        love.graphics.setLineWidth(3)
-        love.graphics.rectangle("line", x - 2, y - 2, self.gridIconSize + 4, self.gridIconSize + 4, 2, 2)
-        love.graphics.setLineWidth(1)
-      end
-      
-      -- Draw icon
+      -- Draw icon (centered horizontally in the wider box)
       if relicDef.icon then
         local ok, iconImg = pcall(love.graphics.newImage, relicDef.icon)
         if ok and iconImg then
           local iconScale = self.gridIconSize / math.max(iconImg:getWidth(), iconImg:getHeight())
-          local iconAlpha = alpha
-          if isHovered and not isSelected then
-            iconAlpha = alpha * 0.85
-          end
-          love.graphics.setColor(1, 1, 1, iconAlpha)
-          love.graphics.draw(iconImg, x, y, 0, iconScale, iconScale)
+          local iconX = boxX + (itemW - self.gridIconSize) * 0.5 -- Center icon horizontally in wider box
+          local iconY = baseY + paddingTop
+          love.graphics.setColor(1, 1, 1, alpha)
+          love.graphics.draw(iconImg, iconX, iconY, 0, iconScale, iconScale)
         end
       end
       
-      -- Draw name below icon (small font, white)
+      -- Draw name below icon (centered horizontally in the wider box)
       local nameFont = theme.fonts.small or theme.fonts.base
       love.graphics.setFont(nameFont)
       local name = relicDef.name or relicDef.id
       local nameW = nameFont:getWidth(name)
-      local nameX = x + (self.gridIconSize - nameW) * 0.5
-      local nameY = y + self.gridIconSize + 6
-      local nameAlpha = isSelected and alpha or alpha * 0.75
+      local nameX = boxX + (itemW - nameW) * 0.5 -- Center name horizontally in wider box
+      local nameY = baseY + paddingTop + self.gridIconSize + iconNameSpacing
+      local nameAlpha = (isSelected or isHovered) and alpha or alpha * 0.8
       love.graphics.setColor(1, 1, 1, nameAlpha)
       love.graphics.print(name, nameX, nameY)
     end
@@ -498,7 +589,10 @@ function InventoryScene:_ensureSelectedVisible()
   local gridStartY = 140
   local gridEndY = vh - 40
   local nameFont = theme.fonts.small or theme.fonts.base
-  local itemHeight = self.gridIconSize + 10 + nameFont:getHeight()
+  local paddingTop = 12
+  local paddingBottom = 12
+  local iconNameSpacing = 12
+  local itemHeight = paddingTop + self.gridIconSize + iconNameSpacing + nameFont:getHeight() + paddingBottom
   
   local row = math.floor((self.selectedIndex - 1) / self.gridColumns)
   local itemY = gridStartY + row * (itemHeight + self.gridIconSpacing) - self.scroll.y
@@ -527,15 +621,20 @@ function InventoryScene:mousepressed(x, y, button)
     local gridStartX = self.gridPadding
     local gridStartY = 140
     local nameFont = theme.fonts.small or theme.fonts.base
-    local itemHeight = self.gridIconSize + 10 + nameFont:getHeight()
+    local paddingTop = 12
+    local paddingBottom = 12
+    local iconNameSpacing = 12
+    local itemHeight = paddingTop + self.gridIconSize + iconNameSpacing + nameFont:getHeight() + paddingBottom
     
     for i, relicDef in ipairs(ownedRelics) do
       local col = ((i - 1) % self.gridColumns)
       local row = math.floor((i - 1) / self.gridColumns)
-      local itemX = gridStartX + col * (self.gridIconSize + self.gridIconSpacing)
+      local itemW = self.gridIconSize * 1.5 -- Increased width by 50%
+      local baseX = gridStartX + col * (itemW + self.gridIconSpacing) -- Use wider box width for spacing
+      local itemX = baseX
       local itemY = gridStartY + row * (itemHeight + self.gridIconSpacing) - self.scroll.y
       
-      if x >= itemX and x <= itemX + self.gridIconSize and
+      if x >= itemX and x <= itemX + itemW and
          y >= itemY and y <= itemY + itemHeight then
         self.selectedIndex = i
         self:_ensureSelectedVisible()
