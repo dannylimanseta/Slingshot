@@ -78,7 +78,7 @@ function MapController:keypressed(key, scancode, isRepeat)
     end
     return "open_encounter_select"
   end
-
+  
   -- Handle R key to open relic select debug menu
   if key == "r" and not isRepeat then
     if s._orbsUIOpen then

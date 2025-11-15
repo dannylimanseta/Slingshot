@@ -3,6 +3,7 @@ local theme = require("theme")
 local RewardsBackdropShader = require("utils.RewardsBackdropShader")
 local Button = require("ui.Button")
 local TopBar = require("ui.TopBar")
+local relics = require("data.relics")
 
 local RewardsScene = {}
 RewardsScene.__index = RewardsScene
@@ -34,6 +35,20 @@ function RewardsScene.new(params)
     _glowFadeAlpha = 1.0, -- Fade alpha for currently selected glow (0 to 1)
     _prevGlowFadeAlpha = 0.0, -- Fade alpha for previously selected glow (fades out)
     _glowFadeSpeed = 8.0, -- Speed of fade in/out
+    -- Relic reward state
+    relicButton = nil,
+    relicIcon = nil,
+    _relicButtonClaimed = false,
+    _relicRewardEligible = false,
+    _pendingRelicReward = nil,
+    _relicFadeInAlpha = 0,
+    _relicButtonFadeAlpha = 1.0,
+    _relicClaimedTimer = 0,
+    _relicClaimedName = nil,
+    _relicDescription = nil,
+    _relicFlavor = nil,
+    _lastRelicReward = nil,
+    _removeRelicButtonOnReturn = nil,
   }, RewardsScene)
 end
 
@@ -84,6 +99,42 @@ local function createRewardButtonLayout(vw, vh, rowIndex, dt, mouseX, mouseY)
     button:setLayout(bx, by, bw, buttonHeight)
     button:update(dt, mouseX, mouseY)
   end
+end
+
+local function pickRelicReward()
+  local list = relics.list() or {}
+  if #list == 0 then return nil end
+
+  local PlayerState = require("core.PlayerState")
+  local playerState = PlayerState.getInstance and PlayerState.getInstance()
+  local owned = {}
+  if playerState and playerState.getRelicState then
+    local relicState = playerState:getRelicState()
+    owned = relicState and relicState.owned or {}
+  end
+
+  local candidates = {}
+  for _, relicDef in ipairs(list) do
+    if not owned or owned[relicDef.id] ~= true then
+      table.insert(candidates, relicDef)
+    end
+  end
+
+  if #candidates == 0 then
+    return nil
+  end
+
+  local idx = love.math.random(1, #candidates)
+  return candidates[idx]
+end
+
+local function loadRelicIcon(relicDef)
+  if not relicDef or not relicDef.icon then return nil end
+  local ok, img = pcall(love.graphics.newImage, relicDef.icon)
+  if ok then
+    return img
+  end
+  return nil
 end
 
 function RewardsScene:load()
@@ -137,6 +188,39 @@ function RewardsScene:load()
   )
   -- Grey out orbs icon in top bar on rewards screen
   if self.topBar then self.topBar.disableOrbsIcon = true end
+
+  -- Relic reward setup
+  self.relicButton = nil
+  self.relicIcon = nil
+  self._relicRewardEligible = (self.params and self.params.relicRewardEligible == true) or false
+  self._pendingRelicReward = nil
+  self._lastRelicReward = nil
+  self._relicButtonClaimed = false
+  self._relicFadeInAlpha = 0
+  self._relicButtonFadeAlpha = 1.0
+  self._relicClaimedTimer = 0
+  self._relicClaimedName = nil
+  self._relicDescription = nil
+  self._relicFlavor = nil
+  if self._relicRewardEligible then
+    local relicDef = pickRelicReward()
+    if relicDef then
+      self._pendingRelicReward = relicDef
+      self._relicDescription = relicDef.description or ""
+      self._relicFlavor = relicDef.flavor or ""
+      self.relicIcon = loadRelicIcon(relicDef)
+      local buttonLabel = relicDef.name or relicDef.id
+      self.relicButton = createRewardButton(
+        buttonLabel,
+        self.relicIcon,
+        function()
+          self:_claimRelicReward()
+        end
+      )
+    else
+      self._relicRewardEligible = false
+    end
+  end
   
   -- Initialize top bar gold override to pre-reward amount
   do
@@ -160,6 +244,12 @@ function RewardsScene:update(dt)
   self.time = self.time + dt
   self._uiFadeTimer = self._uiFadeTimer + dt
   self._glowTime = (self._glowTime or 0) + dt
+  if self._relicClaimedTimer and self._relicClaimedTimer > 0 then
+    self._relicClaimedTimer = math.max(0, self._relicClaimedTimer - dt)
+  end
+  if self._relicButtonClaimed and self.relicButton then
+    self._relicButtonFadeAlpha = math.max(0, (self._relicButtonFadeAlpha or 0) - dt * 3)
+  end
   if self.shader then
     local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
     local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
@@ -209,6 +299,11 @@ function RewardsScene:update(dt)
     self.orbButton = nil
     self._removeOrbButtonOnReturn = nil
   end
+
+  if self._removeRelicButtonOnReturn then
+    self.relicButton = nil
+    self._removeRelicButtonOnReturn = nil
+  end
   
   -- Dynamic row index for stacking buttons from top to bottom
   local nextRowIndex = 0
@@ -216,6 +311,7 @@ function RewardsScene:update(dt)
   -- Build list of available buttons in order (for keyboard navigation)
   local buttons = {}
   if self.orbButton then table.insert(buttons, self.orbButton) end
+  if self.relicButton and not self._relicButtonClaimed then table.insert(buttons, self.relicButton) end
   if self.goldButton and not self._goldButtonClicked then table.insert(buttons, self.goldButton) end
   if self.skipButton then table.insert(buttons, self.skipButton) end
   
@@ -242,6 +338,16 @@ function RewardsScene:update(dt)
     self._prevGlowFadeAlpha = self._prevGlowFadeAlpha + prevDiff * math.min(1, self._glowFadeSpeed * dt)
   end
   
+  local function buttonIndexOf(target)
+    if not target then return nil end
+    for idx, btn in ipairs(buttons) do
+      if btn == target then
+        return idx
+      end
+    end
+    return nil
+  end
+  
   -- Layout orb button if present
   if self.orbButton then
     local layoutRow = createRewardButtonLayout(vw, vh, nextRowIndex, dt, self._mouseX, self._mouseY)
@@ -251,9 +357,10 @@ function RewardsScene:update(dt)
       -- Detect any mouse hover among buttons (orb/gold/skip)
       local anyMouseHovered = false
       if self.orbButton then anyMouseHovered = anyMouseHovered or (self.orbButton._hovered == true) end
+      if self.relicButton and not self._relicButtonClaimed then anyMouseHovered = anyMouseHovered or (self.relicButton._hovered == true) end
       if self.goldButton and not self._goldButtonClicked then anyMouseHovered = anyMouseHovered or (self.goldButton._hovered == true) end
       if self.skipButton then anyMouseHovered = anyMouseHovered or (self.skipButton._hovered == true) end
-      local buttonIndex = 1
+      local buttonIndex = buttonIndexOf(self.orbButton) or 1
       local wasSelected = (self._prevSelectedIndex == buttonIndex and self._selectedIndex ~= buttonIndex)
       local mouseHovered = self.orbButton._hovered -- preserve value set by Button:update
       self.orbButton._keySelected = (self._selectedIndex == buttonIndex)
@@ -266,6 +373,35 @@ function RewardsScene:update(dt)
       self.orbButton._hoverProgress = hp + (target - hp) * math.min(1, 10 * dt)
       -- Scale with tweened hover
       self.orbButton._scale = 1.0 + 0.05 * (self.orbButton._hoverProgress or 0)
+    end
+    nextRowIndex = nextRowIndex + 1
+  end
+  
+  if self.relicButton then
+    local layoutRelicButton = createRewardButtonLayout(vw, vh, nextRowIndex, dt, self._mouseX, self._mouseY)
+    layoutRelicButton(self.relicButton)
+    if self._relicButtonClaimed then
+      self.relicButton._hovered = false
+      self.relicButton._hoverProgress = 0
+      self.relicButton._scale = 1.0
+    elseif #buttons > 0 then
+      local buttonIndex = buttonIndexOf(self.relicButton)
+      if buttonIndex then
+        local anyMouseHovered = false
+        if self.orbButton then anyMouseHovered = anyMouseHovered or (self.orbButton._hovered == true) end
+        if self.relicButton then anyMouseHovered = anyMouseHovered or (self.relicButton._hovered == true) end
+        if self.goldButton and not self._goldButtonClicked then anyMouseHovered = anyMouseHovered or (self.goldButton._hovered == true) end
+        if self.skipButton then anyMouseHovered = anyMouseHovered or (self.skipButton._hovered == true) end
+        local wasSelected = (self._prevSelectedIndex == buttonIndex and self._selectedIndex ~= buttonIndex)
+        local mouseHovered = self.relicButton._hovered
+        self.relicButton._keySelected = (self._selectedIndex == buttonIndex)
+        self.relicButton._wasSelected = wasSelected
+        self.relicButton._hovered = mouseHovered or (self.relicButton._keySelected and not anyMouseHovered)
+        local hp = self.relicButton._hoverProgress or 0
+        local target = self.relicButton._hovered and 1 or 0
+        self.relicButton._hoverProgress = hp + (target - hp) * math.min(1, 10 * dt)
+        self.relicButton._scale = 1.0 + 0.05 * (self.relicButton._hoverProgress or 0)
+      end
     end
     nextRowIndex = nextRowIndex + 1
   end
@@ -288,6 +424,7 @@ function RewardsScene:update(dt)
       -- Detect any mouse hover among buttons
       local anyMouseHovered = false
       if self.orbButton then anyMouseHovered = anyMouseHovered or (self.orbButton._hovered == true) end
+      if self.relicButton and not self._relicButtonClaimed then anyMouseHovered = anyMouseHovered or (self.relicButton._hovered == true) end
       if self.goldButton and not self._goldButtonClicked then anyMouseHovered = anyMouseHovered or (self.goldButton._hovered == true) end
       if self.skipButton then anyMouseHovered = anyMouseHovered or (self.skipButton._hovered == true) end
       self.skipButton._keySelected = (self._selectedIndex == buttonIndex)
@@ -329,12 +466,13 @@ function RewardsScene:update(dt)
     layoutGoldButton(self.goldButton)
     -- Set hover state based on keyboard selection
     if #buttons > 0 and not self._goldButtonClicked then
-      local buttonIndex = (self.orbButton and 2 or 1)
+      local buttonIndex = buttonIndexOf(self.goldButton) or 1
       local wasSelected = (self._prevSelectedIndex == buttonIndex and self._selectedIndex ~= buttonIndex)
       local mouseHovered = self.goldButton._hovered
       -- Detect any mouse hover among buttons
       local anyMouseHovered = false
       if self.orbButton then anyMouseHovered = anyMouseHovered or (self.orbButton._hovered == true) end
+      if self.relicButton and not self._relicButtonClaimed then anyMouseHovered = anyMouseHovered or (self.relicButton._hovered == true) end
       if self.goldButton and not self._goldButtonClicked then anyMouseHovered = anyMouseHovered or (self.goldButton._hovered == true) end
       if self.skipButton then anyMouseHovered = anyMouseHovered or (self.skipButton._hovered == true) end
       self.goldButton._keySelected = (self._selectedIndex == buttonIndex)
@@ -348,7 +486,7 @@ function RewardsScene:update(dt)
     nextRowIndex = nextRowIndex + 1
   end
   
-  -- Compute staged fade-in alphas (top-to-bottom: orb, gold, skip)
+  -- Compute staged fade-in alphas (top-to-bottom: orb, relic, gold, skip)
   do
     local idx = 0
     local function easeOut(a)
@@ -362,6 +500,17 @@ function RewardsScene:update(dt)
     end
     if self.orbButton then
       self.orbButton.alpha = alphaFor(idx); idx = idx + 1
+    end
+    if self.relicButton then
+      self._relicFadeInAlpha = alphaFor(idx)
+      local fadeAlpha = self._relicFadeInAlpha
+      if self._relicButtonClaimed then
+        fadeAlpha = fadeAlpha * (self._relicButtonFadeAlpha or 1)
+      end
+      self.relicButton.alpha = fadeAlpha
+      idx = idx + 1
+    else
+      self._relicFadeInAlpha = 0
     end
     if self.goldButton then
       self._goldFadeInAlpha = alphaFor(idx); idx = idx + 1
@@ -483,6 +632,25 @@ function RewardsScene:draw()
   love.graphics.setFont(theme.fonts.base)
   love.graphics.pop()
 
+  -- Relic info / toast
+  local infoFont = theme.fonts.small or theme.fonts.base
+  love.graphics.setFont(infoFont)
+  if self._pendingRelicReward then
+    local name = self._pendingRelicReward.name or self._pendingRelicReward.id
+    love.graphics.setColor(0.78, 0.92, 1.0, 0.85)
+    love.graphics.print("Elite reward available: " .. tostring(name), 48, 48)
+    if self._relicDescription and self._relicDescription ~= "" then
+      love.graphics.setColor(1, 1, 1, 0.65)
+      love.graphics.printf(self._relicDescription, 48, 72, vw * 0.35, "left")
+    end
+  elseif self._relicClaimedTimer and self._relicClaimedTimer > 0 and self._relicClaimedName then
+    local alphaClaim = 0.6 * (self._relicClaimedTimer / 3.0) + 0.2
+    love.graphics.setColor(0.6, 0.96, 0.72, alphaClaim)
+    love.graphics.print("Relic acquired: " .. tostring(self._relicClaimedName), 48, 48)
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.setFont(theme.fonts.base)
+
   -- Reward option button
   if self.orbButton then
     self.orbButton:draw()
@@ -518,6 +686,49 @@ function RewardsScene:draw()
       
       love.graphics.setBlendMode("alpha")
       love.graphics.pop()
+    end
+  end
+  
+  if self.relicButton then
+    local visibleAlpha = self.relicButton.alpha or 1
+    if visibleAlpha > 0.01 then
+      self.relicButton:draw()
+      if (self.relicButton._hovered and not self._relicButtonClaimed) or (self.relicButton._wasSelected and self._prevGlowFadeAlpha > 0) then
+        love.graphics.push()
+        local cx = self.relicButton.x + self.relicButton.w * 0.5
+        local cy = self.relicButton.y + self.relicButton.h * 0.5
+        local s = self.relicButton._scale or 1.0
+        love.graphics.translate(cx, cy)
+        love.graphics.scale(s, s)
+        love.graphics.setBlendMode("add")
+
+        local pulseSpeed = 1.0
+        local pulseAmount = 0.15
+        local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
+
+        local fadeAlpha = self.relicButton._wasSelected and self._prevGlowFadeAlpha or (self._glowFadeAlpha * (self.relicButton._hoverProgress or 0))
+        local baseAlpha = 0.12 * visibleAlpha * fadeAlpha
+        local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } }
+
+        for _, layer in ipairs(layers) do
+          local glowAlpha = baseAlpha * layer.alpha * pulse
+          if glowAlpha > 0 then
+            local glowWidth = layer.width * pulse
+            love.graphics.setColor(1, 1, 1, glowAlpha)
+            love.graphics.setLineWidth(glowWidth)
+            love.graphics.rectangle("line",
+              -self.relicButton.w * 0.5 - glowWidth * 0.5,
+              -self.relicButton.h * 0.5 - glowWidth * 0.5,
+              self.relicButton.w + glowWidth,
+              self.relicButton.h + glowWidth,
+              Button.defaults.cornerRadius + glowWidth * 0.5,
+              Button.defaults.cornerRadius + glowWidth * 0.5)
+          end
+        end
+
+        love.graphics.setBlendMode("alpha")
+        love.graphics.pop()
+      end
     end
   end
   
@@ -664,6 +875,7 @@ function RewardsScene:keypressed(key, scancode, isRepeat)
   -- Build list of available buttons in order (top to bottom)
   local buttons = {}
   if self.orbButton then table.insert(buttons, self.orbButton) end
+  if self.relicButton and not self._relicButtonClaimed then table.insert(buttons, self.relicButton) end
   if self.goldButton and not self._goldButtonClicked then table.insert(buttons, self.goldButton) end
   if self.skipButton then table.insert(buttons, self.skipButton) end
   
@@ -730,12 +942,55 @@ function RewardsScene:mousepressed(x, y, button)
       end
     end
     if self.orbButton and self.orbButton:mousepressed(x, y, button) then return nil end
+    if self.relicButton and not self._relicButtonClaimed and self.relicButton:mousepressed(x, y, button) then return nil end
     if self.skipButton and self.skipButton:mousepressed(x, y, button) then return nil end
   end
 end
 
 function RewardsScene:mousemoved(x, y, dx, dy, isTouch)
   self._mouseX, self._mouseY = x, y
+end
+
+function RewardsScene:_rebuildSelectionAfterClaim()
+  local count = 0
+  if self.orbButton then count = count + 1 end
+  if self.relicButton and not self._relicButtonClaimed then count = count + 1 end
+  if self.goldButton and not self._goldButtonClicked then count = count + 1 end
+  if self.skipButton then count = count + 1 end
+  if count > 0 then
+    self._selectedIndex = math.max(1, math.min(self._selectedIndex, count))
+    self._prevSelectedIndex = self._selectedIndex
+  else
+    self._selectedIndex = 0
+    self._prevSelectedIndex = 0
+  end
+end
+
+function RewardsScene:_claimRelicReward()
+  if self._relicButtonClaimed or not self._pendingRelicReward then return end
+  local PlayerState = require("core.PlayerState")
+  local playerState = PlayerState.getInstance()
+  if playerState and playerState.addRelic then
+    playerState:addRelic(self._pendingRelicReward.id)
+  end
+  self._lastRelicReward = self._pendingRelicReward
+  self._relicButtonClaimed = true
+  self._relicButtonFadeAlpha = 1.0
+  self._relicClaimedTimer = 3.0
+  local claimedName = self._pendingRelicReward.name or self._pendingRelicReward.id
+  self._relicClaimedName = claimedName
+  self._relicRewardEligible = false
+  if self.params then
+    self.params.relicRewardEligible = false
+  end
+  if self.relicButton then
+    self.relicButton.onClick = nil
+    self.relicButton.label = claimedName and ("Relic Claimed: " .. claimedName) or "Relic Claimed"
+    self.relicButton._hovered = false
+    self.relicButton.alpha = self._relicButtonFadeAlpha or 1
+  end
+  self._pendingRelicReward = nil
+  self:_rebuildSelectionAfterClaim()
 end
 
 -- Start coin animation from button to topbar

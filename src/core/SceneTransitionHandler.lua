@@ -11,6 +11,7 @@ local EncounterSelectScene = require("scenes.EncounterSelectScene")
 local RelicSelectScene = require("scenes.RelicSelectScene")
 local EventScene = require("scenes.EventScene")
 local RestSiteScene = require("scenes.RestSiteScene")
+local EncounterManager = require("core.EncounterManager")
 
 local SceneTransitionHandler = {}
 SceneTransitionHandler.__index = SceneTransitionHandler
@@ -74,7 +75,12 @@ function SceneTransitionHandler:handleReturnToMap(data)
     -- Ensure we use a transition when coming back from Rewards to the map
     self._pendingMapReturnWithTransition = true
     -- Show rewards scene before returning to map
-    local rewardsScene = RewardsScene.new({ goldReward = goldReward })
+    local encounter = EncounterManager.getCurrentEncounter()
+    local relicRewardEligible = encounter and encounter.elite == true
+    local rewardsScene = RewardsScene.new({
+      goldReward = goldReward,
+      relicRewardEligible = relicRewardEligible,
+    })
     self.sceneManager:set(rewardsScene)
     self.setCursorForScene(rewardsScene)
   else
@@ -127,6 +133,9 @@ function SceneTransitionHandler:handleOpenOrbReward(data)
     self.previousScene = self.sceneManager.currentScene
     if self.previousScene then
       self.previousScene._removeOrbButtonOnReturn = true
+      if self.previousScene._relicButtonClaimed then
+        self.previousScene._removeRelicButtonOnReturn = true
+      end
     end
   end
   
