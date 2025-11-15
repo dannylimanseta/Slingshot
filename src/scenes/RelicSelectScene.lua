@@ -177,7 +177,13 @@ function RelicSelectScene:_drawRelicList(listX, listY, listW, listH)
   local innerY = listY + padding
   local innerW = listW - padding * 2
 
-  love.graphics.setScissor(listX, listY, listW, listH)
+  -- Scale scissor coordinates by supersampling factor (scissor uses actual canvas pixels, not virtual resolution)
+  local supersamplingFactor = _G.supersamplingFactor or 1
+  local scissorX = listX * supersamplingFactor
+  local scissorY = listY * supersamplingFactor
+  local scissorW = listW * supersamplingFactor
+  local scissorH = listH * supersamplingFactor
+  love.graphics.setScissor(scissorX, scissorY, scissorW, scissorH)
   love.graphics.push()
   love.graphics.translate(0, -self.scroll.y)
 
