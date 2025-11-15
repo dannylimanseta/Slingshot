@@ -309,6 +309,24 @@ function SceneTransitionHandler:handleOpenRestSite()
   self.setCursorForScene(restSiteScene)
 end
 
+-- Transition: Open treasure reward scene
+function SceneTransitionHandler:handleOpenTreasureReward()
+  -- Save current map world position before switching scenes
+  if self.mapScene then
+    self.mapScene._savedWorldX = self.mapScene.playerWorldX
+    self.mapScene._savedWorldY = self.mapScene.playerWorldY
+  end
+  self.previousScene = self.mapScene
+  -- Treasure chests always give a relic reward (no orb or gold)
+  local rewardsScene = RewardsScene.new({
+    goldReward = 0,
+    relicRewardEligible = true,
+    showOrbReward = false, -- Treasure chests don't offer orb rewards
+  })
+  self.sceneManager:set(rewardsScene)
+  self.setCursorForScene(rewardsScene)
+end
+
 -- Main handler: processes transition results from scene updates/events
 function SceneTransitionHandler:handleTransition(result)
   if not result then return end
@@ -370,6 +388,8 @@ function SceneTransitionHandler:handleTransition(result)
       self:handleOpenEvent(result)
     elseif transitionType == "open_rest_site" then
       self:handleOpenRestSite()
+    elseif transitionType == "open_treasure_reward" then
+      self:handleOpenTreasureReward()
     end
   end
 end

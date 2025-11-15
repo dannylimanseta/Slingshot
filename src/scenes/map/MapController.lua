@@ -386,6 +386,8 @@ function MapController:update(deltaTime)
           local px4, py4 = s.mapManager:getPlayerWorldPosition(s.gridSize, s.offsetX, s.offsetY)
           s.playerWorldX = px4
           s.playerWorldY = py4
+          -- Trigger treasure reward scene
+          return { type = "open_treasure_reward" }
         elseif result == "rest_visited" then
           local px5, py5 = s.mapManager:getPlayerWorldPosition(s.gridSize, s.offsetX, s.offsetY)
           s.playerWorldX = px5

@@ -281,18 +281,24 @@ function RewardsScene:load()
   -- Build reward options dynamically
   self._rewardOptions = {}
   
-  -- Orb option
-  local orbButton = createRewardButton(
-    "Select an Orb Reward",
-    self.orbsIcon,
-    function()
-      self._selectedOrb = true
-    end
-  )
-  self:_addRewardOption(RewardsScene.OptionType.ORB, orbButton, {
-    fadeInIndex = 0,
-    allowHighlight = true,
-  })
+  -- Orb option (if enabled - default true for battle rewards, false for treasure)
+  local showOrbReward = true -- Default to true for battle rewards
+  if self.params and self.params.showOrbReward ~= nil then
+    showOrbReward = self.params.showOrbReward
+  end
+  if showOrbReward then
+    local orbButton = createRewardButton(
+      "Select an Orb Reward",
+      self.orbsIcon,
+      function()
+        self._selectedOrb = true
+      end
+    )
+    self:_addRewardOption(RewardsScene.OptionType.ORB, orbButton, {
+      fadeInIndex = 0,
+      allowHighlight = true,
+    })
+  end
   
   -- Relic option (if eligible)
   self._relicRewardEligible = (self.params and self.params.relicRewardEligible == true) or false
@@ -311,8 +317,10 @@ function RewardsScene:load()
           self:_claimRelicReward()
         end
       )
+      -- Adjust fadeInIndex based on whether orb option is shown
+      local relicFadeIndex = showOrbReward and 1 or 0
       self:_addRewardOption(RewardsScene.OptionType.RELIC, relicButton, {
-        fadeInIndex = 1,
+        fadeInIndex = relicFadeIndex,
         allowHighlight = true,
         onClaim = function()
           self:_claimRelicReward()
@@ -330,8 +338,10 @@ function RewardsScene:load()
     local goldButton = createRewardButton(goldText, self.goldIcon, function()
       self:_claimGoldReward(goldReward)
     end)
+    -- Adjust fadeInIndex based on what's shown before
+    local goldFadeIndex = (showOrbReward and 2) or (self._relicRewardEligible and 1) or 0
     self:_addRewardOption(RewardsScene.OptionType.GOLD, goldButton, {
-      fadeInIndex = 2,
+      fadeInIndex = goldFadeIndex,
       allowHighlight = true,
       onClaim = function()
         self:_claimGoldReward(goldReward)
@@ -349,8 +359,13 @@ function RewardsScene:load()
       self._exitRequested = true
     end,
   })
+  -- Calculate skip fadeInIndex based on number of options before it
+  local skipFadeIndex = 0
+  if showOrbReward then skipFadeIndex = skipFadeIndex + 1 end
+  if self._relicRewardEligible then skipFadeIndex = skipFadeIndex + 1 end
+  if goldReward > 0 then skipFadeIndex = skipFadeIndex + 1 end
   self:_addRewardOption(RewardsScene.OptionType.SKIP, skipButton, {
-    fadeInIndex = 3,
+    fadeInIndex = skipFadeIndex,
     allowHighlight = true,
     customLayout = true, -- Uses special bottom-center layout
   })
