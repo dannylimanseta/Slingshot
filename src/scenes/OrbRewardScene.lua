@@ -86,7 +86,10 @@ function OrbRewardScene:load()
   -- Fonts (same size as Rewards title ~50px, scaled for crisp rendering)
   self.titleFont = theme.newFont(50)
   -- Grey out orbs icon on orb reward screen
-  if self.topBar then self.topBar.disableOrbsIcon = true end
+  if self.topBar then 
+    self.topBar.disableOrbsIcon = true
+    self.topBar.disableInventoryIcon = true
+  end
 
   -- Build options
   local equipped, equippedSet = getEquipped()

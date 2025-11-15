@@ -126,26 +126,34 @@ function TopBar:draw()
   -- Draw inventory icon (to the left of orbs icon)
   if self.inventoryIcon then
     local iconPadding = 24
-    local iconSpacing = 12 -- Space between inventory and orbs icons
+    local iconSpacing = 32 -- Increased spacing between inventory and orbs icons
     -- Calculate position: orbs icon is at vw - iconPadding - iconSize
     -- Inventory icon is to the left of orbs icon
     local orbsIconX = vw - iconPadding - iconSize
     local inventoryIconX = orbsIconX - iconSize - iconSpacing
     local inventoryIconY = topPadding
     
-    -- Ensure we have valid coordinates
-    if inventoryIconX and inventoryIconY then
-      love.graphics.setColor(1, 1, 1, 1)
+    -- Grey out when disabled (similar to orbs icon logic)
+    if self.disableInventoryIcon then
+      love.graphics.setColor(1, 1, 1, 0.35)
       love.graphics.draw(self.inventoryIcon, inventoryIconX, inventoryIconY, 0, iconSize / self.inventoryIcon:getWidth(), iconSize / self.inventoryIcon:getHeight())
-      -- Store clickable bounds for MapScene (always set when icon exists)
-      self.inventoryIconBounds = {
-        x = inventoryIconX,
-        y = inventoryIconY,
-        w = iconSize,
-        h = iconSize
-      }
-    else
+      -- Do not expose clickable bounds when disabled
       self.inventoryIconBounds = nil
+    else
+      -- Ensure we have valid coordinates
+      if inventoryIconX and inventoryIconY then
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(self.inventoryIcon, inventoryIconX, inventoryIconY, 0, iconSize / self.inventoryIcon:getWidth(), iconSize / self.inventoryIcon:getHeight())
+        -- Store clickable bounds for MapScene
+        self.inventoryIconBounds = {
+          x = inventoryIconX,
+          y = inventoryIconY,
+          w = iconSize,
+          h = iconSize
+        }
+      else
+        self.inventoryIconBounds = nil
+      end
     end
   else
     self.inventoryIconBounds = nil

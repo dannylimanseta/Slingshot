@@ -8,6 +8,15 @@ local relics = require("data.relics")
 local RewardsScene = {}
 RewardsScene.__index = RewardsScene
 
+-- Rarity colors for tooltips
+local RARITY_COLORS = {
+  common = { 0.75, 0.75, 0.75, 1.0 },
+  uncommon = { 0.38, 0.78, 0.48, 1.0 },
+  rare = { 0.35, 0.58, 0.94, 1.0 },
+  epic = { 0.74, 0.46, 0.94, 1.0 },
+  legendary = { 0.98, 0.76, 0.32, 1.0 },
+}
+
 -- Reward option types
 RewardsScene.OptionType = {
   ORB = "orb",
@@ -78,6 +87,10 @@ function RewardsScene.new(params)
     _selectedOrb = false,
     _removeOrbButtonOnReturn = nil,
     _removeRelicButtonOnReturn = nil,
+    -- Tooltip state
+    _tooltipRelicId = nil, -- Currently hovered relic ID for tooltip
+    _tooltipHoverTime = 0, -- Time hovering over relic
+    _tooltipBounds = nil, -- Bounds of hovered button {x, y, w, h}
   }, RewardsScene)
 end
 
@@ -243,7 +256,10 @@ function RewardsScene:load()
   end
   
   -- Grey out orbs icon in top bar
-  if self.topBar then self.topBar.disableOrbsIcon = true end
+  if self.topBar then 
+    self.topBar.disableOrbsIcon = true
+    self.topBar.disableInventoryIcon = true
+  end
   
   -- Initialize gold display
   do
@@ -603,6 +619,9 @@ function RewardsScene:update(dt)
   -- Update coin animations
   self:_updateCoinAnimations(dt)
   
+  -- Update tooltip
+  self:_updateTooltip(dt)
+  
   -- Update gold counting
   if self._goldCounting and self.topBar then
     self._goldCountTime = self._goldCountTime + dt
@@ -733,6 +752,9 @@ function RewardsScene:draw()
   
   -- Draw coin animations
   self:_drawCoinAnimations()
+  
+  -- Draw tooltip (on top of everything)
+  self:_drawTooltip()
       end
       
 function RewardsScene:_drawButtonGlow(button)
@@ -923,6 +945,271 @@ function RewardsScene:_updateCoinAnimations(dt)
     end
   end
   
+function RewardsScene:_updateTooltip(dt)
+  if not self._pendingRelicReward then
+    -- No relic reward available, reset tooltip
+    self._tooltipRelicId = nil
+    self._tooltipHoverTime = 0
+    self._tooltipBounds = nil
+    return
+  end
+  
+  -- Find the relic button
+  local relicOption = nil
+  for _, option in ipairs(self._rewardOptions) do
+    if option.type == RewardsScene.OptionType.RELIC and option.state == "active" and option.button then
+      relicOption = option
+      break
+    end
+  end
+  
+  if not relicOption or not relicOption.button then
+    self._tooltipRelicId = nil
+    self._tooltipHoverTime = 0
+    self._tooltipBounds = nil
+    return
+  end
+  
+  local relicId = self._pendingRelicReward.id
+  local button = relicOption.button
+  
+  -- Check if hovering over the button
+  if button._hovered then
+    -- Check if hovering over the same relic
+    if self._tooltipRelicId == relicId then
+      -- Continue tracking hover time
+      self._tooltipHoverTime = self._tooltipHoverTime + dt
+      -- Update bounds from button
+      self._tooltipBounds = {
+        x = button.x,
+        y = button.y,
+        w = button.w,
+        h = button.h
+      }
+    else
+      -- New relic hovered, reset timer
+      self._tooltipRelicId = relicId
+      self._tooltipHoverTime = 0
+      self._tooltipBounds = {
+        x = button.x,
+        y = button.y,
+        w = button.w,
+        h = button.h
+      }
+    end
+  else
+    -- Not hovering, reset tooltip state
+    self._tooltipRelicId = nil
+    self._tooltipHoverTime = 0
+    self._tooltipBounds = nil
+  end
+end
+
+function RewardsScene:_drawTooltip()
+  -- Only show tooltip after 0.3s hover time
+  if not self._tooltipRelicId or self._tooltipHoverTime < 0.3 or not self._tooltipBounds or not self._pendingRelicReward then
+    return
+  end
+  
+  local relicDef = self._pendingRelicReward
+  if not relicDef then return end
+  
+  local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
+  local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
+  local bounds = self._tooltipBounds
+  
+  local font = theme.fonts.base
+  love.graphics.setFont(font)
+  
+  -- Icon size and padding
+  local iconSize = 48
+  local iconPadding = 8
+  local textPadding = 8
+  local padding = 8
+  
+  -- Load icon
+  local iconImg = nil
+  if relicDef.icon then
+    local ok, img = pcall(love.graphics.newImage, relicDef.icon)
+    if ok then iconImg = img end
+  end
+  
+  -- Build tooltip text (name + description)
+  local tooltipText = ""
+  if relicDef.name then
+    tooltipText = tooltipText .. relicDef.name
+  end
+  if relicDef.description then
+    if tooltipText ~= "" then
+      tooltipText = tooltipText .. "\n" .. relicDef.description
+    else
+      tooltipText = relicDef.description
+    end
+  end
+  
+  if tooltipText == "" then return end
+  
+  -- Calculate size with increased font size
+  local textLines = {}
+  for line in tooltipText:gmatch("[^\n]+") do
+    table.insert(textLines, line)
+  end
+  
+  local textScale = 0.75 -- Increased from 0.5
+  local maxTextW = 0
+  for _, line in ipairs(textLines) do
+    local w = font:getWidth(line) * textScale
+    if w > maxTextW then maxTextW = w end
+  end
+  
+  local baseTextH = font:getHeight() * #textLines
+  local textW = maxTextW
+  local textH = baseTextH * textScale
+  
+  -- Calculate tooltip dimensions (accounting for icon)
+  -- Limit text width to make tooltip less wide
+  local maxTextWidth = 200 -- Maximum text width
+  if textW > maxTextWidth then
+    textW = maxTextWidth
+  end
+  
+  local tooltipW = padding * 2
+  if iconImg then
+    tooltipW = tooltipW + iconSize + iconPadding
+  end
+  tooltipW = tooltipW + textW
+  
+  -- Calculate text wrap width first (needed for height calculation)
+  local availableTextWidth = tooltipW - padding * 2
+  if iconImg then
+    availableTextWidth = availableTextWidth - iconSize - iconPadding
+  end
+  local textWrapWidth = availableTextWidth / textScale
+  
+  -- Calculate actual wrapped text height
+  local wrappedTextHeight = 0
+  for _, line in ipairs(textLines) do
+    local wrappedLines = {}
+    local words = {}
+    for word in line:gmatch("%S+") do
+      table.insert(words, word)
+    end
+    local currentLine = ""
+    for _, word in ipairs(words) do
+      local testLine = currentLine == "" and word or currentLine .. " " .. word
+      if font:getWidth(testLine) <= textWrapWidth then
+        currentLine = testLine
+      else
+        if currentLine ~= "" then
+          table.insert(wrappedLines, currentLine)
+        end
+        currentLine = word
+      end
+    end
+    if currentLine ~= "" then
+      table.insert(wrappedLines, currentLine)
+    end
+    wrappedTextHeight = wrappedTextHeight + font:getHeight() * math.max(1, #wrappedLines)
+  end
+  
+  -- Recalculate tooltip height based on actual wrapped text
+  local actualTextH = wrappedTextHeight * textScale
+  tooltipH = padding * 2 + math.max(iconSize, actualTextH)
+  
+  -- Calculate position (to the left of the button)
+  local tooltipX = bounds.x - tooltipW - 30 -- 30px gap from button
+  local tooltipY = bounds.y + bounds.h * 0.5 - tooltipH * 0.5 -- Vertically centered with button
+  
+  -- Clamp to canvas bounds
+  local canvasLeft = 0
+  local canvasRight = vw
+  local canvasTop = 0
+  local canvasBottom = vh
+  
+  if tooltipX < canvasLeft then
+    -- If doesn't fit on left, show on right
+    tooltipX = bounds.x + bounds.w + 30
+  end
+  if tooltipX + tooltipW > canvasRight then
+    tooltipX = canvasRight - tooltipW
+  end
+  if tooltipY < canvasTop then
+    tooltipY = canvasTop + padding
+  end
+  if tooltipY + tooltipH > canvasBottom then
+    tooltipY = canvasBottom - tooltipH - padding
+  end
+  
+  -- Fade in
+  local fadeProgress = math.min(1.0, (self._tooltipHoverTime - 0.3) / 0.3)
+  
+  -- Draw background
+  love.graphics.setColor(0, 0, 0, 0.85 * fadeProgress)
+  love.graphics.rectangle("fill", tooltipX, tooltipY, tooltipW, tooltipH, 4, 4)
+  
+  -- Draw border
+  love.graphics.setColor(1, 1, 1, 0.3 * fadeProgress)
+  love.graphics.setLineWidth(1)
+  love.graphics.rectangle("line", tooltipX, tooltipY, tooltipW, tooltipH, 4, 4)
+  
+  -- Draw icon (top left)
+  if iconImg then
+    local iconX = tooltipX + padding
+    local iconY = tooltipY + padding
+    local iconScale = iconSize / math.max(iconImg:getWidth(), iconImg:getHeight())
+    love.graphics.setColor(1, 1, 1, fadeProgress)
+    love.graphics.draw(iconImg, iconX, iconY, 0, iconScale, iconScale)
+  end
+  
+  -- Draw text (to the right of icon, or left if no icon)
+  local textX = tooltipX + padding
+  if iconImg then
+    textX = textX + iconSize + iconPadding
+  end
+  local textY = tooltipY + padding
+  
+  love.graphics.push()
+  love.graphics.translate(textX, textY)
+  love.graphics.scale(textScale, textScale)
+  local currentY = 0
+  for i, line in ipairs(textLines) do
+    -- First line (name) can be colored by rarity
+    if i == 1 and relicDef.rarity then
+      local rarityColor = RARITY_COLORS[relicDef.rarity] or RARITY_COLORS.common
+      love.graphics.setColor(rarityColor[1], rarityColor[2], rarityColor[3], fadeProgress)
+    else
+      love.graphics.setColor(1, 1, 1, fadeProgress)
+    end
+    -- Use printf for text wrapping
+    love.graphics.printf(line, 0, currentY, textWrapWidth, "left")
+    -- Calculate wrapped height for this line
+    local wrappedLines = {}
+    local words = {}
+    for word in line:gmatch("%S+") do
+      table.insert(words, word)
+    end
+    local currentLine = ""
+    for _, word in ipairs(words) do
+      local testLine = currentLine == "" and word or currentLine .. " " .. word
+      if font:getWidth(testLine) <= textWrapWidth then
+        currentLine = testLine
+      else
+        if currentLine ~= "" then
+          table.insert(wrappedLines, currentLine)
+        end
+        currentLine = word
+      end
+    end
+    if currentLine ~= "" then
+      table.insert(wrappedLines, currentLine)
+    end
+    currentY = currentY + font:getHeight() * math.max(1, #wrappedLines)
+  end
+  love.graphics.pop()
+  
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
 function RewardsScene:_drawCoinAnimations()
   for _, coin in ipairs(self._coinAnimations) do
     if coin.t >= coin.delay and coin.image then

@@ -51,7 +51,10 @@ function RestSiteScene:load()
   self._selectedOrbIndex = nil
   self._selectedIndex = 1 -- Reset to first option
   -- Grey out orbs icon on rest site screens
-  if self.topBar then self.topBar.disableOrbsIcon = true end
+  if self.topBar then 
+    self.topBar.disableOrbsIcon = true
+    self.topBar.disableInventoryIcon = true
+  end
   
   -- Load background image
   local bgPath = "assets/images/rest/rest_bg_1.png"

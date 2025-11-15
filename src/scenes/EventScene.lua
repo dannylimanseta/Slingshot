@@ -53,7 +53,10 @@ function EventScene:load()
   self._fadeTimer = 0
   self._selectedIndex = 1 -- Reset to first option
   -- Grey out orbs icon on event screens
-  if self.topBar then self.topBar.disableOrbsIcon = true end
+  if self.topBar then 
+    self.topBar.disableOrbsIcon = true
+    self.topBar.disableInventoryIcon = true
+  end
   
   -- Load event data
 	self.event = events.get(self.eventId)

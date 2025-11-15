@@ -36,6 +36,10 @@ function InventoryScene.new()
     _itemHoverProgress = {}, -- Track hover progress for each item
     _itemScale = {}, -- Track scale for each item
     _glowTime = 0, -- For pulsing glow animation
+    -- Tooltip state
+    _tooltipRelicId = nil, -- Currently hovered relic ID for tooltip
+    _tooltipHoverTime = 0, -- Time hovering over relic
+    _tooltipBounds = nil, -- Bounds of hovered element {x, y, w, h}
     sidebarImage = nil,
     titleFont = nil,
     closeFont = nil,
@@ -113,8 +117,8 @@ function InventoryScene:load()
     return wrapper
   end
   
-  -- Description and flavor fonts (22px, regular weight, same size)
-  local textSize = 22 -- Increased size, same for both description and flavor
+  -- Description font (22px, regular weight)
+  local textSize = 22
   local okDesc, descFont = pcall(love.graphics.newFont, regularFontPath, textSize * supersamplingFactor)
   if okDesc and descFont then
     self.descFont = wrapFont(descFont, supersamplingFactor)
@@ -122,12 +126,13 @@ function InventoryScene:load()
     self.descFont = theme.fonts.base -- Fallback
   end
   
-  -- Flavor font (same size as description)
-  local okFlavor, flavorFont = pcall(love.graphics.newFont, regularFontPath, textSize * supersamplingFactor)
+  -- Flavor font (22px, italic)
+  local italicFontPath = "assets/fonts/BarlowCondensed-Italic.ttf"
+  local okFlavor, flavorFont = pcall(love.graphics.newFont, italicFontPath, textSize * supersamplingFactor)
   if okFlavor and flavorFont then
     self.flavorFont = wrapFont(flavorFont, supersamplingFactor)
   else
-    self.flavorFont = self.descFont -- Use same font as description if creation fails
+    self.flavorFont = self.descFont -- Fallback to description font if italic font fails
   end
 end
 
@@ -182,6 +187,8 @@ function InventoryScene:update(dt)
   self:_clampScroll()
   self:_updateHoverFromMouse()
   self:_updateItemHoverStates(dt)
+  -- Tooltip disabled - detail panel already shows relic information
+  -- self:_updateTooltip(dt)
   
   return nil
 end
@@ -268,6 +275,125 @@ function InventoryScene:_updateItemHoverStates(dt)
   end
 end
 
+function InventoryScene:_updateTooltip(dt)
+  local ownedRelics = self:_getOwnedRelics()
+  local vw, vh = virtualSize()
+  local mx, my = self.mouse.x, self.mouse.y
+  
+  -- Check if hovering over detail panel (name or icon)
+  local detailPanelRelicId = nil
+  local detailPanelBounds = nil
+  
+  if #ownedRelics > 0 and self.selectedIndex > 0 then
+    local selectedRelic = ownedRelics[self.selectedIndex]
+    local panelX = vw - self.detailPanelWidth
+    local textX = panelX + 32
+    local descX = textX + 80
+    local centerX = panelX + self.detailPanelWidth * 0.5
+    local currentY = 160
+    
+    -- Check large icon hover
+    if selectedRelic.icon then
+      local ok, iconImg = pcall(love.graphics.newImage, selectedRelic.icon)
+      if ok and iconImg then
+        local largeIconSize = 270
+        local iconScale = largeIconSize / math.max(iconImg:getWidth(), iconImg:getHeight())
+        local iconW = iconImg:getWidth() * iconScale
+        local iconH = iconImg:getHeight() * iconScale
+        local iconX = centerX - iconW * 0.5
+        local iconY = currentY
+        
+        if mx >= iconX and mx <= iconX + iconW and my >= iconY and my <= iconY + iconH then
+          detailPanelRelicId = selectedRelic.id
+          detailPanelBounds = {
+            x = iconX,
+            y = iconY,
+            w = iconW,
+            h = iconH
+          }
+        end
+      end
+    end
+    
+    -- Check name hover (if not already hovering icon)
+    if not detailPanelRelicId then
+      local nameFont = self.nameFont or theme.fonts.large or theme.fonts.base
+      local name = selectedRelic.name or selectedRelic.id
+      local nameW = nameFont:getWidth(name)
+      local nameY = currentY + 270 + 36 + (self.rarityFont or theme.fonts.small or theme.fonts.base):getHeight() + 8
+      local nameX = descX
+      
+      if mx >= nameX and mx <= nameX + nameW and my >= nameY and my <= nameY + nameFont:getHeight() then
+        detailPanelRelicId = selectedRelic.id
+        detailPanelBounds = {
+          x = nameX,
+          y = nameY,
+          w = nameW,
+          h = nameFont:getHeight()
+        }
+      end
+    end
+  end
+  
+  -- Check grid hover
+  local gridRelicId = nil
+  local gridBounds = nil
+  
+  if self.hoveredIndex and self.hoveredIndex > 0 and self.hoveredIndex <= #ownedRelics then
+    local relicDef = ownedRelics[self.hoveredIndex]
+    gridRelicId = relicDef.id
+    
+    -- Calculate bounds of hovered item
+    local gridStartX = self.gridPadding
+    local gridStartY = 140
+    local nameFont = theme.fonts.small or theme.fonts.base
+    local paddingTop = 12
+    local paddingBottom = 12
+    local iconNameSpacing = 12
+    local itemHeight = paddingTop + self.gridIconSize + iconNameSpacing + nameFont:getHeight() + paddingBottom
+    local itemW = self.gridIconSize * 1.5
+    
+    local col = ((self.hoveredIndex - 1) % self.gridColumns)
+    local row = math.floor((self.hoveredIndex - 1) / self.gridColumns)
+    local baseX = gridStartX + col * (itemW + self.gridIconSpacing)
+    local baseY = gridStartY + row * (itemHeight + self.gridIconSpacing) - self.scroll.y
+    
+    gridBounds = {
+      x = baseX,
+      y = baseY,
+      w = itemW,
+      h = itemHeight
+    }
+  end
+  
+  -- Prioritize detail panel hover over grid hover
+  local activeRelicId = detailPanelRelicId or gridRelicId
+  local activeBounds = detailPanelBounds or gridBounds
+  
+  -- Update tooltip state
+  if activeRelicId then
+    -- Check if hovering over the same relic
+    if self._tooltipRelicId == activeRelicId and self._tooltipBounds then
+      -- Continue tracking hover time
+      self._tooltipHoverTime = self._tooltipHoverTime + dt
+      -- Update bounds in case they changed (e.g., due to scroll)
+      if activeBounds then
+        self._tooltipBounds = activeBounds
+      end
+    else
+      -- New relic hovered, reset timer
+      self._tooltipRelicId = activeRelicId
+      self._tooltipHoverTime = 0
+      self._tooltipBounds = activeBounds
+    end
+  else
+    -- Not hovering, reset tooltip state
+    self._tooltipRelicId = nil
+    self._tooltipHoverTime = 0
+    self._tooltipBounds = nil
+  end
+end
+
 function InventoryScene:draw()
   local vw, vh = virtualSize()
   local alpha = self.fadeInAlpha
@@ -292,6 +418,9 @@ function InventoryScene:draw()
   if #ownedRelics > 0 and self.selectedIndex > 0 then
     self:_drawDetailPanel(ownedRelics[self.selectedIndex], alpha)
   end
+  
+  -- Tooltip disabled - detail panel already shows relic information
+  -- self:_drawTooltip(alpha)
   
   -- Draw close button (top-right, white X with "CLOSE" text)
   self:_drawCloseButton(alpha)
@@ -582,6 +711,210 @@ function InventoryScene:keypressed(key, scancode, isRepeat)
   end
   
   return nil
+end
+
+function InventoryScene:_drawTooltip(alpha)
+  -- Only show tooltip after 0.3s hover time
+  if not self._tooltipRelicId or self._tooltipHoverTime < 0.3 or not self._tooltipBounds then
+    return
+  end
+  
+  local relicDef = relics.get(self._tooltipRelicId)
+  if not relicDef then return end
+  
+  local vw, vh = virtualSize()
+  local bounds = self._tooltipBounds
+  
+  local font = theme.fonts.base
+  love.graphics.setFont(font)
+  
+  -- Icon size and padding
+  local iconSize = 48
+  local iconPadding = 8
+  local textPadding = 8
+  local padding = 8
+  
+  -- Load icon
+  local iconImg = nil
+  if relicDef.icon then
+    local ok, img = pcall(love.graphics.newImage, relicDef.icon)
+    if ok then iconImg = img end
+  end
+  
+  -- Build tooltip text (name + description)
+  local tooltipText = ""
+  if relicDef.name then
+    tooltipText = tooltipText .. relicDef.name
+  end
+  if relicDef.description then
+    if tooltipText ~= "" then
+      tooltipText = tooltipText .. "\n" .. relicDef.description
+    else
+      tooltipText = relicDef.description
+    end
+  end
+  
+  if tooltipText == "" then return end
+  
+  -- Calculate size with increased font size
+  local textLines = {}
+  for line in tooltipText:gmatch("[^\n]+") do
+    table.insert(textLines, line)
+  end
+  
+  local textScale = 0.75 -- Increased from 0.5
+  local maxTextW = 0
+  for _, line in ipairs(textLines) do
+    local w = font:getWidth(line) * textScale
+    if w > maxTextW then maxTextW = w end
+  end
+  
+  local baseTextH = font:getHeight() * #textLines
+  local textW = maxTextW
+  local textH = baseTextH * textScale
+  
+  -- Calculate tooltip dimensions (accounting for icon)
+  -- Limit text width to make tooltip less wide
+  local maxTextWidth = 200 -- Maximum text width
+  if textW > maxTextWidth then
+    textW = maxTextWidth
+  end
+  
+  local tooltipW = padding * 2
+  if iconImg then
+    tooltipW = tooltipW + iconSize + iconPadding
+  end
+  tooltipW = tooltipW + textW
+  
+  -- Calculate text wrap width first (needed for height calculation)
+  local availableTextWidth = tooltipW - padding * 2
+  if iconImg then
+    availableTextWidth = availableTextWidth - iconSize - iconPadding
+  end
+  local textWrapWidth = availableTextWidth / textScale
+  
+  -- Calculate actual wrapped text height
+  local wrappedTextHeight = 0
+  for _, line in ipairs(textLines) do
+    local wrappedLines = {}
+    local words = {}
+    for word in line:gmatch("%S+") do
+      table.insert(words, word)
+    end
+    local currentLine = ""
+    for _, word in ipairs(words) do
+      local testLine = currentLine == "" and word or currentLine .. " " .. word
+      if font:getWidth(testLine) <= textWrapWidth then
+        currentLine = testLine
+      else
+        if currentLine ~= "" then
+          table.insert(wrappedLines, currentLine)
+        end
+        currentLine = word
+      end
+    end
+    if currentLine ~= "" then
+      table.insert(wrappedLines, currentLine)
+    end
+    wrappedTextHeight = wrappedTextHeight + font:getHeight() * math.max(1, #wrappedLines)
+  end
+  
+  -- Recalculate tooltip height based on actual wrapped text
+  local actualTextH = wrappedTextHeight * textScale
+  local tooltipH = padding * 2 + math.max(iconSize, actualTextH)
+  
+  -- Calculate position (to the left of the hovered item)
+  local tooltipX = bounds.x - tooltipW - 30 -- 30px gap from item left edge
+  local tooltipY = bounds.y + bounds.h * 0.5 - tooltipH * 0.5 -- Vertically centered with item
+  
+  -- Clamp to canvas bounds
+  local canvasLeft = 0
+  local canvasRight = vw
+  local canvasTop = 0
+  local canvasBottom = vh
+  
+  if tooltipX < canvasLeft then
+    -- If doesn't fit on left, show on right
+    tooltipX = bounds.x + bounds.w + 30
+  end
+  if tooltipX + tooltipW > canvasRight then
+    tooltipX = canvasRight - tooltipW
+  end
+  if tooltipY < canvasTop then
+    tooltipY = canvasTop + padding
+  end
+  if tooltipY + tooltipH > canvasBottom then
+    tooltipY = canvasBottom - tooltipH - padding
+  end
+  
+  -- Fade in
+  local fadeProgress = math.min(1.0, (self._tooltipHoverTime - 0.3) / 0.3)
+  
+  -- Draw background
+  love.graphics.setColor(0, 0, 0, 0.85 * fadeProgress * alpha)
+  love.graphics.rectangle("fill", tooltipX, tooltipY, tooltipW, tooltipH, 4, 4)
+  
+  -- Draw border
+  love.graphics.setColor(1, 1, 1, 0.3 * fadeProgress * alpha)
+  love.graphics.setLineWidth(1)
+  love.graphics.rectangle("line", tooltipX, tooltipY, tooltipW, tooltipH, 4, 4)
+  
+  -- Draw icon (top left)
+  if iconImg then
+    local iconX = tooltipX + padding
+    local iconY = tooltipY + padding
+    local iconScale = iconSize / math.max(iconImg:getWidth(), iconImg:getHeight())
+    love.graphics.setColor(1, 1, 1, fadeProgress * alpha)
+    love.graphics.draw(iconImg, iconX, iconY, 0, iconScale, iconScale)
+  end
+  
+  -- Draw text (to the right of icon, or left if no icon)
+  local textX = tooltipX + padding
+  if iconImg then
+    textX = textX + iconSize + iconPadding
+  end
+  local textY = tooltipY + padding
+  
+  love.graphics.push()
+  love.graphics.translate(textX, textY)
+  love.graphics.scale(textScale, textScale)
+  local currentY = 0
+  for i, line in ipairs(textLines) do
+    -- First line (name) can be colored by rarity
+    if i == 1 and relicDef.rarity then
+      local rarityColor = RARITY_COLORS[relicDef.rarity] or RARITY_COLORS.common
+      love.graphics.setColor(rarityColor[1], rarityColor[2], rarityColor[3], fadeProgress * alpha)
+    else
+      love.graphics.setColor(1, 1, 1, fadeProgress * alpha)
+    end
+    -- Use printf for text wrapping
+    love.graphics.printf(line, 0, currentY, textWrapWidth, "left")
+    -- Calculate wrapped height for this line
+    local wrappedLines = {}
+    local words = {}
+    for word in line:gmatch("%S+") do
+      table.insert(words, word)
+    end
+    local currentLine = ""
+    for _, word in ipairs(words) do
+      local testLine = currentLine == "" and word or currentLine .. " " .. word
+      if font:getWidth(testLine) <= textWrapWidth then
+        currentLine = testLine
+      else
+        if currentLine ~= "" then
+          table.insert(wrappedLines, currentLine)
+        end
+        currentLine = word
+      end
+    end
+    if currentLine ~= "" then
+      table.insert(wrappedLines, currentLine)
+    end
+    currentY = currentY + font:getHeight() * math.max(1, #wrappedLines)
+  end
+  love.graphics.pop()
+  
+  love.graphics.setColor(1, 1, 1, 1)
 end
 
 function InventoryScene:_ensureSelectedVisible()
