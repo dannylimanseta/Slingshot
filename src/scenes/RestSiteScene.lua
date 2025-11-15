@@ -699,17 +699,6 @@ function RestSiteScene:_drawOrbSelection(fadeAlpha)
       love.graphics.scale(scale, scale)
       love.graphics.translate(-cx, -cy)
       
-      -- Draw background circle/border
-      if hovered then
-        love.graphics.setColor(1, 1, 1, 0.3 * fadeAlpha)
-        love.graphics.setLineWidth(3)
-        love.graphics.circle("line", iconX + iconSize * 0.5, iconY + iconSize * 0.5, iconSize * 0.5 + 4)
-      else
-        love.graphics.setColor(0.5, 0.5, 0.5, 0.2 * fadeAlpha)
-        love.graphics.setLineWidth(2)
-        love.graphics.circle("line", iconX + iconSize * 0.5, iconY + iconSize * 0.5, iconSize * 0.5)
-      end
-      
       -- Draw icon
       if p and p.icon then
         local ok, iconImg = pcall(love.graphics.newImage, p.icon)

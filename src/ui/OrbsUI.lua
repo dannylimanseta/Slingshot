@@ -43,6 +43,8 @@ function OrbsUI.new()
     _cardBounds = {}, -- Store card bounds for hit testing { [index] = {x, y, w, h} }
     _mouseX = 0, -- Current mouse X position
     _mouseY = 0, -- Current mouse Y position
+    _hoveredOrbIndex = nil, -- Index of orb being hovered for tooltip
+    _orbHoverTimes = {}, -- Track hover time per orb for tooltip delay
   }, OrbsUI)
   return self
 end
@@ -72,6 +74,9 @@ function OrbsUI:scroll(delta)
 end
 
 function OrbsUI:update(dt, mouseX, mouseY)
+  -- Store dt for hover timing calculations
+  self._lastDt = dt
+  
   -- Glow time
   self._glowTime = (self._glowTime or 0) + dt
   -- Clamp selected index to valid range if equipped list changed
@@ -128,6 +133,15 @@ function OrbsUI:update(dt, mouseX, mouseY)
     -- Smoothly tween toward target position
     self._dragTweenX = currentX + (targetX - currentX) * math.min(1, tweenSpeed * dt)
     self._dragTweenY = currentY + (targetY - currentY) * math.min(1, tweenSpeed * dt)
+  end
+  
+  -- Update hover times for tooltips (will be set in draw based on actual hover state)
+  -- This is just to ensure the table exists
+  local equippedIds = (config.player and config.player.equippedProjectiles) or {}
+  for i, projectileId in ipairs(equippedIds) do
+    if not self._orbHoverTimes[i] then
+      self._orbHoverTimes[i] = 0
+    end
   end
 end
  
@@ -260,31 +274,21 @@ function OrbsUI:draw()
     return
   end
   
-  -- Card dimensions and spacing
-  local baseCardW = 288
-  local baseCardSpacing = 40 -- increased spacing between cards horizontally
-  local sidePadding = 40 -- padding from screen edges
-  
-  -- Calculate how many cards fit per row
-  local availableWidth = vw - (sidePadding * 2)
-  local maxCardsPerRow = math.floor((availableWidth + baseCardSpacing) / (baseCardW + baseCardSpacing))
-  maxCardsPerRow = math.max(1, maxCardsPerRow) -- At least 1 card per row
+  -- Icon dimensions and spacing (matching RestSiteScene layout)
+  local iconSize = 80
+  local spacing = 32
+  local rowSpacing = 20
+  local maxCardsPerRow = 4
+  local regularFontPath = "assets/fonts/BarlowCondensed-Regular.ttf"
+  local nameFont = theme.newFont(20, regularFontPath)
   
   -- Calculate layout: wrap to multiple rows
   local numRows = math.ceil(#equippedIds / maxCardsPerRow)
   
-  -- Calculate card height (use first card as reference)
-  local cardH = 200 -- fallback height
-  if #equippedIds > 0 then
-    local firstProjectile = ProjectileManager.getProjectile(equippedIds[1])
-    if firstProjectile then
-      cardH = self.card:calculateHeight(firstProjectile)
-    end
-  end
-  
-  -- Vertical spacing between rows
-  local rowSpacing = 48 -- increased spacing between rows vertically
-  local totalHeight = cardH * numRows + rowSpacing * math.max(0, numRows - 1)
+  -- Calculate total height needed
+  local nameH = nameFont:getHeight()
+  local itemHeight = iconSize + 8 + nameH
+  local totalHeight = itemHeight * numRows + rowSpacing * math.max(0, numRows - 1)
   
   -- Calculate scrollable area
   local topPadding = 64 -- space for title
@@ -336,143 +340,108 @@ function OrbsUI:draw()
   local scissorH = visibleHeight * supersamplingFactor
   love.graphics.setScissor(scissorX, scissorY, scissorW, scissorH)
   
-  -- Use stored mouse position for drag visualization
+  -- Use stored mouse position for drag visualization and hover detection
   local virtualMouseX = self._mouseX or 0
   local virtualMouseY = self._mouseY or 0
   
-  -- Pre-pass: detect if mouse is hovering any card (using current scaled size),
-  -- so we can suppress default selection highlight while hovering.
-  local tmpMouseHovered = {}
-  local anyHoveredCard = false
+  -- Update hover states and tooltip timing
+  self._hoveredOrbIndex = nil
   for i, projectileId in ipairs(equippedIds) do
     local rowIndex = math.floor((i - 1) / maxCardsPerRow)
     local colIndex = ((i - 1) % maxCardsPerRow)
+    
+    -- Calculate position for this orb
     local cardsInThisRow = math.min(maxCardsPerRow, #equippedIds - rowIndex * maxCardsPerRow)
-    local rowWidth = baseCardW * cardsInThisRow + baseCardSpacing * math.max(0, cardsInThisRow - 1)
+    local rowWidth = iconSize * cardsInThisRow + spacing * math.max(0, cardsInThisRow - 1)
     local rowStartX = (vw - rowWidth) * 0.5
-    local cardX = rowStartX + colIndex * (baseCardW + baseCardSpacing)
-    local cardY = startY + rowIndex * (cardH + rowSpacing)
-    -- Dynamic height for accurate hover
-    local dynamicCardH = cardH
-    do
-      local p = ProjectileManager.getProjectile(projectileId)
-      if p then
-        local calcH = self.card:calculateHeight(p)
-        if calcH and calcH > 0 then dynamicCardH = calcH end
-      end
+    
+    local iconX = rowStartX + colIndex * (iconSize + spacing)
+    local iconY = startY + rowIndex * (itemHeight + rowSpacing)
+    
+    local nameH = nameFont:getHeight()
+    local totalH = iconSize + 8 + nameH
+    local boundsCenterX = iconX + iconSize * 0.5
+    local boundsCenterY = iconY + totalH * 0.5
+    
+    -- Check if mouse is hovering
+    local bounds = self._cardBounds[i] or {}
+    local scale = bounds._scale or 1.0
+    local scaledW = iconSize * scale
+    local scaledH = totalH * scale
+    local hovered = (virtualMouseX >= boundsCenterX - scaledW * 0.5 and virtualMouseX <= boundsCenterX + scaledW * 0.5 and
+                     virtualMouseY >= boundsCenterY - scaledH * 0.5 and virtualMouseY <= boundsCenterY + scaledH * 0.5)
+    
+    -- Update hover time and scale
+    if hovered then
+      self._hoveredOrbIndex = i
+      local prevHoverTime = self._orbHoverTimes[i] or 0
+      -- Increment hover time (dt is stored from update)
+      self._orbHoverTimes[i] = prevHoverTime + (self._lastDt or 0.016)
+      bounds._scale = math.min(1.1, (bounds._scale or 1.0) + (self._lastDt or 0.016) * 3)
+    else
+      self._orbHoverTimes[i] = 0
+      bounds._scale = math.max(1.0, (bounds._scale or 1.0) - (self._lastDt or 0.016) * 3)
     end
-    local hpPrev = self._cardHoverProgress[i] or 0
-    local scale = 1.0 + 0.05 * hpPrev
-    local cx = cardX + baseCardW * 0.5
-    local cy = cardY + dynamicCardH * 0.5
-    local halfW = baseCardW * scale * 0.5
-    local halfH = dynamicCardH * scale * 0.5
-    local mouseHovered = (virtualMouseX >= cx - halfW and virtualMouseX <= cx + halfW and
-                          virtualMouseY >= cy - halfH and virtualMouseY <= cy + halfH)
-    tmpMouseHovered[i] = mouseHovered
-    if mouseHovered then anyHoveredCard = true end
+    
+    -- Store bounds for hit testing (used for drag and drop)
+    self._cardBounds[i] = {
+      x = boundsCenterX - scaledW * 0.5,
+      y = boundsCenterY - scaledH * 0.5,
+      w = scaledW,
+      h = scaledH,
+      _hovered = hovered,
+      _hoverTime = self._orbHoverTimes[i] or 0,
+      _scale = bounds._scale or 1.0,
+      _projectileId = projectileId,
+      _iconX = iconX,
+      _iconY = iconY,
+    }
   end
   
-  -- Draw orb cards in rows
+  -- Draw orb icons with names in rows
   for i, projectileId in ipairs(equippedIds) do
     local rowIndex = math.floor((i - 1) / maxCardsPerRow)
     local colIndex = ((i - 1) % maxCardsPerRow)
     
-    -- Calculate position for this card
+    -- Calculate position for this orb
     local cardsInThisRow = math.min(maxCardsPerRow, #equippedIds - rowIndex * maxCardsPerRow)
-    local rowWidth = baseCardW * cardsInThisRow + baseCardSpacing * math.max(0, cardsInThisRow - 1)
+    local rowWidth = iconSize * cardsInThisRow + spacing * math.max(0, cardsInThisRow - 1)
     local rowStartX = (vw - rowWidth) * 0.5
     
-    local cardX = rowStartX + colIndex * (baseCardW + baseCardSpacing)
-    local cardY = startY + rowIndex * (cardH + rowSpacing)
+    local iconX = rowStartX + colIndex * (iconSize + spacing)
+    local iconY = startY + rowIndex * (itemHeight + rowSpacing)
     
-    -- Calculate this card's dynamic height (tooltips may vary)
-    local dynamicCardH = cardH
-    do
-      local p = ProjectileManager.getProjectile(projectileId)
-      if p then
-        local calcH = self.card:calculateHeight(p)
-        if calcH and calcH > 0 then dynamicCardH = calcH end
-      end
-    end
-
-    -- Store card bounds for hit testing
-    self._cardBounds[i] = {
-      x = cardX,
-      y = cardY,
-      w = baseCardW,
-      h = dynamicCardH
-    }
-    -- Update hover progress for glow
-    do
-      -- Merge mouse hover and default selection (suppressed when any card is hovered)
-      local mouseHovered = tmpMouseHovered[i] or false
-      local hovered = mouseHovered or ((not anyHoveredCard) and (self._selectedIndex == i))
-      local hp = self._cardHoverProgress[i] or 0
-      local target = hovered and 1 or 0
-      -- Approximate dt via fadeSpeed smoothing when update order differs
-      local k = 0.16 -- ~10 * 0.016 default frame
-      self._cardHoverProgress[i] = hp + (target - hp) * k
-    end
+    local p = ProjectileManager.getProjectile(projectileId)
+    local bounds = self._cardBounds[i] or {}
+    local scale = bounds._scale or 1.0
+    local hovered = bounds._hovered or false
     
-    -- If this card is being dragged, draw it at mouse position with reduced alpha
+    -- If this orb is being dragged, draw it at mouse position
     if self._draggedIndex == i then
       -- Draw original position with reduced alpha
-      love.graphics.setColor(1, 1, 1, self.fadeAlpha * 0.3)
-      self.card:draw(cardX, cardY, projectileId, self.fadeAlpha * 0.3)
+      local nameH = nameFont:getHeight()
+      local totalH = iconSize + 8 + nameH
+      local boundsCenterX = iconX + iconSize * 0.5
+      local boundsCenterY = iconY + totalH * 0.5
+      self:_drawOrbIcon(iconX, iconY, iconSize, p, projectileId, nameFont, self.fadeAlpha * 0.3, 1.0)
       
-      -- Draw dragged card centered at tweened mouse position
-      -- Use tweened position for smooth following
+      -- Draw dragged orb centered at tweened mouse position
       local dragCenterX = self._dragTweenX or virtualMouseX
       local dragCenterY = self._dragTweenY or virtualMouseY
-      -- Position card so its center is at the tweened cursor position
-      local dragX = dragCenterX - baseCardW * 0.5
-      local dragY = dragCenterY - dynamicCardH * 0.5
-      love.graphics.setColor(1, 1, 1, self.fadeAlpha)
-      self.card:draw(dragX, dragY, projectileId, self.fadeAlpha)
+      local dragIconX = dragCenterX - iconSize * 0.5
+      local dragIconY = dragCenterY - totalH * 0.5
+      self:_drawOrbIcon(dragIconX, dragIconY, iconSize, p, projectileId, nameFont, self.fadeAlpha, 1.0)
     else
-      -- Normal drawing
-      love.graphics.setColor(1, 1, 1, self.fadeAlpha)
-      -- Apply visual scale like orb rewards
-      local hpNow = self._cardHoverProgress[i] or 0
-      local scale = 1.0 + 0.05 * hpNow
-      love.graphics.push()
-      local cx = cardX + baseCardW * 0.5
-      local cy = cardY + dynamicCardH * 0.5
-      love.graphics.translate(cx, cy)
-      love.graphics.scale(scale, scale)
-      love.graphics.translate(-cx, -cy)
-    self.card:draw(cardX, cardY, projectileId, self.fadeAlpha)
-      love.graphics.pop()
+      -- Normal drawing with hover scale
+      self:_drawOrbIcon(iconX, iconY, iconSize, p, projectileId, nameFont, self.fadeAlpha, scale, hovered)
+    end
   end
-    -- Draw glow for hovered card
-    do
-      local hp = self._cardHoverProgress[i] or 0
-      if hp > 0 then
-        love.graphics.push()
-        local cx = cardX + baseCardW * 0.5
-        local cy = cardY + dynamicCardH * 0.5
-        local scale = 1.0 + 0.05 * hp
-        love.graphics.translate(cx, cy)
-        love.graphics.scale(scale, scale)
-        love.graphics.setBlendMode("add")
-        local pulseSpeed = 1.0
-        local pulseAmount = 0.15
-        local pulse = 1.0 + math.sin((self._glowTime or 0) * pulseSpeed * math.pi * 2) * pulseAmount
-        local baseAlpha = 0.12 * (self.fadeAlpha or 1.0) * hp
-        local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } }
-        for _, layer in ipairs(layers) do
-          local glowAlpha = baseAlpha * layer.alpha * pulse
-          local glowWidth = layer.width * pulse
-          love.graphics.setColor(1, 1, 1, glowAlpha)
-          love.graphics.setLineWidth(glowWidth)
-          love.graphics.rectangle("line", -baseCardW * 0.5 - glowWidth * 0.5, -dynamicCardH * 0.5 - glowWidth * 0.5,
-                                  baseCardW + glowWidth, dynamicCardH + glowWidth,
-                                  Button.defaults.cornerRadius + glowWidth * 0.5, Button.defaults.cornerRadius + glowWidth * 0.5)
-        end
-        love.graphics.setBlendMode("alpha")
-        love.graphics.pop()
-      end
+  
+  -- Draw tooltip on hover
+  if self._hoveredOrbIndex and self._cardBounds[self._hoveredOrbIndex] then
+    local bounds = self._cardBounds[self._hoveredOrbIndex]
+    if bounds._hoverTime and bounds._hoverTime > 0.3 then
+      self:_drawOrbTooltip(self._hoveredOrbIndex, bounds, self.fadeAlpha)
     end
   end
   
@@ -548,6 +517,83 @@ function OrbsUI:draw()
   
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.pop() -- Restore transform state
+end
+
+function OrbsUI:_drawOrbIcon(iconX, iconY, iconSize, projectile, projectileId, nameFont, fadeAlpha, scale, hovered)
+  scale = scale or 1.0
+  hovered = hovered or false
+  
+  -- Draw orb icon with hover scale
+  love.graphics.push()
+  local cx = iconX + iconSize * 0.5
+  local cy = iconY + iconSize * 0.5
+  love.graphics.translate(cx, cy)
+  love.graphics.scale(scale, scale)
+  love.graphics.translate(-cx, -cy)
+  
+  -- Draw icon
+  if projectile and projectile.icon then
+    local ok, iconImg = pcall(love.graphics.newImage, projectile.icon)
+    if ok and iconImg then
+      love.graphics.setColor(1, 1, 1, fadeAlpha)
+      local iw, ih = iconImg:getWidth(), iconImg:getHeight()
+      local iconScale = iconSize / math.max(iw, ih) * 0.8
+      local drawX = iconX + (iconSize - iw * iconScale) * 0.5
+      local drawY = iconY + (iconSize - ih * iconScale) * 0.5
+      love.graphics.draw(iconImg, drawX, drawY, 0, iconScale, iconScale)
+    end
+  end
+  
+  love.graphics.pop()
+  
+  -- Draw name below icon
+  love.graphics.setFont(nameFont)
+  local nameText = (projectile and projectile.name) or projectileId
+  local nameW = nameFont:getWidth(nameText)
+  local nameX = iconX + (iconSize - nameW) * 0.5
+  local nameY = iconY + iconSize + 8
+  love.graphics.setColor(1, 1, 1, fadeAlpha)
+  love.graphics.print(nameText, nameX, nameY)
+end
+
+function OrbsUI:_drawOrbTooltip(orbIndex, bounds, fadeAlpha)
+  if not bounds._projectileId then return end
+  
+  local projectileId = bounds._projectileId
+  local projectile = ProjectileManager.getProjectile(projectileId)
+  if not projectile then return end
+  
+  local vw = config.video.virtualWidth
+  local vh = config.video.virtualHeight
+  
+  -- Calculate tooltip position (to the right of the orb, or left if too close to right edge)
+  local tooltipX = bounds.x + bounds.w + 16
+  local tooltipY = bounds.y
+  
+  -- If tooltip would go off screen, position it to the left instead
+  local tooltipW = 288 -- Same as ProjectileCard width
+  if tooltipX + tooltipW > vw - 20 then
+    tooltipX = bounds.x - tooltipW - 16
+  end
+  
+  -- Clamp vertically
+  local tooltipH = self.card:calculateHeight(projectile)
+  if tooltipY + tooltipH > vh - 20 then
+    tooltipY = vh - tooltipH - 20
+  end
+  if tooltipY < 20 then
+    tooltipY = 20
+  end
+  
+  -- Fade in based on hover time
+  local hoverTime = bounds._hoverTime or 0
+  local fadeProgress = math.min(1.0, (hoverTime - 0.3) / 0.3)
+  local tooltipAlpha = fadeAlpha * fadeProgress
+  
+  -- Draw the full card as tooltip
+  if tooltipAlpha > 0 then
+    self.card:draw(tooltipX, tooltipY, projectileId, tooltipAlpha)
+  end
 end
 
 return OrbsUI
