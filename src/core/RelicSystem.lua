@@ -80,6 +80,23 @@ function RelicSystem.applyBattleStart()
   end)
 end
 
+-- Apply end-of-battle effects (e.g., heal on victory)
+-- @param context table | nil  e.g., { result = "victory" | "defeat" }
+function RelicSystem.applyBattleEnd(context)
+  local PlayerState = require("core.PlayerState")
+  local player = PlayerState.getInstance and PlayerState.getInstance()
+  forEachEffect("battle_end", function(effect)
+    local action = effect.action or "heal_player"
+    if action == "heal_player" and player then
+      local value = tonumber(effect.value) or 0
+      if value > 0 then
+        local newHP = math.min(player:getMaxHealth(), player:getHealth() + value)
+        player:setHealth(newHP)
+      end
+    end
+  end, context)
+end
+
 function RelicSystem.debugEquip(id)
   local player = PlayerState.getInstance and PlayerState.getInstance()
   if player and player.addRelic then

@@ -56,7 +56,7 @@ function TopBar:draw()
   local battleState = BattleState.get and BattleState.get()
   local health
   local maxHealth
-  if battleState and battleState.player then
+  if (not self.preferPlayerState) and battleState and battleState.player then
     health = battleState.player.hp or battleState.player.displayHP or 0
     maxHealth = battleState.player.maxHP or health
   else

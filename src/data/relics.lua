@@ -51,6 +51,25 @@ local CATALOG = {
       },
     },
   },
+  first_aid_satchel = {
+    id = "first_aid_satchel",
+    name = "First Aid Satchel",
+    rarity = relics.Rarity.COMMON,
+    slot = "passive",
+    type = "passive",
+    icon = "assets/images/relics/firstaid_satchel.png",
+    tags = { "healing", "post_battle" },
+    description = "At the end of combat, heal 8 HP.",
+    flavor = "Bandages, tinctures, and a promise to fight another day.",
+    effects = {
+      {
+        trigger = "battle_end",
+        action = "heal_player",
+        value = 8,
+        source = "first_aid_satchel",
+      },
+    },
+  },
 }
 
 function relics.get(id)

@@ -71,6 +71,13 @@ function SceneTransitionHandler:handleReturnToMap(data)
   end
   
   if victory then
+    -- Apply end-of-battle relic effects (e.g., post-combat healing)
+    do
+      local RelicSystem = require("core.RelicSystem")
+      if RelicSystem and RelicSystem.applyBattleEnd then
+        RelicSystem.applyBattleEnd({ result = "victory" })
+      end
+    end
     -- Mark victory on map for any follow-up logic
     self.mapScene._battleVictory = true
     -- Ensure we use a transition when coming back from Rewards to the map

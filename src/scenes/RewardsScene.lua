@@ -244,6 +244,11 @@ function RewardsScene:load()
   -- Create title font
   self.titleFont = theme.newFont(50)
   
+  -- Top bar should show PlayerState HP (post-battle healing), not BattleState
+  if self.topBar then
+    self.topBar.preferPlayerState = true
+  end
+  
   -- Load icons
   local iconPath = "assets/images/icon_orbs.png"
   local okIcon, imgIcon = pcall(love.graphics.newImage, iconPath)
@@ -752,7 +757,7 @@ function RewardsScene:draw()
   
   -- Draw coin animations
   self:_drawCoinAnimations()
-  
+    
   -- Draw tooltip (on top of everything)
   self:_drawTooltip()
       end

@@ -83,6 +83,8 @@ function MapScene:load()
   -- Expose day system to top bar for rendering day and steps
   if self.topBar then
     self.topBar.daySystem = self.daySystem
+    -- Prefer PlayerState values (HP) on the map, not any lingering BattleState
+    self.topBar.preferPlayerState = true
   end
   
   -- Load map sprites
