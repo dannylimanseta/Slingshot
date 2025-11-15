@@ -147,6 +147,24 @@ function RelicSystem.getDailyStepsBonus(context)
   return bonus
 end
 
+-- Returns the multiplier to apply to rest site healing
+-- @param baseHealAmount number - The base healing amount
+-- @param context table|nil - Optional context
+-- @return number - The final healing amount after applying multipliers
+function RelicSystem.applyRestSiteHeal(baseHealAmount, context)
+  local amount = baseHealAmount or 0
+  forEachEffect("rest_site_heal_multiplier", function(effect)
+    local mode = effect.mode or "multiply"
+    if mode == "multiply" then
+      local mult = tonumber(effect.value) or 1.0
+      amount = amount * mult
+    elseif mode == "add" then
+      amount = amount + (tonumber(effect.value) or 0)
+    end
+  end, context)
+  return math.floor(amount + 0.5) -- Round to nearest integer
+end
+
 function RelicSystem.debugEquip(id)
   local player = PlayerState.getInstance and PlayerState.getInstance()
   if player and player.addRelic then

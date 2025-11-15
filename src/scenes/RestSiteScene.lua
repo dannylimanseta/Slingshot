@@ -69,9 +69,19 @@ function RestSiteScene:load()
   local regularFontPath = "assets/fonts/BarlowCondensed-Regular.ttf"
   self.textFont = theme.newFont(20, regularFontPath)
   
+  -- Calculate heal amount with relic bonuses
+  local baseHealAmount = 20
+  local RelicSystem = require("core.RelicSystem")
+  local healAmount = baseHealAmount
+  if RelicSystem and RelicSystem.applyRestSiteHeal then
+    healAmount = RelicSystem.applyRestSiteHeal(baseHealAmount, {
+      source = "rest_site",
+    })
+  end
+  
   -- Create choice buttons
   self.restButton = Button.new({
-    label = "Rest. Heal for 20 HP.",
+    label = "Rest. Heal for " .. tostring(healAmount) .. " HP.",
     font = self.textFont,
     bgColor = { 0, 0, 0, 0.7 },
     align = "left",
@@ -82,14 +92,17 @@ function RestSiteScene:load()
       local playerState = PlayerState.getInstance()
       local currentHP = playerState:getHealth()
       local maxHP = playerState:getMaxHealth()
-      local healAmount = 20
-      local newHP = math.min(maxHP, currentHP + healAmount)
+      
+      -- Use the same calculated heal amount
+      local finalHealAmount = healAmount
+      
+      local newHP = math.min(maxHP, currentHP + finalHealAmount)
       playerState:setHealth(newHP)
       
       -- Also update BattleState if it exists (for TopBar display)
       local battleState = BattleState.get and BattleState.get()
       if battleState and battleState.player then
-        BattleState.applyPlayerHeal(healAmount)
+        BattleState.applyPlayerHeal(finalHealAmount)
       end
       
       self._exitRequested = true

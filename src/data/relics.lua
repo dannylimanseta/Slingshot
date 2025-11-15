@@ -126,6 +126,25 @@ local CATALOG = {
       },
     },
   },
+  camp_rations = {
+    id = "camp_rations",
+    name = "Camp Rations",
+    rarity = relics.Rarity.UNCOMMON,
+    slot = "passive",
+    type = "passive",
+    icon = "assets/images/relics/camp_rations.png",
+    tags = { "healing", "rest" },
+    description = "Rest sites heal +30% more.",
+    flavor = "Carefully preserved provisions that restore more than just hunger.",
+    effects = {
+      {
+        trigger = "rest_site_heal_multiplier",
+        mode = "multiply",
+        value = 1.3,
+        source = "camp_rations",
+      },
+    },
+  },
 }
 
 function relics.get(id)
