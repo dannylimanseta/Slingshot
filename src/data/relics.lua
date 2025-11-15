@@ -107,6 +107,25 @@ local CATALOG = {
       },
     },
   },
+  travelers_boots = {
+    id = "travelers_boots",
+    name = "Traveler's Boots",
+    rarity = relics.Rarity.RARE,
+    slot = "passive",
+    type = "passive",
+    icon = "assets/images/relics/travelers_boots.png",
+    tags = { "exploration", "movement" },
+    description = "+2 additional steps each day.",
+    flavor = "Well-worn boots that carry you further with each stride.",
+    effects = {
+      {
+        trigger = "daily_steps_bonus",
+        mode = "add",
+        value = 2,
+        source = "travelers_boots",
+      },
+    },
+  },
 }
 
 function relics.get(id)

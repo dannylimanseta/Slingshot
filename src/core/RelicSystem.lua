@@ -127,6 +127,26 @@ function RelicSystem.getOrbBaseDamageBonus(baseValue, context)
   return bonus
 end
 
+-- Returns the total bonus steps to add to daily max moves
+-- @param context table|nil - Optional context
+-- @return number - The bonus steps to add
+function RelicSystem.getDailyStepsBonus(context)
+  local bonus = 0
+  forEachEffect("daily_steps_bonus", function(effect)
+    local mode = effect.mode or "add"
+    if mode == "add" then
+      bonus = bonus + (tonumber(effect.value) or 0)
+    elseif mode == "multiply" then
+      -- Multiply mode not typically used for steps, but support it for consistency
+      local mult = tonumber(effect.value) or 1.0
+      -- This would multiply the base, but we don't have base here
+      -- For now, just add the multiplier as a flat bonus (unusual case)
+      bonus = bonus + math.floor(mult)
+    end
+  end, context)
+  return bonus
+end
+
 function RelicSystem.debugEquip(id)
   local player = PlayerState.getInstance and PlayerState.getInstance()
   if player and player.addRelic then
