@@ -15,6 +15,7 @@ local TopBar = require("ui.TopBar")
 local PlayerState = require("core.PlayerState")
 local battle_profiles = require("data.battle_profiles")
 local ParticleManager = require("managers.ParticleManager")
+local EnemyController = require("scenes.battle.EnemyController")
 
 local BattleScene = {}
 BattleScene.__index = BattleScene
@@ -871,117 +872,7 @@ end
 
 -- Get currently selected enemy
 function BattleScene:getSelectedEnemy()
-  if self.selectedEnemyIndex and self.enemies and self.enemies[self.selectedEnemyIndex] then
-    return self.enemies[self.selectedEnemyIndex]
-  end
-  return nil
-end
-
-function BattleScene:_getEnemyLungeOffset(enemy)
-  if not enemy or not enemy.lungeTime or enemy.lungeTime <= 0 then
-    return 0
-  end
-
-  local lungeDuration = config.battle.lungeDuration or 0
-  local returnDuration = config.battle.lungeReturnDuration or 0
-  local distance = config.battle.lungeDistance or 0
-
-  if enemy.lungeTime < lungeDuration then
-    return distance * (enemy.lungeTime / math.max(0.0001, lungeDuration))
-  elseif enemy.lungeTime < lungeDuration + returnDuration then
-    local t = (enemy.lungeTime - lungeDuration) / math.max(0.0001, returnDuration)
-    return distance * (1 - t)
-  else
-    return 0
-  end
-end
-
-function BattleScene:_computeEnemyLayout(bounds)
-  local fallbackBounds = self._lastBounds
-  local w = (bounds and bounds.w) or (fallbackBounds and fallbackBounds.w) or love.graphics.getWidth()
-  local h = (bounds and bounds.h) or (fallbackBounds and fallbackBounds.h) or love.graphics.getHeight()
-  local center = (bounds and bounds.center) or (fallbackBounds and fallbackBounds.center) or nil
-
-  local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
-  local centerW = center and center.w or math.floor(w * 0.5)
-  local rightStart = centerX + centerW
-  local rightWidth = math.max(0, w - rightStart)
-
-  local r = 24
-  local yOffset = (config.battle and config.battle.positionOffsetY) or 0
-  local baselineY = h * 0.55 + r + yOffset
-
-  local layout = {
-    w = w,
-    baselineY = baselineY,
-    rightStart = rightStart,
-    rightWidth = rightWidth,
-    radius = r,
-    entries = {},
-  }
-
-  if not self.enemies or #self.enemies == 0 then
-    return layout
-  end
-
-  local battleProfile = self._battleProfile or {}
-  local gapCfg = battleProfile.enemySpacing
-  local enemyCount = #self.enemies
-  local gap
-  if type(gapCfg) == "table" then
-    gap = gapCfg[enemyCount] or gapCfg.default or 0
-  else
-    gap = gapCfg or -20
-  end
-
-  local enemyWidths = {}
-  local enemyScales = {}
-  local totalWidth = 0
-
-  for i, enemy in ipairs(self.enemies) do
-    local scaleCfg = enemy.spriteScale or (config.battle and (config.battle.enemySpriteScale or config.battle.spriteScale)) or 4
-    local scale = 1
-    if enemy.img then
-      local ih = enemy.img:getHeight()
-      scale = ((2 * r) / math.max(1, ih)) * scaleCfg * (enemy.scaleMul or 1)
-    end
-    enemyScales[i] = scale
-
-    local width = enemy.img and (enemy.img:getWidth() * scale) or (r * 2)
-    enemyWidths[i] = width
-
-    totalWidth = totalWidth + width
-    if i < enemyCount then
-      totalWidth = totalWidth + gap
-    end
-  end
-
-  local centerXPos = rightStart + rightWidth * 0.5
-  local startX = centerXPos - totalWidth * 0.5 - 70
-
-  for i, enemy in ipairs(self.enemies) do
-    local enemyX = startX
-    for j = 1, i - 1 do
-      enemyX = enemyX + enemyWidths[j] + gap
-    end
-    enemyX = enemyX + enemyWidths[i] * 0.5
-
-    local centerXPosEnemy = enemyX - self:_getEnemyLungeOffset(enemy)
-    local spriteHeight = enemy.img and (enemy.img:getHeight() * enemyScales[i]) or (r * 2)
-    local halfHeight = spriteHeight * 0.5
-    local halfWidth = enemyWidths[i] * 0.5
-
-    layout.entries[i] = {
-      centerX = centerXPosEnemy,
-      centerY = baselineY - halfHeight,
-      halfWidth = halfWidth,
-      halfHeight = halfHeight,
-      hitY = baselineY - halfHeight * 0.7,
-      boundingTop = baselineY - spriteHeight,
-    }
-  end
-
-  return layout
+  return EnemyController.getSelectedEnemy(self)
 end
 
 function BattleScene:_syncStateFromBridge()
@@ -1120,7 +1011,7 @@ function BattleScene:_advanceDisintegrationAnimations(dt)
       if enemy.disintegrationTime >= duration then
         enemy.disintegrating = false
         if self.selectedEnemyIndex == index then
-          self:_selectNextEnemy()
+          EnemyController.selectNextEnemy(self)
         end
       end
     end
@@ -1759,7 +1650,7 @@ function BattleScene:_updatePlayerAttackDelay(dt)
           self:_handleEnemyDefeatPostHit(index)
 
           if selectedEnemy.hp <= 0 then
-            self:_selectNextEnemy()
+            EnemyController.selectNextEnemy(self)
           end
         end
       end
@@ -2001,92 +1892,18 @@ function BattleScene:getPlayerCenterPivot(bounds)
   return playerSpriteCenterX, playerSpriteCenterY
 end
 
--- Get enemy sprite center pivot position (for particle effects)
-function BattleScene:getEnemyCenterPivot(enemyIndex, bounds)
-  if not enemyIndex then
-    return nil, nil
-  end
-  
-  local layout = self:_computeEnemyLayout(bounds)
-  local entry = layout.entries[enemyIndex]
-  if not entry then
-    return nil, nil
-  end
-
-  return entry.centerX, entry.centerY
-end
-
--- Select next enemy to the right (or wrap to first if at end)
-function BattleScene:_selectNextEnemy()
-  if not self.enemies or #self.enemies == 0 then
-    self.selectedEnemyIndex = nil
-    return
-  end
-  
-  -- Find next alive enemy to the right
-  local startIndex = self.selectedEnemyIndex or 1
-  for i = 1, #self.enemies do
-    local checkIndex = ((startIndex + i - 1) % #self.enemies) + 1
-    local enemy = self.enemies[checkIndex]
-    if enemy and (enemy.hp > 0 or enemy.disintegrating or enemy.pendingDisintegration) then
-      self.selectedEnemyIndex = checkIndex
-      return
-    end
-  end
-  
-  -- No alive enemies found
-  self.selectedEnemyIndex = nil
-end
-
--- Compute hit points for all enemies (screen coordinates), matching draw layout
--- Returns array of {x, y, enemyIndex} for all alive enemies
 function BattleScene:getAllEnemyHitPoints(bounds)
-  local hitPoints = {}
-  local layout = self:_computeEnemyLayout(bounds)
-  
-  if not self.enemies or #self.enemies == 0 then
-    return hitPoints
-  end
-  
-  for i, enemy in ipairs(self.enemies) do
-    if enemy and (enemy.hp > 0 or enemy.disintegrating or enemy.pendingDisintegration) then
-      local entry = layout.entries[i]
-      if entry then
-        table.insert(hitPoints, { x = entry.centerX, y = entry.hitY, enemyIndex = i })
-      end
-    end
-  end
-  
-  return hitPoints
+  return EnemyController.getAllEnemyHitPoints(self, bounds)
 end
 
--- Compute current enemy hit point (screen coordinates), matching draw layout
--- Returns hit point for selected enemy
 function BattleScene:getEnemyHitPoint(bounds)
-  local layout = self:_computeEnemyLayout(bounds)
-  local selectedEnemy = self:getSelectedEnemy()
-  if selectedEnemy and self.enemies and #self.enemies > 0 then
-    local enemy = selectedEnemy
-    local enemyIndex = self.selectedEnemyIndex
-    local entry = layout.entries[enemyIndex]
-    if entry then
-      return entry.centerX, entry.hitY
-    end
-  else
-    -- Fallback if no enemies
-    local fallbackX
-    if layout.rightWidth > 0 then
-      fallbackX = layout.rightStart + layout.rightWidth * 0.5
-    else
-      fallbackX = layout.w - 12 - layout.radius
-    end
-    return fallbackX, layout.baselineY - layout.radius * 0.7
-  end
+  return EnemyController.getEnemyHitPoint(self, bounds)
 end
 
--- Trigger the impact animation at the current enemy hit point
--- blockCount: number of blocks hit (1-4+, determines how many impact sprites to spawn)
--- isCrit: if true, spawn 5 staggered slashes regardless of block count
+function BattleScene:getEnemyCenterPivot(enemyIndex, bounds)
+  return EnemyController.getEnemyCenterPivot(self, enemyIndex, bounds)
+end
+
 function BattleScene:playImpact(blockCount, isCrit)
   if not self.impactAnimation then return end
   blockCount = blockCount or 1
@@ -2132,7 +1949,7 @@ function BattleScene:keypressed(key, scancode, isRepeat)
   end
   if key == "tab" then
     -- Cycle to next enemy
-    self:_cycleEnemySelection()
+    EnemyController.cycleEnemySelection(self)
   end
 end
 
@@ -2171,70 +1988,14 @@ function BattleScene:_cheatDefeatAllEnemies()
   end
 
   if anyDefeated then
-    self:_selectNextEnemy()
+    EnemyController.selectNextEnemy(self)
   end
 end
 
 -- Cycle enemy selection to the next alive enemy
-function BattleScene:_cycleEnemySelection()
-  if not self.enemies or #self.enemies == 0 then
-    self.selectedEnemyIndex = nil
-    return
-  end
-  
-  local startIndex = self.selectedEnemyIndex or 1
-  -- Find next alive enemy (start from next index, wrapping around)
-  for i = 1, #self.enemies do
-    local checkIndex = ((startIndex + i - 1) % #self.enemies) + 1
-    -- Skip the current enemy
-    if checkIndex == startIndex then
-      checkIndex = ((startIndex + i) % #self.enemies) + 1
-    end
-    local enemy = self.enemies[checkIndex]
-    if enemy and (enemy.hp > 0 or enemy.disintegrating or enemy.pendingDisintegration) then
-      self.selectedEnemyIndex = checkIndex
-      return
-    end
-  end
-  
-  -- No other alive enemies found, keep current selection or set to nil
-  if self.selectedEnemyIndex then
-    local currentEnemy = self.enemies[self.selectedEnemyIndex]
-    if not currentEnemy or (currentEnemy.hp <= 0 and not currentEnemy.disintegrating and not currentEnemy.pendingDisintegration) then
-      self.selectedEnemyIndex = nil
-    end
-  end
-end
-
 -- Handle mouse clicks for enemy selection
 function BattleScene:mousepressed(x, y, button, bounds)
-  if button ~= 1 then return end -- Only handle left mouse button
-  
-  local layout = self:_computeEnemyLayout(bounds)
-  if not self.enemies or #self.enemies == 0 then
-    return
-  end
-
-  local clickPadding = 30 -- Increased padding for easier clicking
-  
-  -- Check enemies in reverse order (right to left) so rightmost enemy gets priority when overlapping
-  for i = #self.enemies, 1, -1 do
-    local enemy = self.enemies[i]
-    local entry = layout.entries[i]
-    if enemy and entry then
-      local left = entry.centerX - entry.halfWidth - clickPadding
-      local right = entry.centerX + entry.halfWidth + clickPadding
-      local top = entry.boundingTop - clickPadding
-      local bottom = layout.baselineY + clickPadding
-
-      if x >= left and x <= right and y >= top and y <= bottom then
-      if enemy.hp > 0 or enemy.disintegrating or enemy.pendingDisintegration then
-        self.selectedEnemyIndex = i
-        return
-      end
-    end
-    end
-  end
+  EnemyController.handleMousePressed(self, x, y, button, bounds)
 end
 
 BattleScene._ensureBattleState = StateBridge.ensure
