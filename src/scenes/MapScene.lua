@@ -337,7 +337,10 @@ function MapScene:drawUI()
 end
 
 function MapScene:mousepressed(x, y, button)
-  if self.controller then self.controller:mousepressed(x, y, button) end
+  if self.controller then
+    return self.controller:mousepressed(x, y, button)
+  end
+  return nil
 end
 
 function MapScene:mousereleased(x, y, button)

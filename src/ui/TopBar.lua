@@ -28,6 +28,18 @@ function TopBar.new()
   local ok, img = pcall(love.graphics.newImage, orbsIconPath)
   if ok then self.orbsIcon = img end
   
+  -- Load inventory icon (try both possible names)
+  local inventoryIconPath = "assets/images/icon_backpack.png"
+  local okInv, imgInv = pcall(love.graphics.newImage, inventoryIconPath)
+  if not okInv or not imgInv then
+    -- Fallback to icon_inventory.png
+    inventoryIconPath = "assets/images/icon_inventory.png"
+    okInv, imgInv = pcall(love.graphics.newImage, inventoryIconPath)
+  end
+  if okInv and imgInv then
+    self.inventoryIcon = imgInv
+  end
+  
   -- Step fade state
   self._stepAlpha = {}
   self._lastTime = (love.timer and love.timer.getTime()) or 0
@@ -110,6 +122,34 @@ function TopBar:draw()
 
   -- Draw Day + Steps centered across the full top bar
   self:_drawDayAndSteps(0, vw, topPadding, iconSize)
+  
+  -- Draw inventory icon (to the left of orbs icon)
+  if self.inventoryIcon then
+    local iconPadding = 24
+    local iconSpacing = 12 -- Space between inventory and orbs icons
+    -- Calculate position: orbs icon is at vw - iconPadding - iconSize
+    -- Inventory icon is to the left of orbs icon
+    local orbsIconX = vw - iconPadding - iconSize
+    local inventoryIconX = orbsIconX - iconSize - iconSpacing
+    local inventoryIconY = topPadding
+    
+    -- Ensure we have valid coordinates
+    if inventoryIconX and inventoryIconY then
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(self.inventoryIcon, inventoryIconX, inventoryIconY, 0, iconSize / self.inventoryIcon:getWidth(), iconSize / self.inventoryIcon:getHeight())
+      -- Store clickable bounds for MapScene (always set when icon exists)
+      self.inventoryIconBounds = {
+        x = inventoryIconX,
+        y = inventoryIconY,
+        w = iconSize,
+        h = iconSize
+      }
+    else
+      self.inventoryIconBounds = nil
+    end
+  else
+    self.inventoryIconBounds = nil
+  end
   
   -- Draw orbs icon on the right side
   if self.orbsIcon then

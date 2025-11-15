@@ -346,8 +346,8 @@ function RewardsScene:_claimRelicReward()
   
   if not relicOption or not self._pendingRelicReward then return end
   
-  local PlayerState = require("core.PlayerState")
-  local playerState = PlayerState.getInstance()
+    local PlayerState = require("core.PlayerState")
+    local playerState = PlayerState.getInstance()
   if playerState and playerState.addRelic then
     playerState:addRelic(self._pendingRelicReward.id)
   end
@@ -522,7 +522,7 @@ function RewardsScene:update(dt)
       option.button:setLayout(layout.leftMargin, math.floor(option.currentY), layout.buttonWidth, layout.buttonHeight)
       rowIndex = rowIndex + 1
     end
-    
+  
     -- Update button
     option.button:update(dt, self._mouseX, self._mouseY)
     
@@ -547,9 +547,9 @@ function RewardsScene:update(dt)
     
     local prevDiff = 0.0 - self._prevGlowFadeAlpha
     self._prevGlowFadeAlpha = self._prevGlowFadeAlpha + prevDiff * math.min(1, self._glowFadeSpeed * dt)
-    
+  
     -- Update button highlights
-    local anyMouseHovered = false
+      local anyMouseHovered = false
     for _, opt in ipairs(activeOptions) do
       if opt.button and opt.button._hovered == true then
         anyMouseHovered = true
@@ -576,7 +576,7 @@ function RewardsScene:update(dt)
         local target = opt.button._hovered and 1 or 0
         opt.button._hoverProgress = hp + (target - hp) * math.min(1, 10 * dt)
         opt.button._scale = 1.0 + 0.05 * (opt.button._hoverProgress or 0)
-      end
+    end
     end
   end
   
@@ -615,7 +615,7 @@ function RewardsScene:update(dt)
       self._goldCounting = false
     end
   end
-  
+
   -- Check if should return to map (exclude skip button from check)
   local hasActiveRewardOptions = false
   for _, option in ipairs(self._rewardOptions) do
@@ -712,25 +712,6 @@ function RewardsScene:draw()
   love.graphics.setFont(theme.fonts.base)
   love.graphics.pop()
 
-  -- Relic info / toast
-  local infoFont = theme.fonts.small or theme.fonts.base
-  love.graphics.setFont(infoFont)
-  if self._pendingRelicReward then
-    local name = self._pendingRelicReward.name or self._pendingRelicReward.id
-    love.graphics.setColor(0.78, 0.92, 1.0, 0.85)
-    love.graphics.print("Elite reward available: " .. tostring(name), 48, 48)
-    if self._relicDescription and self._relicDescription ~= "" then
-      love.graphics.setColor(1, 1, 1, 0.65)
-      love.graphics.printf(self._relicDescription, 48, 72, vw * 0.35, "left")
-    end
-  elseif self._relicClaimedTimer and self._relicClaimedTimer > 0 and self._relicClaimedName then
-    local alphaClaim = 0.6 * (self._relicClaimedTimer / 3.0) + 0.2
-    love.graphics.setColor(0.6, 0.96, 0.72, alphaClaim)
-    love.graphics.print("Relic acquired: " .. tostring(self._relicClaimedName), 48, 48)
-  end
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.setFont(theme.fonts.base)
-
   -- Draw reward options
   local activeOptions = self:_getActiveOptions()
   for idx, option in ipairs(self._rewardOptions) do
@@ -752,8 +733,8 @@ function RewardsScene:draw()
   
   -- Draw coin animations
   self:_drawCoinAnimations()
-end
-
+      end
+      
 function RewardsScene:_drawButtonGlow(button)
   if not button then return end
   local highlightAlpha = 0
@@ -765,30 +746,30 @@ function RewardsScene:_drawButtonGlow(button)
   highlightAlpha = highlightAlpha * (button.alpha or 1)
   if highlightAlpha <= 0.001 then return end
 
-  love.graphics.push()
+      love.graphics.push()
   local cx = button.x + button.w * 0.5
   local cy = button.y + button.h * 0.5
   local s = button._scale or 1.0
-  love.graphics.translate(cx, cy)
-  love.graphics.scale(s, s)
-  love.graphics.setBlendMode("add")
-
+      love.graphics.translate(cx, cy)
+      love.graphics.scale(s, s)
+      love.graphics.setBlendMode("add")
+      
   local pulseSpeed = 1.0
   local pulseAmount = 0.15
-  local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
+      local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
   local baseAlpha = 0.12 * pulse * highlightAlpha
   local layers = {
     { width = 4, alpha = 0.4 },
     { width = 7, alpha = 0.25 },
     { width = 10, alpha = 0.15 },
   }
-
-  for _, layer in ipairs(layers) do
+      
+      for _, layer in ipairs(layers) do
     local glowAlpha = baseAlpha * layer.alpha
     if glowAlpha > 0 then
-      local glowWidth = layer.width * pulse
-      love.graphics.setColor(1, 1, 1, glowAlpha)
-      love.graphics.setLineWidth(glowWidth)
+        local glowWidth = layer.width * pulse
+        love.graphics.setColor(1, 1, 1, glowAlpha)
+        love.graphics.setLineWidth(glowWidth)
       love.graphics.rectangle(
         "line",
         -button.w * 0.5 - glowWidth * 0.5,
@@ -799,17 +780,17 @@ function RewardsScene:_drawButtonGlow(button)
         Button.defaults.cornerRadius + glowWidth * 0.5
       )
     end
-  end
-
-  love.graphics.setBlendMode("alpha")
-  love.graphics.pop()
+      end
+      
+      love.graphics.setBlendMode("alpha")
+      love.graphics.pop()
 end
 
 function RewardsScene:keypressed(key, scancode, isRepeat)
   local activeOptions = self:_getActiveOptions()
   
   if #activeOptions == 0 then
-    if key == "space" or key == "return" or key == "escape" then
+  if key == "space" or key == "return" or key == "escape" then
       return "return_to_map"
     end
     return nil
@@ -931,17 +912,17 @@ function RewardsScene:_updateCoinAnimations(dt)
       -- Ease-out curve
       local eased = 1 - (1 - progress) * (1 - progress)
       
-      coin.x = coin.startX + (coin.targetX - coin.startX) * eased
+        coin.x = coin.startX + (coin.targetX - coin.startX) * eased
       coin.y = coin.startY + (coin.targetY - coin.startY) * eased
-      coin.rotation = coin.rotation + coin.rotationSpeed * dt
-      
+        coin.rotation = coin.rotation + coin.rotationSpeed * dt
+        
       if progress >= 1 then
         table.remove(self._coinAnimations, i)
       end
     end
+    end
   end
-end
-
+  
 function RewardsScene:_drawCoinAnimations()
   for _, coin in ipairs(self._coinAnimations) do
     if coin.t >= coin.delay and coin.image then

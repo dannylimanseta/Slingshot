@@ -179,6 +179,14 @@ function MapController:mousepressed(x, y, button)
     return
   end
   
+  -- Check if clicking on inventory icon in top bar
+  if s.topBar and s.topBar.inventoryIconBounds then
+    local bounds = s.topBar.inventoryIconBounds
+    if x >= bounds.x and x <= bounds.x + bounds.w and y >= bounds.y and y <= bounds.y + bounds.h then
+      return "open_inventory"
+    end
+  end
+  
   -- Check if clicking on orbs icon in top bar
   if s.topBar and s.topBar.orbsIconBounds then
     local bounds = s.topBar.orbsIconBounds

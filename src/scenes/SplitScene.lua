@@ -873,6 +873,14 @@ function SplitScene:mousepressed(x, y, button)
     return
   end
   
+  -- Check if clicking on inventory icon in top bar
+  if self.topBar and self.topBar.inventoryIconBounds then
+    local bounds = self.topBar.inventoryIconBounds
+    if x >= bounds.x and x <= bounds.x + bounds.w and y >= bounds.y and y <= bounds.y + bounds.h then
+      return "open_inventory"
+    end
+  end
+  
   -- Check if clicking on orbs icon in top bar
   if self.topBar and self.topBar.orbsIconBounds then
     local bounds = self.topBar.orbsIconBounds

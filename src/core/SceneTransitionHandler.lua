@@ -9,6 +9,7 @@ local RewardsScene = require("scenes.RewardsScene")
 local OrbRewardScene = require("scenes.OrbRewardScene")
 local EncounterSelectScene = require("scenes.EncounterSelectScene")
 local RelicSelectScene = require("scenes.RelicSelectScene")
+local InventoryScene = require("scenes.InventoryScene")
 local EventScene = require("scenes.EventScene")
 local RestSiteScene = require("scenes.RestSiteScene")
 local EncounterManager = require("core.EncounterManager")
@@ -234,6 +235,20 @@ function SceneTransitionHandler:handleOpenRelicSelect()
   self.setCursorForScene(selectScene)
 end
 
+-- Transition: Open inventory scene
+function SceneTransitionHandler:handleOpenInventory()
+  if self.mapScene then
+    self.mapScene._savedWorldX = self.mapScene.playerWorldX
+    self.mapScene._savedWorldY = self.mapScene.playerWorldY
+  end
+
+  local inventoryScene = InventoryScene.new()
+  inventoryScene:setPreviousScene(self.sceneManager.currentScene)
+  self.previousScene = self.sceneManager.currentScene
+  self.sceneManager:set(inventoryScene)
+  self.setCursorForScene(inventoryScene)
+end
+
 -- Transition: Start battle
 function SceneTransitionHandler:handleStartBattle()
   -- Save current map world position to restore precisely after transitions
@@ -309,6 +324,8 @@ function SceneTransitionHandler:handleTransition(result)
       self:handleOpenEncounterSelect()
     elseif result == "open_relic_select" then
       self:handleOpenRelicSelect()
+    elseif result == "open_inventory" then
+      self:handleOpenInventory()
     elseif result == "start_battle" then
       self:handleStartBattle()
     elseif result == "cancel" then
@@ -336,6 +353,8 @@ function SceneTransitionHandler:handleTransition(result)
       self:handleOpenEncounterSelect()
     elseif transitionType == "open_relic_select" then
       self:handleOpenRelicSelect()
+    elseif transitionType == "open_inventory" then
+      self:handleOpenInventory()
     elseif transitionType == "start_battle" then
       self:handleStartBattle()
     elseif transitionType == "cancel" then
