@@ -189,17 +189,22 @@ function RestSiteScene:update(dt, mouseX, mouseY)
       local btarget = (self.backButton._hovered and 1) or 0
       self.backButton._hoverProgress = bhp + (btarget - bhp) * math.min(1, 10 * dt)
     end
-    -- Update orb card hover states
+    -- Update orb hover states and tooltip timing
+    self._hoveredOrbIndex = nil
     for i, bounds in ipairs(self._orbBounds) do
       if self.mouseX >= bounds.x and self.mouseX <= bounds.x + bounds.w and
          self.mouseY >= bounds.y and self.mouseY <= bounds.y + bounds.h then
         if not bounds._hovered then
           bounds._hovered = true
+          bounds._hoverTime = 0
           bounds._scale = 1.0
         end
+        bounds._hoverTime = (bounds._hoverTime or 0) + dt
         bounds._scale = math.min(1.1, bounds._scale + dt * 3)
+        self._hoveredOrbIndex = i
       else
         bounds._hovered = false
+        bounds._hoverTime = 0
         bounds._scale = math.max(1.0, bounds._scale - dt * 3)
       end
     end
@@ -648,51 +653,115 @@ function RestSiteScene:_drawOrbSelection(fadeAlpha)
     love.graphics.print(titleText, (vw - titleW) * 0.5, vh * 0.15)
   end
   
-  -- Draw orb cards
+  -- Draw orb icons with names
   if #self._orbCards > 0 then
-    local cardW = 288
-    local spacing = 24
-    local totalW = cardW * #self._orbCards + spacing * math.max(0, #self._orbCards - 1)
-    local startX = (vw - totalW) * 0.5
-    local y = vh * 0.4
+    local iconSize = 80
+    local spacing = 32
+    local rowSpacing = 140
+    local maxCardsPerRow = 4
+    local nameFont = self.textFont or theme.fonts.base
     
+    -- Calculate layout: how many rows needed
+    local numRows = math.ceil(#self._orbCards / maxCardsPerRow)
+    
+    -- Start Y position (shifted up by 80px from original position)
+    local startY = vh * 0.4 - 80
+    
+    -- Draw orbs in rows
     for i, orbData in ipairs(self._orbCards) do
-      local x = startX + (i - 1) * (cardW + spacing)
+      local rowIndex = math.floor((i - 1) / maxCardsPerRow)
+      local colIndex = ((i - 1) % maxCardsPerRow)
+      
+      -- Calculate how many cards are in this row
+      local cardsInRow = math.min(maxCardsPerRow, #self._orbCards - rowIndex * maxCardsPerRow)
+      
+      -- Calculate row width and starting X position (centered)
+      local rowWidth = iconSize * cardsInRow + spacing * math.max(0, cardsInRow - 1)
+      local rowStartX = (vw - rowWidth) * 0.5
+      
+      -- Calculate position for this orb
+      local iconX = rowStartX + colIndex * (iconSize + spacing)
+      local iconY = startY + rowIndex * rowSpacing
+      
       local p = orbData.projectile
       local oldLevel = p.level
-      
-      -- Calculate card height
-      local cardH = self.card:calculateHeight(p or {})
       
       -- Get scale for hover effect
       local bounds = self._orbBounds[i] or {}
       local scale = bounds._scale or 1.0
+      local hovered = bounds._hovered or false
       
-      -- Draw card with hover scale
+      -- Draw orb icon with hover scale
       love.graphics.push()
-      local cx = x + cardW * 0.5
-      local cy = y + cardH * 0.5
+      local cx = iconX + iconSize * 0.5
+      local cy = iconY + iconSize * 0.5
       love.graphics.translate(cx, cy)
       love.graphics.scale(scale, scale)
       love.graphics.translate(-cx, -cy)
       
-      self.card:draw(x, y, orbData.id, fadeAlpha)
+      -- Draw background circle/border
+      if hovered then
+        love.graphics.setColor(1, 1, 1, 0.3 * fadeAlpha)
+        love.graphics.setLineWidth(3)
+        love.graphics.circle("line", iconX + iconSize * 0.5, iconY + iconSize * 0.5, iconSize * 0.5 + 4)
+      else
+        love.graphics.setColor(0.5, 0.5, 0.5, 0.2 * fadeAlpha)
+        love.graphics.setLineWidth(2)
+        love.graphics.circle("line", iconX + iconSize * 0.5, iconY + iconSize * 0.5, iconSize * 0.5)
+      end
+      
+      -- Draw icon
+      if p and p.icon then
+        local ok, iconImg = pcall(love.graphics.newImage, p.icon)
+        if ok and iconImg then
+          love.graphics.setColor(1, 1, 1, fadeAlpha)
+          local iw, ih = iconImg:getWidth(), iconImg:getHeight()
+          local iconScale = iconSize / math.max(iw, ih) * 0.8
+          local drawX = iconX + (iconSize - iw * iconScale) * 0.5
+          local drawY = iconY + (iconSize - ih * iconScale) * 0.5
+          love.graphics.draw(iconImg, drawX, drawY, 0, iconScale, iconScale)
+        end
+      end
       
       love.graphics.pop()
       
-      -- Update bounds
-      local bw = cardW * scale
-      local bh = cardH * scale
+      -- Draw name below icon
+      love.graphics.setFont(nameFont)
+      local nameText = (p and p.name) or orbData.id
+      local nameW = nameFont:getWidth(nameText)
+      local nameX = iconX + (iconSize - nameW) * 0.5
+      local nameY = iconY + iconSize + 8
+      love.graphics.setColor(1, 1, 1, fadeAlpha)
+      love.graphics.print(nameText, nameX, nameY)
+      
+      -- Update bounds for click detection (include name area)
+      -- Use unscaled positions for bounds calculation
+      local nameH = nameFont:getHeight()
+      local totalH = iconSize + 8 + nameH
+      local scaledW = iconSize * scale
+      local scaledH = totalH * scale
+      local boundsCenterX = iconX + iconSize * 0.5
+      local boundsCenterY = iconY + totalH * 0.5
       self._orbBounds[i] = {
-        x = cx - bw * 0.5,
-        y = cy - bh * 0.5,
-        w = bw,
-        h = bh,
-        _hovered = bounds._hovered,
+        x = boundsCenterX - scaledW * 0.5,
+        y = boundsCenterY - scaledH * 0.5,
+        w = scaledW,
+        h = scaledH,
+        _hovered = hovered,
+        _hoverTime = bounds._hoverTime or 0,
         _scale = scale,
+        _orbData = orbData,
       }
       
       if p then p.level = oldLevel end
+    end
+    
+    -- Draw tooltip on hover
+    if self._hoveredOrbIndex and self._orbBounds[self._hoveredOrbIndex] then
+      local bounds = self._orbBounds[self._hoveredOrbIndex]
+      if bounds._hoverTime and bounds._hoverTime > 0.3 then
+        self:_drawOrbTooltip(self._hoveredOrbIndex, bounds, fadeAlpha)
+      end
     end
   else
     -- No orbs to remove
@@ -752,6 +821,46 @@ function RestSiteScene:_drawOrbSelection(fadeAlpha)
       love.graphics.setBlendMode("alpha")
       love.graphics.pop()
     end
+  end
+end
+
+function RestSiteScene:_drawOrbTooltip(orbIndex, bounds, fadeAlpha)
+  if not bounds._orbData then return end
+  
+  local orbData = bounds._orbData
+  local projectile = orbData.projectile
+  if not projectile then return end
+  
+  local vw = config.video.virtualWidth
+  local vh = config.video.virtualHeight
+  
+  -- Calculate tooltip position (to the right of the orb, or left if too close to right edge)
+  local tooltipX = bounds.x + bounds.w + 16
+  local tooltipY = bounds.y
+  
+  -- If tooltip would go off screen, position it to the left instead
+  local tooltipW = 288 -- Same as ProjectileCard width
+  if tooltipX + tooltipW > vw - 20 then
+    tooltipX = bounds.x - tooltipW - 16
+  end
+  
+  -- Clamp vertically
+  local tooltipH = self.card:calculateHeight(projectile)
+  if tooltipY + tooltipH > vh - 20 then
+    tooltipY = vh - tooltipH - 20
+  end
+  if tooltipY < 20 then
+    tooltipY = 20
+  end
+  
+  -- Fade in based on hover time
+  local hoverTime = bounds._hoverTime or 0
+  local fadeProgress = math.min(1.0, (hoverTime - 0.3) / 0.3)
+  local tooltipAlpha = fadeAlpha * fadeProgress
+  
+  -- Draw the full card as tooltip
+  if tooltipAlpha > 0 then
+    self.card:draw(tooltipX, tooltipY, orbData.id, tooltipAlpha)
   end
 end
 
