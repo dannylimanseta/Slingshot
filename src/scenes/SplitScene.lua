@@ -1287,15 +1287,11 @@ function SplitScene:update(dt)
         end
       end
       
-      -- Award gold based on encounter difficulty (use Progress system, not encounter data)
+      -- Award gold based on encounter type (normal vs elite)
       local EncounterManager = require("core.EncounterManager")
-      local PlayerState = require("core.PlayerState")
-      local Progress = require("core.Progress")
       local encounter = EncounterManager.getCurrentEncounter()
       if encounter then
-        -- Use actual difficulty from Progress system instead of static encounter difficulty
-        local difficulty = Progress.getCurrentDifficultyLevel() or 1
-        local goldReward = self:calculateGoldReward(difficulty)
+        local goldReward = self:calculateGoldReward(encounter)
         if goldReward > 0 then
           -- Store gold reward for display in RewardsScene; actual add happens on Rewards click
           self._battleGoldReward = goldReward
@@ -1398,21 +1394,18 @@ function SplitScene:triggerShake(magnitude, duration)
   self.shakeTime = self.shakeDuration
 end
 
--- Calculate gold reward based on difficulty
--- Suggested ranges:
---   Difficulty 1: 15-25 gold (easier encounters)
---   Difficulty 2: 30-45 gold (harder encounters)
-function SplitScene:calculateGoldReward(difficulty)
-  difficulty = difficulty or 1
-  if difficulty == 1 then
-    return love.math.random(15, 25)
-  elseif difficulty == 2 then
-    return love.math.random(30, 45)
+-- Calculate gold reward based on encounter type
+-- Normal encounters: 16-25 gold
+-- Elite encounters: 24-36 gold
+function SplitScene:calculateGoldReward(encounter)
+  if not encounter then
+    return love.math.random(16, 25) -- Default to normal if no encounter
+  end
+  
+  if encounter.elite == true then
+    return love.math.random(24, 36)
   else
-    -- For higher difficulties, scale up: difficulty 3 = 50-70, etc.
-    local baseMin = 15 + (difficulty - 1) * 15
-    local baseMax = 25 + (difficulty - 1) * 20
-    return love.math.random(baseMin, baseMax)
+    return love.math.random(16, 25)
   end
 end
 
