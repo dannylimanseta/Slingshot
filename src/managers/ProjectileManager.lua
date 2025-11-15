@@ -97,5 +97,78 @@ function ProjectileManager.addToEquipped(id)
   return true
 end
 
+-- Remove a projectile from the player's equipped list
+-- @param id string - The projectile ID to remove
+-- @return boolean - True if removed, false if not found
+function ProjectileManager.removeFromEquipped(id)
+  local config = require("config")
+  local eq = (config.player and config.player.equippedProjectiles)
+  if not eq then return false end
+  
+  for i, x in ipairs(eq) do
+    if x == id then
+      table.remove(eq, i)
+      return true
+    end
+  end
+  return false
+end
+
+-- Transform a random equipped orb to a different random orb
+-- @return string|nil - The ID of the new orb, or nil if transformation failed
+function ProjectileManager.transformRandomOrb()
+  local config = require("config")
+  local eq = (config.player and config.player.equippedProjectiles)
+  if not eq or #eq == 0 then return nil end
+  
+  -- Get all available projectile IDs
+  local allProjectiles = projectiles.getAll()
+  local allIds = {}
+  for _, p in ipairs(allProjectiles) do
+    table.insert(allIds, p.id)
+  end
+  
+  if #allIds == 0 then return nil end
+  
+  -- Pick a random equipped orb to transform
+  local randomIndex = love.math.random(#eq)
+  local oldOrbId = eq[randomIndex]
+  
+  -- Get all IDs except the one being transformed (and any other equipped ones)
+  local availableIds = {}
+  for _, id in ipairs(allIds) do
+    local isEquipped = false
+    for _, equippedId in ipairs(eq) do
+      if equippedId == id then
+        isEquipped = true
+        break
+      end
+    end
+    if not isEquipped then
+      table.insert(availableIds, id)
+    end
+  end
+  
+  -- If no available IDs (all orbs are equipped), allow transforming to any orb except the current one
+  if #availableIds == 0 then
+    for _, id in ipairs(allIds) do
+      if id ~= oldOrbId then
+        table.insert(availableIds, id)
+      end
+    end
+  end
+  
+  if #availableIds == 0 then return nil end
+  
+  -- Pick a random new orb
+  local newOrbId = availableIds[love.math.random(#availableIds)]
+  
+  -- Remove old orb and add new orb
+  ProjectileManager.removeFromEquipped(oldOrbId)
+  ProjectileManager.addToEquipped(newOrbId)
+  
+  return newOrbId
+end
+
 return ProjectileManager
 

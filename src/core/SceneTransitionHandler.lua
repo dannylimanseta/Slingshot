@@ -9,6 +9,7 @@ local RewardsScene = require("scenes.RewardsScene")
 local OrbRewardScene = require("scenes.OrbRewardScene")
 local EncounterSelectScene = require("scenes.EncounterSelectScene")
 local RelicSelectScene = require("scenes.RelicSelectScene")
+local EventSelectScene = require("scenes.EventSelectScene")
 local InventoryScene = require("scenes.InventoryScene")
 local EventScene = require("scenes.EventScene")
 local RestSiteScene = require("scenes.RestSiteScene")
@@ -64,6 +65,15 @@ function SceneTransitionHandler:handleReturnToMap(data)
   local victory = data.victory or false
   local goldReward = data.goldReward or 0
   local skipTransition = data.skipTransition
+  
+  -- If there's a previousScene (e.g., EventSelectScene), return to it instead of map
+  if self.previousScene then
+    local prevScene = self.previousScene
+    self.previousScene = nil
+    self.sceneManager:set(prevScene)
+    self.setCursorForScene(prevScene)
+    return
+  end
   
   -- Ensure map scene exists
   if not self.mapScene then
@@ -242,6 +252,20 @@ function SceneTransitionHandler:handleOpenRelicSelect()
   self.setCursorForScene(selectScene)
 end
 
+-- Transition: Open event select
+function SceneTransitionHandler:handleOpenEventSelect()
+  if self.mapScene then
+    self.mapScene._savedWorldX = self.mapScene.playerWorldX
+    self.mapScene._savedWorldY = self.mapScene.playerWorldY
+  end
+
+  local selectScene = EventSelectScene.new()
+  selectScene:setPreviousScene(self.sceneManager.currentScene)
+  self.previousScene = self.sceneManager.currentScene
+  self.sceneManager:set(selectScene)
+  self.setCursorForScene(selectScene)
+end
+
 -- Transition: Open inventory scene
 function SceneTransitionHandler:handleOpenInventory()
   if self.mapScene then
@@ -290,7 +314,14 @@ function SceneTransitionHandler:handleOpenEvent(data)
     self.mapScene._savedWorldX = self.mapScene.playerWorldX
     self.mapScene._savedWorldY = self.mapScene.playerWorldY
   end
-  self.previousScene = self.mapScene
+  -- Set previousScene to current scene (e.g., EventSelectScene) if it exists,
+  -- otherwise default to mapScene
+  local currentScene = self.sceneManager.currentScene
+  if currentScene then
+    self.previousScene = currentScene
+  elseif not self.previousScene then
+    self.previousScene = self.mapScene
+  end
   local eventScene = EventScene.new(eventId)
   self.sceneManager:set(eventScene)
   self.setCursorForScene(eventScene)
@@ -349,6 +380,8 @@ function SceneTransitionHandler:handleTransition(result)
       self:handleOpenEncounterSelect()
     elseif result == "open_relic_select" then
       self:handleOpenRelicSelect()
+    elseif result == "open_event_select" then
+      self:handleOpenEventSelect()
     elseif result == "open_inventory" then
       self:handleOpenInventory()
     elseif result == "start_battle" then
@@ -378,6 +411,8 @@ function SceneTransitionHandler:handleTransition(result)
       self:handleOpenEncounterSelect()
     elseif transitionType == "open_relic_select" then
       self:handleOpenRelicSelect()
+    elseif transitionType == "open_event_select" then
+      self:handleOpenEventSelect()
     elseif transitionType == "open_inventory" then
       self:handleOpenInventory()
     elseif transitionType == "start_battle" then

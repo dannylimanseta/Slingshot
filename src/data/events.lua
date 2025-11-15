@@ -74,6 +74,22 @@ local EVENTS = {
       }
     }
   },
+  transmutation_circle = {
+    id = "transmutation_circle",
+    title = "The Transmutation Circle",
+    image = "event_placeholder.png",
+    text = "A circle of white calcified stone is embedded in the ground, its surface covered in intricate runes that pulse with a faint, shifting light. As you step closer, your orbs begin to resonate, their forms wavering like heat haze.\n\nThe circle whispers promises of change, of transformation. It offers to reshape one of your tools into something new, something different. But transformation is unpredictable, and you cannot choose what emerges from the circle's glow.",
+    choices = {
+      {
+        text = "Place an orb in the circle. Transform a random Orb into another Orb.",
+        effects = { transformRandomOrb = true }
+      },
+      {
+        text = "Step away. Nothing happens.",
+        effects = {}
+      }
+    }
+  },
   -- Add more events here as needed
   -- Example template:
   -- [event_id] = {

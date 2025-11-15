@@ -87,6 +87,14 @@ function MapController:keypressed(key, scancode, isRepeat)
     return "open_relic_select"
   end
   
+  -- Handle E key to open event select debug menu
+  if key == "e" and not isRepeat then
+    if s._orbsUIOpen then
+      return
+    end
+    return "open_event_select"
+  end
+  
   if key == "space" and not s.daySystem:canMove() and not s.isMoving then
     s._endDayPressed = true
     s._endDaySpinTime = 0
