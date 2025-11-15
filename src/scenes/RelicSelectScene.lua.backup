@@ -7,6 +7,14 @@ local RelicSystem = require("core.RelicSystem")
 local RelicSelectScene = {}
 RelicSelectScene.__index = RelicSelectScene
 
+local RARITY_COLORS = {
+  common = { 0.75, 0.75, 0.75, 0.9 },
+  uncommon = { 0.38, 0.78, 0.48, 0.95 },
+  rare = { 0.35, 0.58, 0.94, 0.95 },
+  epic = { 0.74, 0.46, 0.94, 0.95 },
+  legendary = { 0.98, 0.76, 0.32, 0.95 },
+}
+
 local function virtualSize()
   local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
   local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
@@ -30,9 +38,9 @@ function RelicSelectScene.new()
     },
     mouse = { x = 0, y = 0 },
     layout = {
-      rowHeight = 32,
-      rowSpacing = 4,
-      listPadding = 16,
+      rowHeight = 68,
+      rowSpacing = 10,
+      listPadding = 20,
     },
   }, RelicSelectScene)
 end
@@ -66,26 +74,20 @@ function RelicSelectScene:draw()
   local titleFont = theme.fonts.large or theme.fonts.title or theme.fonts.base
   local subtitleFont = theme.fonts.small or theme.fonts.base
 
-  -- Title
-  love.graphics.setFont(titleFont)
-  love.graphics.setColor(1, 1, 1, 0.95)
-  love.graphics.print("RELICS DEBUG MENU", 48, 36)
-
-  -- Instructions
   love.graphics.setFont(subtitleFont)
   love.graphics.setColor(1, 1, 1, 0.65)
-  love.graphics.print("Click to toggle • A equip all • C clear all • Esc to return", 48, 76)
+  love.graphics.print("Up/Down to navigate • Enter to toggle equip • A equip all • C clear all • Esc to return", 48, 48)
 
   local listX = math.floor(w * 0.2)
   local listW = math.floor(w * 0.6)
-  local listY = 120
-  local listH = math.floor(h - listY - 60)
+  local listY = 140
+  local listH = math.floor(h - listY - 80)
 
   -- Background panel
   love.graphics.setColor(0, 0, 0, 0.45)
-  love.graphics.rectangle("fill", listX - 10, listY - 10, listW + 20, listH + 20, 8, 8)
+  love.graphics.rectangle("fill", listX - 10, listY - 10, listW + 20, listH + 20, 12, 12)
   love.graphics.setColor(0.12, 0.16, 0.24, 0.92)
-  love.graphics.rectangle("fill", listX, listY, listW, listH, 6, 6)
+  love.graphics.rectangle("fill", listX, listY, listW, listH, 10, 10)
 
   self:_drawRelicList(listX, listY, listW, listH)
   self:_drawScrollBar(listX + listW + 12, listY, listH)
@@ -134,8 +136,11 @@ function RelicSelectScene:mousepressed(x, y, button)
 
   local index = self:_indexAtPosition(x, y)
   if index then
-    self:_setSelection(index)
-    self:_toggleSelectedRelic()
+    if index == self.selectedIndex then
+      self:_toggleSelectedRelic()
+    else
+      self:_setSelection(index)
+    end
   end
 
   return nil
@@ -159,6 +164,10 @@ function RelicSelectScene:_refreshEntries()
     table.insert(self.entries, {
       id = relic.id,
       name = relic.name or relic.id,
+      rarity = relic.rarity or relics.Rarity and relics.Rarity.COMMON or "common",
+      description = relic.description or "",
+      flavor = relic.flavor or "",
+      tags = relic.tags or {},
     })
   end
 
@@ -176,12 +185,14 @@ function RelicSelectScene:_drawRelicList(listX, listY, listW, listH)
   local innerX = listX + padding
   local innerY = listY + padding
   local innerW = listW - padding * 2
+  local innerH = listH - padding * 2
 
   love.graphics.setScissor(listX, listY, listW, listH)
   love.graphics.push()
   love.graphics.translate(0, -self.scroll.y)
 
   local baseFont = theme.fonts.base
+  local smallFont = theme.fonts.small or theme.fonts.tiny or baseFont
   local rowHeight = self.layout.rowHeight
   local spacing = self.layout.rowSpacing
 
@@ -191,26 +202,36 @@ function RelicSelectScene:_drawRelicList(listX, listY, listW, listH)
 
   for index, entry in ipairs(self.entries) do
     local rowY = innerY + (index - 1) * (rowHeight + spacing)
+    local isSelected = (index == self.selectedIndex)
     local isHovered = (index == self.hoveredIndex)
     local isEquipped = equipped[entry.id] == true
 
-    -- Background
-    local fillAlpha = isHovered and 0.7 or 0.5
-    love.graphics.setColor(0.16, 0.22, 0.34, fillAlpha)
-    love.graphics.rectangle("fill", innerX, rowY, innerW, rowHeight, 4, 4)
+    local fillAlpha = isSelected and 0.9 or (isHovered and 0.65 or 0.55)
+    love.graphics.setColor(0, 0, 0, fillAlpha * 0.45)
+    love.graphics.rectangle("fill", innerX, rowY + 3, innerW, rowHeight, 10, 10)
 
-    -- Equipped indicator (checkmark)
+    love.graphics.setColor(0.16, 0.22, 0.34, fillAlpha)
+    love.graphics.rectangle("fill", innerX, rowY, innerW, rowHeight, 10, 10)
+
     if isEquipped then
       love.graphics.setColor(0.32, 0.78, 0.52, 0.95)
-      love.graphics.setFont(baseFont)
-      love.graphics.print("✓", innerX + 12, rowY + 8)
+      love.graphics.setLineWidth(2)
+      love.graphics.rectangle("line", innerX + 2, rowY + 2, innerW - 4, rowHeight - 4, 9, 9)
     end
 
-    -- Relic name
+    local rarityColor = RARITY_COLORS[string.lower(entry.rarity or "")] or RARITY_COLORS.common
     love.graphics.setFont(baseFont)
-    love.graphics.setColor(1, 1, 1, 0.95)
-    local textX = innerX + (isEquipped and 36 or 16)
-    love.graphics.print(entry.name, textX, rowY + 8)
+    love.graphics.setColor(rarityColor)
+    love.graphics.print(entry.name, innerX + 16, rowY + 12)
+
+    love.graphics.setFont(smallFont)
+    love.graphics.setColor(1, 1, 1, 0.75)
+    local rarityLabel = string.upper(entry.rarity or "COMMON")
+    love.graphics.print(rarityLabel, innerX + innerW - 160, rowY + 12)
+
+    love.graphics.setColor(1, 1, 1, 0.85)
+    local desc = entry.description ~= "" and entry.description or "(no description)"
+    love.graphics.printf(desc, innerX + 16, rowY + 34, innerW - 180, "left")
   end
 
   love.graphics.pop()
@@ -351,8 +372,8 @@ function RelicSelectScene:_listRect()
   local w, h = virtualSize()
   local listX = math.floor(w * 0.2)
   local listW = math.floor(w * 0.6)
-  local listY = 120
-  local listH = math.floor(h - listY - 60)
+  local listY = 140
+  local listH = math.floor(h - listY - 80)
   return { x = listX, y = listY, w = listW, h = listH }
 end
 
@@ -361,3 +382,5 @@ function RelicSelectScene:_pointInRect(x, y, rect)
 end
 
 return RelicSelectScene
+
+
