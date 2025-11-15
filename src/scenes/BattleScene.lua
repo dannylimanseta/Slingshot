@@ -534,880 +534,49 @@ end
 
 function BattleScene:update(dt, bounds)
   self._lastBounds = bounds or self._lastBounds
-  StateBridge.get(self)
-  self:_syncPlayerFromState()
-  self:_syncEnemiesFromState()
+  self:_syncStateFromBridge()
 
-  -- Update enemy flash timers
-  for _, enemy in ipairs(self.enemies or {}) do
-    if enemy.flash > 0 then enemy.flash = math.max(0, enemy.flash - dt * 0.85) end
-  end
+  self:_updateEnemyFlashTimers(dt)
   
   -- Check if player was just hit (flash transitioned from 0 to positive)
-  if self.prevPlayerFlash == 0 and self.playerFlash > 0 then
-    -- Player was just hit, create splatter effect
-    ImpactSystem.createPlayerSplatter(self, self._lastBounds)
-  end
-  self.prevPlayerFlash = self.playerFlash
+  self:_updatePlayerHitEffects(dt)
   
-  if self.playerFlash > 0 then self.playerFlash = math.max(0, self.playerFlash - dt) end
+  self:_tweenHealthBars(dt)
   
-  -- Update impact system (slashes, flashes, knockback)
-  ImpactSystem.update(self, dt)
+  self:_startDisintegrationIfReady()
   
-  -- Update particle system
-  if self.particles then
-    self.particles:update(dt)
-  end
+  self:_updateIntentFadeAnimations(dt)
   
-  -- Sync PlayerState with BattleScene's playerHP (for top bar display)
-  local playerState = PlayerState.getInstance()
-  playerState:setHealth(self.playerHP)
+  self:_updateEnrageFx(dt)
   
-  -- Tween HP bars toward actual HP values
-  local hpTweenSpeed = (config.battle and config.battle.hpBarTweenSpeed) or 8
-  -- Player HP bar tween (exponential interpolation)
-  local playerDelta = self.playerHP - (self.displayPlayerHP or self.playerHP)
-  if math.abs(playerDelta) > 0.01 then
-    local k = math.min(1, hpTweenSpeed * dt) -- Fraction to move this frame
-    self.displayPlayerHP = (self.displayPlayerHP or self.playerHP) + playerDelta * k
-  else
-    self.displayPlayerHP = self.playerHP
-  end
+  self:_advanceDisintegrationAnimations(dt)
   
-  -- Enemy HP bar tween (exponential interpolation) - iterate through all enemies
-  for _, enemy in ipairs(self.enemies or {}) do
-    local enemyDelta = enemy.hp - (enemy.displayHP or enemy.hp)
-  if math.abs(enemyDelta) > 0.01 then
-    local k = math.min(1, hpTweenSpeed * dt) -- Fraction to move this frame
-      enemy.displayHP = (enemy.displayHP or enemy.hp) + enemyDelta * k
-  else
-      enemy.displayHP = enemy.hp
-    end
-  end
+  self:_updateVictoryState()
   
-  -- Check if enemies should start disintegrating (safeguard for any code path)
-  -- Only auto-start if no impact animations are active and disintegration isn't pending
-  -- Also check that disintegration hasn't already completed (to prevent looping)
-  for i, enemy in ipairs(self.enemies or {}) do
-    if enemy.hp <= 0 and not enemy.disintegrating and not enemy.pendingDisintegration and self.state ~= "win" then
-      -- Check if disintegration has already completed (prevent restarting)
-      local cfg = config.battle.disintegration or {}
-      local duration = cfg.duration or 1.5
-      local hasCompletedDisintegration = (enemy.disintegrationTime or 0) >= duration
-      
-      if not hasCompletedDisintegration then
-        local impactsActive = (self.impactInstances and #self.impactInstances > 0) or (self.blackHoleAttacks and #self.blackHoleAttacks > 0)
-        local damagePopupActive = self:_enemyHasActiveDamagePopup(i)
-        if impactsActive or damagePopupActive then
-          -- Wait for impact animations or damage popup to finish
-          enemy.pendingDisintegration = true
-        else
-          -- No impacts or popups, start disintegration immediately
-          enemy.disintegrating = true
-          enemy.disintegrationTime = 0
-        end
-      end
-    end
-  end
+  self:_updateTurnIndicator(dt)
   
-  -- Update intent fade animations
-  local turnManager = self.turnManager
-  local isPlayerTurn = turnManager and (
-    turnManager:getState() == TurnManager.States.PLAYER_TURN_START or
-    turnManager:getState() == TurnManager.States.PLAYER_TURN_ACTIVE
-  )
+  self:_updatePopups(dt)
   
-  local fadeInDuration = 0.3 -- 0.3 seconds to fade in
-  local fadeOutDuration = 0.2 -- 0.2 seconds to fade out
+  self:_triggerPendingDisintegrations()
   
-  for _, enemy in ipairs(self.enemies or {}) do
-    if enemy.intentFadeTime ~= nil then
-      if isPlayerTurn then
-        -- Fade in during player turn
-        if enemy.intentFadeTime < fadeInDuration then
-          enemy.intentFadeTime = math.min(fadeInDuration, enemy.intentFadeTime + dt)
-        else
-          enemy.intentFadeTime = fadeInDuration -- Keep at max during player turn
-        end
-      else
-        -- Fade out when not in player turn
-        enemy.intentFadeTime = math.max(0, enemy.intentFadeTime - dt * (fadeInDuration / fadeOutDuration))
-        if enemy.intentFadeTime <= 0 then
-          enemy.intentFadeTime = nil
-        end
-      end
-    end
-  end
-  
-  -- Update Bloodhound enrage FX timers
-  do
-    local fxDuration = 0.8 -- seconds
-    for _, enemy in ipairs(self.enemies or {}) do
-      if enemy.enrageFxActive and enemy.enrageFxTime ~= nil then
-        enemy.enrageFxTime = enemy.enrageFxTime + dt
-        if enemy.enrageFxTime >= fxDuration or enemy.hp <= 0 then
-          enemy.enrageFxActive = false
-        end
-      end
-    end
-  end
-  
-  -- Update enemy disintegration effects
-  for _, enemy in ipairs(self.enemies or {}) do
-    if enemy.disintegrating then
-    local cfg = config.battle.disintegration or {}
-    local duration = cfg.duration or 1.5
-      enemy.disintegrationTime = enemy.disintegrationTime + dt * 0.5
-      if enemy.disintegrationTime >= duration then
-        enemy.disintegrating = false
-        -- If this was the selected enemy, select next one
-        if self.selectedEnemyIndex and self.enemies[self.selectedEnemyIndex] == enemy then
-          self:_selectNextEnemy()
-        end
-      end
-    end
-  end
-  
-  -- Check victory condition: all enemies must be defeated
-  local allEnemiesDefeated = true
-  local anyDisintegrating = false
-  local anyPendingDisintegration = false
-  for _, enemy in ipairs(self.enemies or {}) do
-    if enemy.hp > 0 and not enemy.disintegrating then
-      allEnemiesDefeated = false
-    end
-    if enemy.disintegrating then
-      anyDisintegrating = true
-    end
-    if enemy.pendingDisintegration then
-      anyPendingDisintegration = true
-    end
-  end
-  
-  if allEnemiesDefeated and self.state ~= "win" then
-    -- All enemies defeated, wait for disintegration animations if needed
-    -- Also wait for pending disintegrations (enemies waiting for impact animations)
-    if not anyDisintegrating and not anyPendingDisintegration then
-      self.state = "win"
-    end
-  end
-  
-  -- Update turn indicator delay
-  if self.turnIndicatorDelay > 0 then
-    self.turnIndicatorDelay = self.turnIndicatorDelay - dt
-    if self.turnIndicatorDelay <= 0 then
-      -- Delay finished, show the pending indicator
-      if self._pendingTurnIndicator then
-        self.turnIndicator = self._pendingTurnIndicator
-        self._pendingTurnIndicator = nil
-        -- Notify TurnManager that the indicator is now visible
-        if self.turnManager and self.turnManager.emit then
-          self.turnManager:emit("turn_indicator_shown", { text = self.turnIndicator.text })
-        end
-      end
-      self.turnIndicatorDelay = 0
-    end
-  end
-  
-  -- Update turn indicator
-  if self.turnIndicator then
-    self.turnIndicator.t = self.turnIndicator.t - dt
-    if self.turnIndicator.t <= 0 then
-      self.turnIndicator = nil
-    end
-  end
-  
-  -- Popups
-  local alive = {}
-  for _, p in ipairs(self.popups) do
-    -- Handle start delay (for black hole attacks)
-    if p.startDelay and p.startDelay > 0 then
-      p.startDelay = p.startDelay - dt
-      if p.startDelay > 0 then
-        -- Still in delay, keep popup but don't update it yet
-        table.insert(alive, p)
-        goto continue
-      else
-        -- Delay finished, popup can now start showing
-        p.startDelay = nil
-      end
-    end
-    
-    -- Update animated damage sequence first
-    local sequenceCompleted = false
-    if p.kind == "animated_damage" and p.sequence and #p.sequence > 0 then
-      -- Initialize sequence index if not set
-      if not p.sequenceIndex then
-        p.sequenceIndex = 1
-        p.sequenceTimer = 0
-      end
-      
-      local prevSequenceIndex = p.sequenceIndex
-      p.sequenceTimer = (p.sequenceTimer or 0) + dt
-      local currentStep = p.sequence[p.sequenceIndex]
-      
-      -- Ensure we wait for the full duration of each step before advancing
-      if currentStep and p.sequenceTimer >= currentStep.duration then
-        -- Move to next step in sequence (only reset timer when advancing)
-        if p.sequenceIndex < #p.sequence then
-          p.sequenceTimer = 0
-          p.sequenceIndex = p.sequenceIndex + 1
-          -- Reset bounce timer when step changes
-          p.bounceTimer = 0
-        end
-        -- If on final step, do not reset timer here; let completion check handle finish
-      end
-      
-      -- Check if sequence has completed (on final step and its duration has elapsed)
-      -- IMPORTANT: Only mark as completed when we're on the final step AND its full duration has elapsed
-      if p.sequenceIndex == #p.sequence then
-        local finalStep = p.sequence[p.sequenceIndex]
-        -- Force wait for the full duration of the final step before marking complete
-        if finalStep and p.sequenceTimer >= finalStep.duration then
-          sequenceCompleted = true
-          -- Mark sequence as completed (only once)
-          if not p.sequenceFinished then
-            p.sequenceFinished = true
-            
-            -- Apply pending damage now that animation is complete
-            if p.who == "enemy" and p.enemyIndex then
-              local enemy = self.enemies and self.enemies[p.enemyIndex]
-              if enemy and enemy.pendingDamage and enemy.pendingDamage > 0 then
-                self:_applyEnemyDamage(p.enemyIndex, enemy.pendingDamage)
-                enemy.pendingDamage = 0
-              end
-            end
-            
-            -- Longer linger for the final value
-            local lastStep = p.sequence[#p.sequence]
-            local hasExclamation = lastStep and lastStep.text and string.find(lastStep.text, "!") ~= nil
-            local lingerTime = hasExclamation and 0.9 or 0.45
-            local disintegrationDisplayTime = 0.25
-            -- Set popup timer to linger window and capture originalLifetime so fade uses this window
-            p.t = lingerTime + disintegrationDisplayTime
-            p.originalLifetime = p.t
-          end
-        end
-      else
-        -- If not on final step yet, ensure sequence is not marked as finished
-        -- This prevents premature display of final number
-        sequenceCompleted = false
-      end
-      
-      -- Update bounce timer (for bounce animation on step changes)
-      -- Initialize bounce timer if not set (for first step)
-      if p.bounceTimer == nil then
-        p.bounceTimer = 0
-      end
-      p.bounceTimer = p.bounceTimer + dt
-        
-      -- Initialize and update character bounce timers for multiplier steps
-      if currentStep and currentStep.isMultiplier then
-        -- Initialize character bounce timers when multiplier step first appears
-        if not p.charBounceTimers then
-          p.charBounceTimers = { 0, 0, 0 } -- Initialize timers for each character part
-          p.multiplierTarget = nil -- Will be set when parsing multiplier text
-        end
-        
-        -- Update character bounce timers with sequential delays
-        local charBounceDelay = 0.08 -- Delay between each character bounce
-        -- Use a separate timer for multiplier animation that doesn't reset
-        if not p.multiplierStartTime then
-          p.multiplierStartTime = p.sequenceTimer or 0
-        end
-        local multiplierElapsed = (p.sequenceTimer or 0) - p.multiplierStartTime
-        
-        for i = 1, #p.charBounceTimers do
-          if multiplierElapsed >= (i - 1) * charBounceDelay then
-            p.charBounceTimers[i] = (p.charBounceTimers[i] or 0) + dt
-          end
-        end
-      end
-      
-      -- Check if we're on the final step with exclamation mark - add shake effect
-      local isFinalStep = (p.sequenceIndex == #p.sequence)
-      local finalStep = p.sequence[#p.sequence]
-      local hasExclamation = finalStep and finalStep.text and string.find(finalStep.text, "!") ~= nil
-      
-      if isFinalStep and hasExclamation then
-        -- Initialize shake/rotation if not already set
-        if not p.shakeTime then
-          local finalStepDuration = finalStep.duration or 0.1
-          p.shakeTime = finalStepDuration * 2.5 -- Shake for 2.5x the final step duration
-          p.shakeRotation = 0
-          p.shakeUpdateTimer = 0 -- Timer for updating shake values
-        end
-        
-        -- Update shake and rotation
-        if p.shakeTime > 0 then
-          p.shakeTime = p.shakeTime - dt
-          p.shakeUpdateTimer = (p.shakeUpdateTimer or 0) + dt
-          
-          -- Shake offset: random jitter that decreases over time
-          local shakeDuration = (finalStep.duration or 0.1) * 2.5 -- Match the initialized duration
-          local progress = p.shakeTime / shakeDuration
-          local shakeMagnitude = 4 * progress -- Shake decreases over time
-          
-          -- Update shake values less frequently (every 0.05 seconds instead of every frame)
-          local shakeUpdateInterval = 0.05
-          if p.shakeUpdateTimer >= shakeUpdateInterval then
-            p.shakeUpdateTimer = 0
-            p.shakeOffsetX = (love.math.random() * 2 - 1) * shakeMagnitude
-            p.shakeOffsetY = (love.math.random() * 2 - 1) * shakeMagnitude
-          end
-          
-          -- Rotation: oscillate with decreasing amplitude (more noticeable rotation)
-          local rotationSpeed = 15 -- oscillations per second
-          local elapsedTime = shakeDuration - p.shakeTime
-          p.shakeRotation = math.sin(elapsedTime * rotationSpeed * 2 * math.pi) * 0.15 * progress -- Up to 0.15 radians (~8.6 degrees)
-        else
-          -- Reset shake when done
-          p.shakeOffsetX = 0
-          p.shakeOffsetY = 0
-          p.shakeRotation = 0
-          p.shakeUpdateTimer = nil
-        end
-      else
-        -- Reset shake if not on final step
-        p.shakeOffsetX = 0
-        p.shakeOffsetY = 0
-        p.shakeRotation = 0
-        p.shakeTime = nil
-      end
-    end
-    
-    -- Only decrement popup timer if sequence has completed (or if not an animated damage popup)
-    -- CRITICAL: For animated damage, NEVER decrement timer until sequence is fully complete
-    local isAnimatedDamage = (p.kind == "animated_damage" and p.sequence)
-    if not isAnimatedDamage then
-      -- Non-animated popups: decrement normally
-      p.t = p.t - dt
-    elseif sequenceCompleted or (p.sequenceFinished == true) then
-      -- Animated damage: only decrement after sequence has fully completed
-      -- This ensures the final number stays visible until all steps have finished
-      p.t = p.t - dt
-    else
-      -- Sequence still in progress: keep popup alive indefinitely until it completes
-      -- Don't decrement timer - this forces the sequence to finish before fade starts
-    end
-    
-    -- Keep popup alive if it has time left
-    if p.t > 0 then 
-      table.insert(alive, p) 
-    end
-    
-    ::continue::
-  end
-  self.popups = alive
-  
-  -- Check if pending disintegration enemies can now start disintegrating (popups finished)
-  for i, enemy in ipairs(self.enemies or {}) do
-    if enemy.pendingDisintegration and enemy.hp <= 0 then
-      local impactsActive = (self.impactInstances and #self.impactInstances > 0) or (self.blackHoleAttacks and #self.blackHoleAttacks > 0)
-      local damagePopupActive = self:_enemyHasActiveDamagePopup(i)
-      if not impactsActive and not damagePopupActive then
-        -- Popups and impacts finished, start disintegration
-        enemy.pendingDisintegration = false
-        if not enemy.disintegrating then
-          enemy.disintegrating = true
-          enemy.disintegrationTime = 0
-        end
-      end
-    end
-  end
-  
-  -- Update armor icon flash timer
-  if self.armorIconFlashTimer > 0 then
-    self.armorIconFlashTimer = math.max(0, self.armorIconFlashTimer - dt)
-  end
-  
-  -- Update border fragments and detect armor break/gain
-  local armorBroken = (self.prevPlayerArmor or 0) > 0 and (self.playerArmor or 0) == 0
-  local armorGained = (self.prevPlayerArmor or 0) == 0 and (self.playerArmor or 0) > 0
-  
-  if armorBroken and self.playerBarX and self.playerBarY and self.playerBarW and self.playerBarH then
-    -- Create shatter fragments
-    local gap = 3
-    self.borderFragments = EnemySkills.createBorderFragments(self.playerBarX, self.playerBarY, self.playerBarW, self.playerBarH, gap, 6)
-  end
-  
-  -- Start fade-in animation when armor is gained
-  if armorGained then
-    self.borderFadeInTime = self.borderFadeInDuration
-  end
-  
-  -- Update border fade-in timer
-  if self.borderFadeInTime > 0 then
-    self.borderFadeInTime = math.max(0, self.borderFadeInTime - dt)
-  end
-  
-  self.prevPlayerArmor = self.playerArmor or 0
-  
-  -- Update fragments with easing
-  local aliveFragments = {}
-  for _, frag in ipairs(self.borderFragments) do
-    frag.lifetime = frag.lifetime - dt
-    if frag.lifetime > 0 then
-      -- Easing: calculate progress (0 to 1, where 1 is just spawned, 0 is about to disappear)
-      local progress = frag.lifetime / frag.maxLifetime
-      
-      -- Ease-out for velocity (fragments slow down over time)
-      local easeOut = progress * progress -- Quadratic ease-out
-      local velScale = 0.3 + easeOut * 0.7 -- Start at 100% speed, end at 30% speed
-      
-      frag.x = frag.x + frag.vx * dt * velScale
-      frag.y = frag.y + frag.vy * dt * velScale
-      frag.rotation = frag.rotation + frag.rotationSpeed * dt * (0.5 + progress * 0.5) -- Rotation also slows
-      
-      -- Store progress for alpha calculation in draw
-      frag.progress = progress
-      
-      table.insert(aliveFragments, frag)
-    end
-  end
-  self.borderFragments = aliveFragments
-  
-  -- Update enemy armor borders and detect armor break/gain for each enemy
-  for i, enemy in ipairs(self.enemies or {}) do
-    if enemy then
-      local prevArmor = self.prevEnemyArmor[i] or 0
-      local currentArmor = enemy.armor or 0
-      local enemyArmorBroken = prevArmor > 0 and currentArmor == 0
-      local enemyArmorGained = prevArmor == 0 and currentArmor > 0
-      
-      if enemyArmorBroken and self.enemyBarX[i] and self.enemyBarY[i] and self.enemyBarW[i] and self.enemyBarH[i] then
-        -- Create shatter fragments for this enemy
-        local gap = 3
-        self.enemyBorderFragments[i] = EnemySkills.createBorderFragments(self.enemyBarX[i], self.enemyBarY[i], self.enemyBarW[i], self.enemyBarH[i], gap, 6)
-      end
-      
-      -- Start fade-in animation when armor is gained
-      if enemyArmorGained then
-        self.enemyBorderFadeInTime[i] = self.borderFadeInDuration
-      end
-      
-      -- Update border fade-in timer
-      if self.enemyBorderFadeInTime[i] and self.enemyBorderFadeInTime[i] > 0 then
-        self.enemyBorderFadeInTime[i] = math.max(0, self.enemyBorderFadeInTime[i] - dt)
-      end
-      
-      -- Store previous armor value
-      self.prevEnemyArmor[i] = currentArmor
-      
-      -- Update fragments with easing
-      if self.enemyBorderFragments[i] then
-        local aliveEnemyFragments = {}
-        for _, frag in ipairs(self.enemyBorderFragments[i]) do
-          frag.lifetime = frag.lifetime - dt
-          if frag.lifetime > 0 then
-            -- Easing: calculate progress (0 to 1, where 1 is just spawned, 0 is about to disappear)
-            local progress = frag.lifetime / frag.maxLifetime
-            
-            -- Ease-out for velocity (fragments slow down over time)
-            local easeOut = progress * progress -- Quadratic ease-out
-            local velScale = 0.3 + easeOut * 0.7 -- Start at 100% speed, end at 30% speed
-            
-            frag.x = frag.x + frag.vx * dt * velScale
-            frag.y = frag.y + frag.vy * dt * velScale
-            frag.rotation = frag.rotation + frag.rotationSpeed * dt * (0.5 + progress * 0.5) -- Rotation also slows
-            
-            -- Store progress for alpha calculation in draw
-            frag.progress = progress
-            
-            table.insert(aliveEnemyFragments, frag)
-          end
-        end
-        self.enemyBorderFragments[i] = aliveEnemyFragments
-      end
-    end
-  end
+  self:_updateArmorEffects(dt)
 
-  -- Handle enemy turn delay (for armor popup timing and player attack completion)
-  if self._enemyTurnDelay and self._enemyTurnDelay > 0 then
-    self._enemyTurnDelay = self._enemyTurnDelay - dt
-    
-    -- Check if player attack animation is still active (lunge or black hole)
-    local playerAttackActive = (self.playerLungeTime and self.playerLungeTime > 0) or false
-    local blackHoleActive = (self.blackHoleAttacks and #self.blackHoleAttacks > 0) or false
-    
-    if (playerAttackActive or blackHoleActive) and self._pendingEnemyTurnStart then
-      -- Player attack or black hole still playing, calculate remaining time
-      local remainingTime = 0
-      
-      if playerAttackActive then
-      local lungeD = (config.battle and config.battle.lungeDuration) or 0
-      local lungeRD = (config.battle and config.battle.lungeReturnDuration) or 0
-      local lungePause = (config.battle and config.battle.lungePauseDuration) or 0
-      local totalLungeDuration = lungeD + lungePause + lungeRD
-        remainingTime = math.max(remainingTime, totalLungeDuration - (self.playerLungeTime or 0))
-      end
-      
-      if blackHoleActive then
-        -- Calculate remaining black hole animation time
-        for _, attack in ipairs(self.blackHoleAttacks or {}) do
-          local attackRemaining = attack.duration - attack.t
-          remainingTime = math.max(remainingTime, attackRemaining)
-        end
-      end
-      
-      -- Reset delay to wait for remaining animation time + small buffer
-      if remainingTime > 0 then
-        self._enemyTurnDelay = remainingTime + 0.1
-      end
-    end
-    
-    if self._enemyTurnDelay <= 0 then
-      self._enemyTurnDelay = nil
-      self._pendingEnemyTurnStart = false
-      if self.turnManager then
-        self.turnManager:startEnemyTurn()
-      end
-    end
-  end
+  self:_updateEnemyTurnDelay(dt)
 
   -- Update enemy skill sequences
   EnemySkills.update(self, dt)
   
-  -- Update heal glow timers (fade out over time)
-  if self.playerHealGlowTimer > 0 then
-    self.playerHealGlowTimer = math.max(0, self.playerHealGlowTimer - dt)
-  end
-  for i, enemy in ipairs(self.enemies or {}) do
-    if self.enemyHealGlowTimer[i] and self.enemyHealGlowTimer[i] > 0 then
-      self.enemyHealGlowTimer[i] = math.max(0, self.enemyHealGlowTimer[i] - dt)
-    end
-  end
+  self:_updateHealGlowTimers(dt)
   
-  -- Check for charged attacks entering forward phase and apply damage
-  for _, enemy in ipairs(self.enemies or {}) do
-    if enemy.pendingChargedDamage and enemy.chargeLungeTime and enemy.chargeLungeTime > 0 and enemy.chargeLunge then
-      local t = enemy.chargeLungeTime
-      local w = enemy.chargeLunge.windupDuration or 0.55
-      local f = enemy.chargeLunge.forwardDuration or 0.2
-      
-      -- Check if we just entered the forward phase (windup just finished)
-      -- Apply damage once when forward phase starts (not during windup)
-      -- Apply when we cross the threshold from windup to forward phase
-      if t >= w and not enemy.chargedDamageApplied then
-        enemy.chargedDamageApplied = true -- Mark as applied to prevent multiple applications
-        
-        local dmg = enemy.pendingChargedDamage
-        local blocked, net = self:_applyPlayerDamage(dmg)
-        
-        -- If damage is fully blocked, show armor icon popup and flash icon
-        if net <= 0 then
-          self.armorIconFlashTimer = 0.5 -- Flash duration
-          table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
-        else
-          self.playerFlash = config.battle.hitFlashDuration
-          self.playerKnockbackTime = 1e-6
-          table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
-          -- Emit hit burst particles from player center
-          if self.particles then
-            local px, py = self:getPlayerCenterPivot(self._lastBounds)
-            if px and py then
-              self.particles:emitHitBurst(px, py) -- Uses default colors between FFE7B3 and D79752
-            end
-          end
-          pushLog(self, (enemy.name or "Enemy") .. " dealt " .. net)
-          if self.onPlayerDamage then
-            self.onPlayerDamage()
-          end
-        end
-        
-        -- Trigger screenshake when damage is applied
-        self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
-        
-        -- Clear pending damage
-        enemy.pendingChargedDamage = nil
-      end
-      
-      -- Reset flag when animation completes
-      if t >= w + f + (enemy.chargeLunge.returnDuration or 0.2) then
-        enemy.chargedDamageApplied = nil
-      end
-    end
-  end
+  self:_processChargedAttackDamage(dt)
 
-  -- Update multi-hit attack timers
-  for i, enemy in ipairs(self.enemies or {}) do
-    if enemy.multiHitState then
-      local state = enemy.multiHitState
-      state.timer = state.timer + dt
-      
-      if state.timer >= state.delay then
-        state.timer = 0
-        state.currentHit = state.currentHit + 1
-        
-        if state.currentHit <= state.remainingHits then
-          local blocked, net = self:_applyPlayerDamage(state.damage)
-          
-          if net <= 0 then
-            self.armorIconFlashTimer = 0.5
-            table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
-          else
-            -- Flash and knockback on EVERY hit for better visual feedback
-            self.playerFlash = config.battle.hitFlashDuration
-            self.playerKnockbackTime = 1e-6
-            table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
-            if self.particles then
-              local px, py = self:getPlayerCenterPivot(self._lastBounds)
-              if px and py then
-                self.particles:emitHitBurst(px, py)
-              end
-            end
-            if self.onPlayerDamage then
-              self.onPlayerDamage()
-            end
-          end
-          
-          -- Trigger lunge on EVERY hit for better visual feedback
-          enemy.lungeTime = 1e-6
-          -- Trigger shake on EVERY hit for better feedback
-          self:triggerShake((config.battle and config.battle.shakeMagnitude) or 8, (config.battle and config.battle.shakeDuration) or 0.2)
-          
-          -- On last hit, clean up
-          if state.currentHit >= state.remainingHits then
-            enemy.multiHitState = nil
-            
-            if self.playerHP <= 0 then
-              self.state = "lose"
-              if self.turnManager then
-                self.turnManager:transitionTo(TurnManager.States.DEFEAT)
-              end
-            end
-          end
-        end
-      end
-    end
-  end
+  self:_updateMultiHitAttacks(dt)
   
-  -- Update tweened darkness for non-attacking enemies
-  local targetDarkness = (self._attackingEnemyIndex ~= nil) and 1.0 or 0.0 -- Darken fully (to 0% brightness) when enemy is attacking
-  local darknessSpeed = 4.0 -- Speed of darkness tween
-  local darknessDelta = targetDarkness - self._nonAttackingEnemyDarkness
-  self._nonAttackingEnemyDarkness = self._nonAttackingEnemyDarkness + darknessDelta * math.min(1, darknessSpeed * dt)
+  self:_updateEnemyDarkness(dt)
   
-  -- Handle staggered enemy attack delays
-  -- Don't process staggered attacks while shockwave, calcify, or charged attack is active
-  local shockwaveActive = self._shockwaveSequence ~= nil
-  local calcifyActive = self._calcifySequence ~= nil
-  local chargedAttackActive = false
-  for _, enemy in ipairs(self.enemies or {}) do
-    if enemy.chargeLungeTime and enemy.chargeLungeTime > 0 then
-      chargedAttackActive = true
-      break
-    end
-  end
-  local aliveAttackDelays = {}
-  for _, delayData in ipairs(self._enemyAttackDelays or {}) do
-    if shockwaveActive or calcifyActive or chargedAttackActive then
-      -- Shockwave, calcify, or charged attack is active, don't count down - just keep the delay data
-      table.insert(aliveAttackDelays, delayData)
-    else
-      delayData.delay = delayData.delay - dt
-      if delayData.delay <= 0 then
-        -- Set this enemy as the attacking enemy (before performing action)
-        self._attackingEnemyIndex = delayData.index
-        
-        -- Perform action for this enemy
-        local enemy = self.enemies[delayData.index]
-        if enemy and enemy.hp > 0 then
-          -- Use stored intent if available, otherwise fall back to default damage
-          local intent = enemy.intent
-          if intent and intent.type == "armor" then
-            EnemySkills.performArmorGain(self, enemy, delayData.index, intent.amount or 5)
-          elseif intent and intent.type == "skill" and intent.skillType == "heal" then
-            EnemySkills.performHeal(self, enemy, intent.targetIndex, intent.amount or 18)
-          elseif intent and intent.type == "skill" and intent.skillType == "calcify" then
-            EnemySkills.performCalcify(self, enemy, intent.blockCount or 3)
-          elseif intent and intent.type == "skill" and intent.skillType == "charge" then
-            EnemySkills.performCharge(self, enemy, (intent and intent.armorBlockCount) or 3)
-          elseif intent and intent.type == "skill" and intent.skillType == "spore" then
-            EnemySkills.performSpore(self, enemy, (intent and intent.sporeCount) or 2)
-          elseif (intent and intent.type == "skill" and intent.skillType == "shockwave") or
-                 (intent and intent.type == "attack" and intent.attackType == "shockwave") then
-            EnemySkills.performShockwave(self, enemy)
-          else
-            -- Normal or charged attack
-            local isChargedAttack = intent and intent.type == "attack" and intent.attackType == "charged"
-            local hitCount = self:_getEnemyHitCount(enemy, intent)
-            
-            local dmg
-            if intent and intent.type == "attack" and intent.damageMin and intent.damageMax then
-              dmg = love.math.random(intent.damageMin, intent.damageMax)
-            else
-              dmg = love.math.random(enemy.damageMin, enemy.damageMax)
-            end
-            
-            if isChargedAttack then
-              -- Store damage (scaled by hit count) to apply later when forward charge phase starts
-              enemy.pendingChargedDamage = dmg * hitCount
-              enemy.chargedDamageApplied = nil
-              enemy.chargeLungeTime = 1e-6
-              enemy.chargeLunge = {
-                windupDuration = 0.55,
-                forwardDuration = 0.22,
-                returnDuration = 0.24,
-                backDistance = ((config.battle and config.battle.lungeDistance) or 80) * 0.6,
-                forwardDistance = ((config.battle and config.battle.lungeDistance) or 80) * 2.8,
-              }
-            else
-              -- Apply multi-hit damage immediately
-              self:_applyMultiHitDamage(enemy, dmg, hitCount, delayData.index)
-            end
-            
-            if self.playerHP <= 0 then
-              self.state = "lose"
-              pushLog(self, "You were defeated!")
-              if self.turnManager then
-                self.turnManager:transitionTo(TurnManager.States.DEFEAT)
-              end
-            end
-          end
-        end
-        -- Clear attacking enemy after attack completes (with small delay for visual feedback)
-        -- The delay will be handled by checking if attack delays are empty
-      else
-        table.insert(aliveAttackDelays, delayData)
-      end
-    end
-  end
-  self._enemyAttackDelays = aliveAttackDelays
-  
-  -- Clear attacking enemy index when all attacks are done
-  -- Add small delay after last attack completes for visual feedback
-  if #self._enemyAttackDelays == 0 and not shockwaveActive and not calcifyActive then
-    -- Keep attacking enemy visible for a brief moment after attack completes
-    if not self._attackingEnemyClearDelay then
-      self._attackingEnemyClearDelay = 0.3 -- 0.3s delay before clearing
-    else
-      self._attackingEnemyClearDelay = self._attackingEnemyClearDelay - dt
-      if self._attackingEnemyClearDelay <= 0 then
-        self._attackingEnemyIndex = nil
-        self._attackingEnemyClearDelay = nil
-      end
-    end
-  else
-    -- Reset delay if attacks are still happening
-    self._attackingEnemyClearDelay = nil
-  end
+  self:_updateEnemyAttackDelays(dt)
 
-  -- Handle player attack delay (between ball despawn and attack animation)
-  if self._playerAttackDelayTimer and self._playerAttackDelayTimer > 0 then
-    self._playerAttackDelayTimer = self._playerAttackDelayTimer - dt
-    if self._playerAttackDelayTimer <= 0 then
-      self._playerAttackDelayTimer = nil
-      
-      -- Apply pending damage and visual effects
-      if self._pendingPlayerAttackDamage then
-        local dmg = self._pendingPlayerAttackDamage.damage
-        local armor = self._pendingPlayerAttackDamage.armor
-        local isAOE = self._pendingPlayerAttackDamage.isAOE or false
-        local projectileId = self._pendingPlayerAttackDamage.projectileId or "strike"
-        local behavior = self._pendingPlayerAttackDamage.behavior
-        local impactBlockCount = self._pendingPlayerAttackDamage.impactBlockCount or 1
-        local impactIsCrit = self._pendingPlayerAttackDamage.impactIsCrit or false
-        
-        -- Create impact sprite animations first (before damage effects)
-        if impactBlockCount and impactBlockCount > 0 then
-          self:_createImpactInstances({
-            blockCount = impactBlockCount,
-            isCrit = impactIsCrit,
-            isAOE = isAOE,
-            projectileId = projectileId,
-            behavior = behavior
-          })
-        end
-        
-        -- Build animated damage sequence
-        local blockHitSequence = self._pendingPlayerAttackDamage.blockHitSequence or {}
-        local orbBaseDamage = self._pendingPlayerAttackDamage.orbBaseDamage or 0
-        
-        -- Calculate baseDamage if not provided (exclude crit/multiplier blocks)
-        local baseDamage = self._pendingPlayerAttackDamage.baseDamage
-        if not baseDamage or baseDamage == 0 then
-          baseDamage = orbBaseDamage
-          for _, hit in ipairs(blockHitSequence) do
-            local kind = (type(hit) == "table" and hit.kind) or "damage"
-            local amount = (type(hit) == "table" and (hit.damage or hit.amount)) or 0
-            -- Only add damage from blocks that actually deal damage
-            -- Exclude crit/multiplier (they are multipliers) and armor/heal/potion (non-damage effects)
-            if kind ~= "crit" and kind ~= "multiplier" and kind ~= "armor" and kind ~= "heal" and kind ~= "potion" then
-              baseDamage = baseDamage + amount
-            end
-          end
-        end
-        
-        local critCount = self._pendingPlayerAttackDamage.critCount or 0
-        local multiplierCount = self._pendingPlayerAttackDamage.multiplierCount or 0
-        local damageSequence = buildDamageAnimationSequence(blockHitSequence, baseDamage, orbBaseDamage, critCount, multiplierCount, dmg)
-        
-        -- Apply damage to all enemies if AOE, otherwise just selected enemy
-        if isAOE then
-          -- AOE attack: damage all enemies
-          for i, enemy in ipairs(self.enemies or {}) do
-            if enemy and enemy.hp > 0 then
-              -- For black hole, delay HP reduction until damage animation completes
-              if behavior.delayHPReduction then
-                enemy.pendingDamage = (enemy.pendingDamage or 0) + dmg
-              else
-                self:_applyEnemyDamage(i, dmg)
-              end
-
-              self:_enqueueDamagePopup(i, damageSequence, behavior, impactIsCrit, {
-                linger = { default = 0.05, exclamation = 0.2 },
-                disintegrationTime = 0,
-                disintegrationDisplayTime = 0.2,
-              })
-              self:_handleEnemyDefeatPostHit(i)
-            end
-          end
-          pushLog(self, "You dealt " .. dmg .. " to all enemies!")
-        else
-          -- Normal attack: damage only selected enemy
-        local selectedEnemy = self:getSelectedEnemy()
-        if selectedEnemy then
-          local i = self.selectedEnemyIndex
-          if selectedEnemy.hp > 0 then
-            -- For black hole, delay HP reduction until damage animation completes
-            if behavior.delayHPReduction then
-              selectedEnemy.pendingDamage = (selectedEnemy.pendingDamage or 0) + dmg
-            else
-              self:_applyEnemyDamage(i, dmg)
-            end
-
-            self:_enqueueDamagePopup(i, damageSequence, behavior, impactIsCrit, {
-              linger = { default = 0.3 },
-              finalStepDisplayTimeMultiplier = 0.5,
-            })
-            self:_handleEnemyDefeatPostHit(i)
-
-            if selectedEnemy.hp <= 0 then
-              self:_selectNextEnemy()
-            end
-          end
-        end
-        pushLog(self, "You dealt " .. dmg)
-        end
-        
-        -- Clear pending damage
-        self._pendingPlayerAttackDamage = nil
-      end
-      
-      -- Also handle case where impact params exist but no damage (shouldn't happen, but be safe)
-      if self._pendingImpactParams then
-        self:_createImpactInstances(self._pendingImpactParams.blockCount, self._pendingImpactParams.isCrit)
-        self._pendingImpactParams = nil
-      end
-      
-      -- Trigger player lunge animation
-      self.playerLungeTime = 1e-6
-      -- Trigger screenshake
-      self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
-    end
-  end
+  self:_updatePlayerAttackDelay(dt)
 
   -- Delegate animation timers and streaks
   Visuals.update(self, dt)
@@ -1815,6 +984,800 @@ function BattleScene:_computeEnemyLayout(bounds)
   return layout
 end
 
+function BattleScene:_syncStateFromBridge()
+  StateBridge.get(self)
+  self:_syncPlayerFromState()
+  self:_syncEnemiesFromState()
+end
+
+function BattleScene:_updateEnemyFlashTimers(dt)
+  for _, enemy in ipairs(self.enemies or {}) do
+    if enemy.flash and enemy.flash > 0 then
+      enemy.flash = math.max(0, enemy.flash - dt * 0.85)
+    end
+  end
+end
+
+function BattleScene:_updatePlayerHitEffects(dt)
+  if self.prevPlayerFlash == 0 and self.playerFlash > 0 then
+    ImpactSystem.createPlayerSplatter(self, self._lastBounds)
+  end
+  self.prevPlayerFlash = self.playerFlash
+
+  if self.playerFlash and self.playerFlash > 0 then
+    self.playerFlash = math.max(0, self.playerFlash - dt)
+  end
+
+  ImpactSystem.update(self, dt)
+
+  if self.particles then
+    self.particles:update(dt)
+  end
+
+  local playerState = PlayerState.getInstance()
+  playerState:setHealth(self.playerHP)
+end
+
+function BattleScene:_tweenHealthBars(dt)
+  local hpTweenSpeed = (config.battle and config.battle.hpBarTweenSpeed) or 8
+
+  local playerDelta = self.playerHP - (self.displayPlayerHP or self.playerHP)
+  if math.abs(playerDelta) > 0.01 then
+    local k = math.min(1, hpTweenSpeed * dt)
+    self.displayPlayerHP = (self.displayPlayerHP or self.playerHP) + playerDelta * k
+  else
+    self.displayPlayerHP = self.playerHP
+  end
+
+  for _, enemy in ipairs(self.enemies or {}) do
+    local enemyDelta = enemy.hp - (enemy.displayHP or enemy.hp)
+    if math.abs(enemyDelta) > 0.01 then
+      local k = math.min(1, hpTweenSpeed * dt)
+      enemy.displayHP = (enemy.displayHP or enemy.hp) + enemyDelta * k
+    else
+      enemy.displayHP = enemy.hp
+    end
+  end
+end
+
+function BattleScene:_startDisintegrationIfReady()
+  if self.state == "win" then
+    return
+  end
+
+  local disintegrationCfg = config.battle.disintegration or {}
+  local duration = disintegrationCfg.duration or 1.5
+  local impactsActive = (self.impactInstances and #self.impactInstances > 0) or (self.blackHoleAttacks and #self.blackHoleAttacks > 0)
+
+  for index, enemy in ipairs(self.enemies or {}) do
+    if enemy.hp <= 0 and not enemy.disintegrating and not enemy.pendingDisintegration then
+      local hasCompleted = (enemy.disintegrationTime or 0) >= duration
+      if not hasCompleted then
+        local damagePopupActive = self:_enemyHasActiveDamagePopup(index)
+        if impactsActive or damagePopupActive then
+          enemy.pendingDisintegration = true
+        else
+          enemy.disintegrating = true
+          enemy.disintegrationTime = 0
+        end
+      end
+    end
+  end
+end
+
+function BattleScene:_updateIntentFadeAnimations(dt)
+  local turnManager = self.turnManager
+  local isPlayerTurn = turnManager and (
+    turnManager:getState() == TurnManager.States.PLAYER_TURN_START or
+    turnManager:getState() == TurnManager.States.PLAYER_TURN_ACTIVE
+  )
+
+  local fadeInDuration = 0.3
+  local fadeOutDuration = 0.2
+  local fadeOutRate = fadeOutDuration > 0 and (fadeInDuration / fadeOutDuration) or 0
+
+  for _, enemy in ipairs(self.enemies or {}) do
+    if enemy.intentFadeTime ~= nil then
+      if isPlayerTurn then
+        if enemy.intentFadeTime < fadeInDuration then
+          enemy.intentFadeTime = math.min(fadeInDuration, enemy.intentFadeTime + dt)
+        else
+          enemy.intentFadeTime = fadeInDuration
+        end
+      else
+        if fadeOutRate > 0 then
+          enemy.intentFadeTime = math.max(0, enemy.intentFadeTime - dt * fadeOutRate)
+        else
+          enemy.intentFadeTime = 0
+        end
+        if enemy.intentFadeTime <= 0 then
+          enemy.intentFadeTime = nil
+        end
+      end
+    end
+  end
+end
+
+function BattleScene:_updateEnrageFx(dt)
+  local fxDuration = 0.8
+  for _, enemy in ipairs(self.enemies or {}) do
+    if enemy.enrageFxActive and enemy.enrageFxTime ~= nil then
+      enemy.enrageFxTime = enemy.enrageFxTime + dt
+      if enemy.enrageFxTime >= fxDuration or enemy.hp <= 0 then
+        enemy.enrageFxActive = false
+      end
+    end
+  end
+end
+
+function BattleScene:_advanceDisintegrationAnimations(dt)
+  local cfg = config.battle.disintegration or {}
+  local duration = cfg.duration or 1.5
+
+  for index, enemy in ipairs(self.enemies or {}) do
+    if enemy.disintegrating then
+      enemy.disintegrationTime = (enemy.disintegrationTime or 0) + dt * 0.5
+      if enemy.disintegrationTime >= duration then
+        enemy.disintegrating = false
+        if self.selectedEnemyIndex == index then
+          self:_selectNextEnemy()
+        end
+      end
+    end
+  end
+end
+
+function BattleScene:_updateVictoryState()
+  if self.state == "win" then
+    return
+  end
+
+  local allEnemiesDefeated = true
+  local anyDisintegrating = false
+  local anyPending = false
+
+  for _, enemy in ipairs(self.enemies or {}) do
+    if enemy.hp > 0 and not enemy.disintegrating then
+      allEnemiesDefeated = false
+    end
+    if enemy.disintegrating then
+      anyDisintegrating = true
+    end
+    if enemy.pendingDisintegration then
+      anyPending = true
+    end
+  end
+
+  if allEnemiesDefeated and not anyDisintegrating and not anyPending then
+    self.state = "win"
+  end
+end
+
+function BattleScene:_updateTurnIndicator(dt)
+  if self.turnIndicatorDelay and self.turnIndicatorDelay > 0 then
+    self.turnIndicatorDelay = self.turnIndicatorDelay - dt
+    if self.turnIndicatorDelay <= 0 then
+      if self._pendingTurnIndicator then
+        self.turnIndicator = self._pendingTurnIndicator
+        self._pendingTurnIndicator = nil
+        if self.turnManager and self.turnManager.emit then
+          self.turnManager:emit("turn_indicator_shown", { text = self.turnIndicator.text })
+        end
+      end
+      self.turnIndicatorDelay = 0
+    end
+  end
+
+  if self.turnIndicator then
+    self.turnIndicator.t = self.turnIndicator.t - dt
+    if self.turnIndicator.t <= 0 then
+      self.turnIndicator = nil
+    end
+  end
+end
+
+function BattleScene:_updatePopups(dt)
+  local alive = {}
+
+  for _, p in ipairs(self.popups or {}) do
+    if p.startDelay and p.startDelay > 0 then
+      p.startDelay = p.startDelay - dt
+      if p.startDelay > 0 then
+        table.insert(alive, p)
+        goto continue
+      else
+        p.startDelay = nil
+      end
+    end
+
+    local sequenceCompleted = false
+    if p.kind == "animated_damage" and p.sequence and #p.sequence > 0 then
+      if not p.sequenceIndex then
+        p.sequenceIndex = 1
+        p.sequenceTimer = 0
+      end
+
+      p.sequenceTimer = (p.sequenceTimer or 0) + dt
+      local currentStep = p.sequence[p.sequenceIndex]
+
+      if currentStep and p.sequenceTimer >= currentStep.duration then
+        if p.sequenceIndex < #p.sequence then
+          p.sequenceTimer = 0
+          p.sequenceIndex = p.sequenceIndex + 1
+          p.bounceTimer = 0
+        end
+      end
+
+      if p.sequenceIndex == #p.sequence then
+        local finalStep = p.sequence[p.sequenceIndex]
+        if finalStep and p.sequenceTimer >= finalStep.duration then
+          sequenceCompleted = true
+          if not p.sequenceFinished then
+            p.sequenceFinished = true
+
+            if p.who == "enemy" and p.enemyIndex then
+              local enemy = self.enemies and self.enemies[p.enemyIndex]
+              if enemy and enemy.pendingDamage and enemy.pendingDamage > 0 then
+                self:_applyEnemyDamage(p.enemyIndex, enemy.pendingDamage)
+                enemy.pendingDamage = 0
+              end
+            end
+
+            local lastStep = p.sequence[#p.sequence]
+            local hasExclamation = lastStep and lastStep.text and string.find(lastStep.text, "!") ~= nil
+            local lingerTime = hasExclamation and 0.9 or 0.45
+            local disintegrationDisplayTime = 0.25
+            p.t = lingerTime + disintegrationDisplayTime
+            p.originalLifetime = p.t
+          end
+        end
+      else
+        sequenceCompleted = false
+      end
+
+      if p.bounceTimer == nil then
+        p.bounceTimer = 0
+      end
+      p.bounceTimer = p.bounceTimer + dt
+
+      local currentStep = p.sequence[p.sequenceIndex]
+      if currentStep and currentStep.isMultiplier then
+        if not p.charBounceTimers then
+          p.charBounceTimers = { 0, 0, 0 }
+          p.multiplierTarget = nil
+        end
+
+        local charBounceDelay = 0.08
+        if not p.multiplierStartTime then
+          p.multiplierStartTime = p.sequenceTimer or 0
+        end
+        local multiplierElapsed = (p.sequenceTimer or 0) - p.multiplierStartTime
+
+        for i = 1, #p.charBounceTimers do
+          if multiplierElapsed >= (i - 1) * charBounceDelay then
+            p.charBounceTimers[i] = (p.charBounceTimers[i] or 0) + dt
+          end
+        end
+      end
+
+      local isFinalStep = (p.sequenceIndex == #p.sequence)
+      local finalStep = p.sequence[#p.sequence]
+      local hasExclamation = finalStep and finalStep.text and string.find(finalStep.text, "!") ~= nil
+
+      if isFinalStep and hasExclamation then
+        if not p.shakeTime then
+          local finalStepDuration = finalStep.duration or 0.1
+          p.shakeTime = finalStepDuration * 2.5
+          p.shakeRotation = 0
+          p.shakeUpdateTimer = 0
+        end
+
+        if p.shakeTime > 0 then
+          p.shakeTime = p.shakeTime - dt
+          p.shakeUpdateTimer = (p.shakeUpdateTimer or 0) + dt
+
+          local shakeDuration = (finalStep.duration or 0.1) * 2.5
+          local progress = shakeDuration > 0 and (p.shakeTime / shakeDuration) or 0
+          local shakeMagnitude = 4 * progress
+
+          local shakeUpdateInterval = 0.05
+          if p.shakeUpdateTimer >= shakeUpdateInterval then
+            p.shakeUpdateTimer = 0
+            p.shakeOffsetX = (love.math.random() * 2 - 1) * shakeMagnitude
+            p.shakeOffsetY = (love.math.random() * 2 - 1) * shakeMagnitude
+          end
+
+          local rotationSpeed = 15
+          local elapsedTime = shakeDuration - p.shakeTime
+          p.shakeRotation = math.sin(elapsedTime * rotationSpeed * 2 * math.pi) * 0.15 * progress
+        else
+          p.shakeOffsetX = 0
+          p.shakeOffsetY = 0
+          p.shakeRotation = 0
+          p.shakeUpdateTimer = nil
+        end
+      else
+        p.shakeOffsetX = 0
+        p.shakeOffsetY = 0
+        p.shakeRotation = 0
+        p.shakeTime = nil
+      end
+    end
+
+    local isAnimatedDamage = (p.kind == "animated_damage" and p.sequence)
+    if not isAnimatedDamage then
+      p.t = (p.t or 0) - dt
+    elseif sequenceCompleted or (p.sequenceFinished == true) then
+      p.t = (p.t or 0) - dt
+    end
+
+    if p.t and p.t > 0 then
+      table.insert(alive, p)
+    end
+
+    ::continue::
+  end
+
+  self.popups = alive
+end
+
+function BattleScene:_triggerPendingDisintegrations()
+  local impactsActive = (self.impactInstances and #self.impactInstances > 0) or (self.blackHoleAttacks and #self.blackHoleAttacks > 0)
+
+  for index, enemy in ipairs(self.enemies or {}) do
+    if enemy.pendingDisintegration and enemy.hp <= 0 then
+      local damagePopupActive = self:_enemyHasActiveDamagePopup(index)
+      if not impactsActive and not damagePopupActive then
+        enemy.pendingDisintegration = false
+        if not enemy.disintegrating then
+          enemy.disintegrating = true
+          enemy.disintegrationTime = 0
+        end
+      end
+    end
+  end
+end
+
+function BattleScene:_updateArmorEffects(dt)
+  if self.armorIconFlashTimer and self.armorIconFlashTimer > 0 then
+    self.armorIconFlashTimer = math.max(0, self.armorIconFlashTimer - dt)
+  end
+
+  local prevPlayerArmor = self.prevPlayerArmor or 0
+  local playerArmor = self.playerArmor or 0
+  local armorBroken = prevPlayerArmor > 0 and playerArmor == 0
+  local armorGained = prevPlayerArmor == 0 and playerArmor > 0
+
+  if armorBroken and self.playerBarX and self.playerBarY and self.playerBarW and self.playerBarH then
+    local gap = 3
+    self.borderFragments = EnemySkills.createBorderFragments(self.playerBarX, self.playerBarY, self.playerBarW, self.playerBarH, gap, 6)
+  end
+
+  if armorGained then
+    self.borderFadeInTime = self.borderFadeInDuration
+  end
+
+  if self.borderFadeInTime and self.borderFadeInTime > 0 then
+    self.borderFadeInTime = math.max(0, self.borderFadeInTime - dt)
+  end
+
+  self.prevPlayerArmor = playerArmor
+
+  local aliveFragments = {}
+  for _, frag in ipairs(self.borderFragments or {}) do
+    frag.lifetime = (frag.lifetime or 0) - dt
+    if frag.lifetime > 0 then
+      local progress = frag.maxLifetime and (frag.lifetime / frag.maxLifetime) or 0
+      local easeOut = progress * progress
+      local velScale = 0.3 + easeOut * 0.7
+      frag.x = frag.x + frag.vx * dt * velScale
+      frag.y = frag.y + frag.vy * dt * velScale
+      frag.rotation = frag.rotation + frag.rotationSpeed * dt * (0.5 + progress * 0.5)
+      frag.progress = progress
+      table.insert(aliveFragments, frag)
+    end
+  end
+  self.borderFragments = aliveFragments
+
+  for i, enemy in ipairs(self.enemies or {}) do
+    local prevArmor = self.prevEnemyArmor[i] or 0
+    local currentArmor = enemy.armor or 0
+    local enemyArmorBroken = prevArmor > 0 and currentArmor == 0
+    local enemyArmorGained = prevArmor == 0 and currentArmor > 0
+
+    if enemyArmorBroken and self.enemyBarX[i] and self.enemyBarY[i] and self.enemyBarW[i] and self.enemyBarH[i] then
+      local gap = 3
+      self.enemyBorderFragments[i] = EnemySkills.createBorderFragments(self.enemyBarX[i], self.enemyBarY[i], self.enemyBarW[i], self.enemyBarH[i], gap, 6)
+    end
+
+    if enemyArmorGained then
+      self.enemyBorderFadeInTime[i] = self.borderFadeInDuration
+    end
+
+    if self.enemyBorderFadeInTime[i] and self.enemyBorderFadeInTime[i] > 0 then
+      self.enemyBorderFadeInTime[i] = math.max(0, self.enemyBorderFadeInTime[i] - dt)
+    end
+
+    self.prevEnemyArmor[i] = currentArmor
+
+    if self.enemyBorderFragments[i] then
+      local aliveEnemyFragments = {}
+      for _, frag in ipairs(self.enemyBorderFragments[i]) do
+        frag.lifetime = (frag.lifetime or 0) - dt
+        if frag.lifetime > 0 then
+          local progress = frag.maxLifetime and (frag.lifetime / frag.maxLifetime) or 0
+          local easeOut = progress * progress
+          local velScale = 0.3 + easeOut * 0.7
+          frag.x = frag.x + frag.vx * dt * velScale
+          frag.y = frag.y + frag.vy * dt * velScale
+          frag.rotation = frag.rotation + frag.rotationSpeed * dt * (0.5 + progress * 0.5)
+          frag.progress = progress
+          table.insert(aliveEnemyFragments, frag)
+        end
+      end
+      self.enemyBorderFragments[i] = aliveEnemyFragments
+    end
+  end
+end
+
+function BattleScene:_updateEnemyTurnDelay(dt)
+  if not (self._enemyTurnDelay and self._enemyTurnDelay > 0) then
+    return
+  end
+
+  self._enemyTurnDelay = self._enemyTurnDelay - dt
+
+  local playerAttackActive = (self.playerLungeTime and self.playerLungeTime > 0) or false
+  local blackHoleActive = (self.blackHoleAttacks and #self.blackHoleAttacks > 0) or false
+
+  if (playerAttackActive or blackHoleActive) and self._pendingEnemyTurnStart then
+    local remainingTime = 0
+
+    if playerAttackActive then
+      local lungeD = (config.battle and config.battle.lungeDuration) or 0
+      local lungeRD = (config.battle and config.battle.lungeReturnDuration) or 0
+      local lungePause = (config.battle and config.battle.lungePauseDuration) or 0
+      local totalLungeDuration = lungeD + lungePause + lungeRD
+      remainingTime = math.max(remainingTime, totalLungeDuration - (self.playerLungeTime or 0))
+    end
+
+    if blackHoleActive then
+      for _, attack in ipairs(self.blackHoleAttacks or {}) do
+        local attackRemaining = (attack.duration or 0) - (attack.t or 0)
+        remainingTime = math.max(remainingTime, attackRemaining)
+      end
+    end
+
+    if remainingTime > 0 then
+      self._enemyTurnDelay = remainingTime + 0.1
+    end
+  end
+
+  if self._enemyTurnDelay <= 0 then
+    self._enemyTurnDelay = nil
+    self._pendingEnemyTurnStart = false
+    if self.turnManager then
+      self.turnManager:startEnemyTurn()
+    end
+  end
+end
+
+function BattleScene:_updateHealGlowTimers(dt)
+  if self.playerHealGlowTimer and self.playerHealGlowTimer > 0 then
+    self.playerHealGlowTimer = math.max(0, self.playerHealGlowTimer - dt)
+  end
+
+  for i in ipairs(self.enemies or {}) do
+    if self.enemyHealGlowTimer[i] and self.enemyHealGlowTimer[i] > 0 then
+      self.enemyHealGlowTimer[i] = math.max(0, self.enemyHealGlowTimer[i] - dt)
+    end
+  end
+end
+
+function BattleScene:_processChargedAttackDamage(dt)
+  for _, enemy in ipairs(self.enemies or {}) do
+    if enemy.pendingChargedDamage and enemy.chargeLungeTime and enemy.chargeLungeTime > 0 and enemy.chargeLunge then
+      local t = enemy.chargeLungeTime
+      local windup = enemy.chargeLunge.windupDuration or 0.55
+      local forward = enemy.chargeLunge.forwardDuration or 0.2
+      local returnDuration = enemy.chargeLunge.returnDuration or 0.2
+
+      if t >= windup and not enemy.chargedDamageApplied then
+        enemy.chargedDamageApplied = true
+
+        local dmg = enemy.pendingChargedDamage
+        local blocked, net = self:_applyPlayerDamage(dmg)
+
+        if net <= 0 then
+          self.armorIconFlashTimer = 0.5
+          table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+        else
+          self.playerFlash = config.battle.hitFlashDuration
+          self.playerKnockbackTime = 1e-6
+          table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
+          if self.particles then
+            local px, py = self:getPlayerCenterPivot(self._lastBounds)
+            if px and py then
+              self.particles:emitHitBurst(px, py)
+            end
+          end
+          pushLog(self, (enemy.name or "Enemy") .. " dealt " .. net)
+          if self.onPlayerDamage then
+            self.onPlayerDamage()
+          end
+        end
+
+        self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+        enemy.pendingChargedDamage = nil
+      end
+
+      if t >= windup + forward + returnDuration then
+        enemy.chargedDamageApplied = nil
+      end
+    end
+  end
+end
+
+function BattleScene:_updateMultiHitAttacks(dt)
+  for _, enemy in ipairs(self.enemies or {}) do
+    local state = enemy.multiHitState
+    if state then
+      state.timer = state.timer + dt
+
+      if state.timer >= state.delay then
+        state.timer = 0
+        state.currentHit = state.currentHit + 1
+
+        if state.currentHit <= state.remainingHits then
+          local blocked, net = self:_applyPlayerDamage(state.damage)
+
+          if net <= 0 then
+            self.armorIconFlashTimer = 0.5
+            table.insert(self.popups, { x = 0, y = 0, kind = "armor_blocked", t = config.battle.popupLifetime, who = "player" })
+          else
+            self.playerFlash = config.battle.hitFlashDuration
+            self.playerKnockbackTime = 1e-6
+            table.insert(self.popups, { x = 0, y = 0, text = tostring(net), t = config.battle.popupLifetime, who = "player" })
+            if self.particles then
+              local px, py = self:getPlayerCenterPivot(self._lastBounds)
+              if px and py then
+                self.particles:emitHitBurst(px, py)
+              end
+            end
+            if self.onPlayerDamage then
+              self.onPlayerDamage()
+            end
+          end
+
+          enemy.lungeTime = 1e-6
+          self:triggerShake((config.battle and config.battle.shakeMagnitude) or 8, (config.battle and config.battle.shakeDuration) or 0.2)
+
+          if state.currentHit >= state.remainingHits then
+            enemy.multiHitState = nil
+            if self.playerHP <= 0 then
+              self.state = "lose"
+              if self.turnManager then
+                self.turnManager:transitionTo(TurnManager.States.DEFEAT)
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
+function BattleScene:_updateEnemyDarkness(dt)
+  local targetDarkness = (self._attackingEnemyIndex ~= nil) and 1.0 or 0.0
+  local darknessSpeed = 4.0
+  local darknessDelta = targetDarkness - (self._nonAttackingEnemyDarkness or 0)
+  self._nonAttackingEnemyDarkness = (self._nonAttackingEnemyDarkness or 0) + darknessDelta * math.min(1, darknessSpeed * dt)
+end
+
+function BattleScene:_updateEnemyAttackDelays(dt)
+  local shockwaveActive = self._shockwaveSequence ~= nil
+  local calcifyActive = self._calcifySequence ~= nil
+  local chargedAttackActive = false
+
+  for _, enemy in ipairs(self.enemies or {}) do
+    if enemy.chargeLungeTime and enemy.chargeLungeTime > 0 then
+      chargedAttackActive = true
+      break
+    end
+  end
+
+  local aliveAttackDelays = {}
+  for _, delayData in ipairs(self._enemyAttackDelays or {}) do
+    if shockwaveActive or calcifyActive or chargedAttackActive then
+      table.insert(aliveAttackDelays, delayData)
+    else
+      delayData.delay = delayData.delay - dt
+      if delayData.delay <= 0 then
+        self._attackingEnemyIndex = delayData.index
+
+        local enemy = self.enemies[delayData.index]
+        if enemy and enemy.hp > 0 then
+          local intent = enemy.intent
+          if intent and intent.type == "armor" then
+            EnemySkills.performArmorGain(self, enemy, delayData.index, intent.amount or 5)
+          elseif intent and intent.type == "skill" and intent.skillType == "heal" then
+            EnemySkills.performHeal(self, enemy, intent.targetIndex, intent.amount or 18)
+          elseif intent and intent.type == "skill" and intent.skillType == "calcify" then
+            EnemySkills.performCalcify(self, enemy, intent.blockCount or 3)
+          elseif intent and intent.type == "skill" and intent.skillType == "charge" then
+            EnemySkills.performCharge(self, enemy, (intent and intent.armorBlockCount) or 3)
+          elseif intent and intent.type == "skill" and intent.skillType == "spore" then
+            EnemySkills.performSpore(self, enemy, (intent and intent.sporeCount) or 2)
+          elseif (intent and intent.type == "skill" and intent.skillType == "shockwave") or
+                 (intent and intent.type == "attack" and intent.attackType == "shockwave") then
+            EnemySkills.performShockwave(self, enemy)
+          else
+            local isChargedAttack = intent and intent.type == "attack" and intent.attackType == "charged"
+            local hitCount = self:_getEnemyHitCount(enemy, intent)
+
+            local dmg
+            if intent and intent.type == "attack" and intent.damageMin and intent.damageMax then
+              dmg = love.math.random(intent.damageMin, intent.damageMax)
+            else
+              dmg = love.math.random(enemy.damageMin, enemy.damageMax)
+            end
+
+            if isChargedAttack then
+              enemy.pendingChargedDamage = dmg * hitCount
+              enemy.chargedDamageApplied = nil
+              enemy.chargeLungeTime = 1e-6
+              enemy.chargeLunge = {
+                windupDuration = 0.55,
+                forwardDuration = 0.22,
+                returnDuration = 0.24,
+                backDistance = ((config.battle and config.battle.lungeDistance) or 80) * 0.6,
+                forwardDistance = ((config.battle and config.battle.lungeDistance) or 80) * 2.8,
+              }
+            else
+              self:_applyMultiHitDamage(enemy, dmg, hitCount, delayData.index)
+            end
+
+            if self.playerHP <= 0 then
+              self.state = "lose"
+              pushLog(self, "You were defeated!")
+              if self.turnManager then
+                self.turnManager:transitionTo(TurnManager.States.DEFEAT)
+              end
+            end
+          end
+        end
+      else
+        table.insert(aliveAttackDelays, delayData)
+      end
+    end
+  end
+  self._enemyAttackDelays = aliveAttackDelays
+
+  if (#self._enemyAttackDelays == 0) and not shockwaveActive and not calcifyActive then
+    if not self._attackingEnemyClearDelay then
+      self._attackingEnemyClearDelay = 0.3
+    else
+      self._attackingEnemyClearDelay = self._attackingEnemyClearDelay - dt
+      if self._attackingEnemyClearDelay <= 0 then
+        self._attackingEnemyIndex = nil
+        self._attackingEnemyClearDelay = nil
+      end
+    end
+  else
+    self._attackingEnemyClearDelay = nil
+  end
+end
+
+function BattleScene:_updatePlayerAttackDelay(dt)
+  if not (self._playerAttackDelayTimer and self._playerAttackDelayTimer > 0) then
+    return
+  end
+
+  self._playerAttackDelayTimer = self._playerAttackDelayTimer - dt
+  if self._playerAttackDelayTimer > 0 then
+    return
+  end
+
+  self._playerAttackDelayTimer = nil
+
+  if self._pendingPlayerAttackDamage then
+    local pending = self._pendingPlayerAttackDamage
+    local dmg = pending.damage
+    local isAOE = pending.isAOE or false
+    local projectileId = pending.projectileId or "strike"
+    local behavior = pending.behavior
+    local impactBlockCount = pending.impactBlockCount or 1
+    local impactIsCrit = pending.impactIsCrit or false
+
+    if impactBlockCount and impactBlockCount > 0 then
+      self:_createImpactInstances({
+        blockCount = impactBlockCount,
+        isCrit = impactIsCrit,
+        isAOE = isAOE,
+        projectileId = projectileId,
+        behavior = behavior,
+      })
+    end
+
+    local blockHitSequence = pending.blockHitSequence or {}
+    local orbBaseDamage = pending.orbBaseDamage or 0
+    local baseDamage = pending.baseDamage
+
+    if not baseDamage or baseDamage == 0 then
+      baseDamage = orbBaseDamage
+      for _, hit in ipairs(blockHitSequence) do
+        local kind = (type(hit) == "table" and hit.kind) or "damage"
+        local amount = (type(hit) == "table" and (hit.damage or hit.amount)) or 0
+        if kind ~= "crit" and kind ~= "multiplier" and kind ~= "armor" and kind ~= "heal" and kind ~= "potion" then
+          baseDamage = baseDamage + amount
+        end
+      end
+    end
+
+    local damageSequence = buildDamageAnimationSequence(
+      blockHitSequence,
+      baseDamage,
+      orbBaseDamage,
+      pending.critCount or 0,
+      pending.multiplierCount or 0,
+      dmg
+    )
+
+    if isAOE then
+      for i, enemy in ipairs(self.enemies or {}) do
+        if enemy and enemy.hp > 0 then
+          if behavior.delayHPReduction then
+            enemy.pendingDamage = (enemy.pendingDamage or 0) + dmg
+          else
+            self:_applyEnemyDamage(i, dmg)
+          end
+
+          self:_enqueueDamagePopup(i, damageSequence, behavior, impactIsCrit, {
+            linger = { default = 0.05, exclamation = 0.2 },
+            disintegrationTime = 0,
+            disintegrationDisplayTime = 0.2,
+          })
+          self:_handleEnemyDefeatPostHit(i)
+        end
+      end
+      pushLog(self, "You dealt " .. dmg .. " to all enemies!")
+    else
+      local selectedEnemy = self:getSelectedEnemy()
+      if selectedEnemy then
+        local index = self.selectedEnemyIndex
+        if selectedEnemy.hp > 0 then
+          if behavior.delayHPReduction then
+            selectedEnemy.pendingDamage = (selectedEnemy.pendingDamage or 0) + dmg
+          else
+            self:_applyEnemyDamage(index, dmg)
+          end
+
+          self:_enqueueDamagePopup(index, damageSequence, behavior, impactIsCrit, {
+            linger = { default = 0.3 },
+            finalStepDisplayTimeMultiplier = 0.5,
+          })
+          self:_handleEnemyDefeatPostHit(index)
+
+          if selectedEnemy.hp <= 0 then
+            self:_selectNextEnemy()
+          end
+        end
+      end
+      pushLog(self, "You dealt " .. dmg)
+    end
+
+    self._pendingPlayerAttackDamage = nil
+  end
+
+  if self._pendingImpactParams then
+    self:_createImpactInstances(self._pendingImpactParams.blockCount, self._pendingImpactParams.isCrit)
+    self._pendingImpactParams = nil
+  end
+
+  self.playerLungeTime = 1e-6
+  self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
+end
+
 function BattleScene:_calculateDamageSequenceDuration(sequence)
   local total = 0
   if not sequence then return total end
@@ -2043,7 +2006,7 @@ function BattleScene:getEnemyCenterPivot(enemyIndex, bounds)
   if not enemyIndex then
     return nil, nil
   end
-
+  
   local layout = self:_computeEnemyLayout(bounds)
   local entry = layout.entries[enemyIndex]
   if not entry then
@@ -2080,11 +2043,11 @@ end
 function BattleScene:getAllEnemyHitPoints(bounds)
   local hitPoints = {}
   local layout = self:_computeEnemyLayout(bounds)
-
+  
   if not self.enemies or #self.enemies == 0 then
     return hitPoints
   end
-
+  
   for i, enemy in ipairs(self.enemies) do
     if enemy and (enemy.hp > 0 or enemy.disintegrating or enemy.pendingDisintegration) then
       local entry = layout.entries[i]
@@ -2093,7 +2056,7 @@ function BattleScene:getAllEnemyHitPoints(bounds)
       end
     end
   end
-
+  
   return hitPoints
 end
 
@@ -2253,7 +2216,7 @@ function BattleScene:mousepressed(x, y, button, bounds)
   end
 
   local clickPadding = 30 -- Increased padding for easier clicking
-
+  
   -- Check enemies in reverse order (right to left) so rightmost enemy gets priority when overlapping
   for i = #self.enemies, 1, -1 do
     local enemy = self.enemies[i]
@@ -2265,11 +2228,11 @@ function BattleScene:mousepressed(x, y, button, bounds)
       local bottom = layout.baselineY + clickPadding
 
       if x >= left and x <= right and y >= top and y <= bottom then
-        if enemy.hp > 0 or enemy.disintegrating or enemy.pendingDisintegration then
-          self.selectedEnemyIndex = i
-          return
-        end
+      if enemy.hp > 0 or enemy.disintegrating or enemy.pendingDisintegration then
+        self.selectedEnemyIndex = i
+        return
       end
+    end
     end
   end
 end
