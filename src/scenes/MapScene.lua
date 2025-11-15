@@ -136,12 +136,8 @@ function MapScene:load()
   local genConfig = config.map.generation
   if not self._initialized then
     self.mapManager:generateMap(genConfig.width, genConfig.height, math.random(1000000))
-    if self.mapManager.calculateRecommendedDailyMoves and self.daySystem then
-      local recommendedMoves = self.mapManager:calculateRecommendedDailyMoves(self.daySystem:getTotalDays())
-      if recommendedMoves then
-        self.daySystem:setMaxMovesPerDay(recommendedMoves)
-      end
-    end
+    -- Use config value for movesPerDay (default 10), relic bonuses will be applied via getEffectiveMaxMoves()
+    -- Removed dynamic calculation override to use config value
     self._initialized = true
   end
   
