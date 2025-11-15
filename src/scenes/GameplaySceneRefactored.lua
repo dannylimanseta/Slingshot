@@ -116,6 +116,14 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
   
   -- Load assets
   self.visualEffects:loadAssets()
+
+  -- Apply start-of-battle relic effects (e.g., Rally Banner +6 armor)
+  do
+    local RelicSystem = require("core.RelicSystem")
+    if RelicSystem and RelicSystem.applyBattleStart then
+      RelicSystem.applyBattleStart()
+    end
+  end
   self.projectileEffects:loadAssets()
   
   -- Give shooter access to TurnManager if available

@@ -32,6 +32,25 @@ local CATALOG = {
       armorBlockOverride = 5,
     },
   },
+  rally_banner = {
+    id = "rally_banner",
+    name = "Rally Banner",
+    rarity = relics.Rarity.UNCOMMON,
+    slot = "passive",
+    type = "passive",
+    icon = "assets/images/relics/rally_banner.png",
+    tags = { "defense", "start_of_battle" },
+    description = "Start each battle with +6 armor.",
+    flavor = "When the banner rises, shields lock and spirits harden.",
+    effects = {
+      {
+        trigger = "battle_start",
+        action = "add_player_armor",
+        value = 6,
+        source = "rally_banner",
+      },
+    },
+  },
 }
 
 function relics.get(id)

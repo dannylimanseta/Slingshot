@@ -125,6 +125,14 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
   self.blockHitSequence = self.state.rewards.blockHitSequence
   self.baseDamageThisTurn = self.state.rewards.baseDamage
   self.destroyedThisTurn = self.state.blocks.destroyedThisTurn or 0
+
+  -- Apply start-of-battle relic effects (e.g., Rally Banner +6 armor)
+  do
+    local RelicSystem = require("core.RelicSystem")
+    if RelicSystem and RelicSystem.applyBattleStart then
+      RelicSystem.applyBattleStart()
+    end
+  end
   
   -- Initialize blocks
   self.blocks = BlockManager.new()

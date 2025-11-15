@@ -109,8 +109,11 @@ function SplitScene:load()
   -- Ensure only SplitScene draws the shared top bar
   if self.left then self.left.disableTopBar = true end
   if self.right then self.right.disableTopBar = true end
-  -- Grey out orbs icon during battle (use shared top bar)
-  if self.topBar then self.topBar.disableOrbsIcon = true end
+  -- Grey out orbs and inventory icons during battle (use shared top bar)
+  if self.topBar then
+    self.topBar.disableOrbsIcon = true
+    self.topBar.disableInventoryIcon = true
+  end
 
   -- Remove per-first-enemy runtime scale multiplier for consistent enemy sizes
 
@@ -874,7 +877,7 @@ function SplitScene:mousepressed(x, y, button)
   end
   
   -- Check if clicking on inventory icon in top bar
-  if self.topBar and self.topBar.inventoryIconBounds then
+  if self.topBar and not self.topBar.disableInventoryIcon and self.topBar.inventoryIconBounds then
     local bounds = self.topBar.inventoryIconBounds
     if x >= bounds.x and x <= bounds.x + bounds.w and y >= bounds.y and y <= bounds.y + bounds.h then
       return "open_inventory"

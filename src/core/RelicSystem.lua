@@ -3,6 +3,7 @@ local PlayerState = require("core.PlayerState")
 
 local RelicSystem = {}
 
+-- Iterate over equipped relic effects matching a trigger
 local function getEquippedRelics()
   local player = PlayerState.getInstance and PlayerState.getInstance()
   if not player or not player.getEquippedRelics then
@@ -62,6 +63,21 @@ function RelicSystem.applyArmorReward(baseValue, context)
     end
   end, context)
   return value
+end
+
+-- Apply start-of-battle effects (e.g., grant starting armor)
+function RelicSystem.applyBattleStart()
+  -- Lazy-require to avoid any potential circular requires
+  local BattleState = require("core.BattleState")
+  forEachEffect("battle_start", function(effect)
+    local action = effect.action or "add_player_armor"
+    if action == "add_player_armor" then
+      local value = tonumber(effect.value) or 0
+      if value > 0 then
+        BattleState.addPlayerArmor(value)
+      end
+    end
+  end)
 end
 
 function RelicSystem.debugEquip(id)
