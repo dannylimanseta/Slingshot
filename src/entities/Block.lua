@@ -1,6 +1,7 @@
 local theme = require("theme")
 local config = require("config")
 local IridescentShader = require("utils.IridescentShader")
+local RelicSystem = require("core.RelicSystem")
 
 -- Shared sprites for blocks (loaded once)
 local SPRITES = { attack = nil, armor = nil, crit = nil, multiplier = nil, aoe = nil, potion = nil, spore = nil }
@@ -587,7 +588,13 @@ function Block:draw()
     -- Armor value from config by HP (fallback to +3)
     local rewardByHp = (config.armor and config.armor.rewardByHp) or {}
     local hp = self.hp or 1
-    local armorGain = rewardByHp[hp] or rewardByHp[1] or 3
+    local baseArmor = rewardByHp[hp] or rewardByHp[1] or 3
+    local armorGain = RelicSystem.applyArmorReward(baseArmor, {
+      hp = hp,
+      block = self,
+      context = "label",
+    })
+    armorGain = math.floor(armorGain + 0.5)
     valueText = "+" .. tostring(armorGain)
     iconToUse = ICON_ARMOR
   elseif self.kind == "potion" then

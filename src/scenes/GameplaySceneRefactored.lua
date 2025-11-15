@@ -8,6 +8,7 @@ local BlockManager = require("managers.BlockManager")
 local Shooter = require("entities.Shooter")
 local ParticleManager = require("managers.ParticleManager")
 local TopBar = require("ui.TopBar")
+local RelicSystem = require("core.RelicSystem")
 
 -- New managers (extracted from GameplayScene)
 local PhysicsManager = require("battle.PhysicsManager")
@@ -530,7 +531,13 @@ function GameplayScene:awardBlockReward(block)
     hitReward = 0
     local rewardByHp = (config.armor and config.armor.rewardByHp) or {}
     local hp = (block and block.hp) or 1
-    local armorGain = rewardByHp[hp] or rewardByHp[1] or 3
+    local baseArmor = rewardByHp[hp] or rewardByHp[1] or 3
+    local armorGain = RelicSystem.applyArmorReward(baseArmor, {
+      hp = hp,
+      block = block,
+      scene = self,
+    })
+    armorGain = math.floor(armorGain + 0.5)
     self.armorThisTurn = self.armorThisTurn + armorGain
   elseif block.kind == "potion" then
     hitReward = 0

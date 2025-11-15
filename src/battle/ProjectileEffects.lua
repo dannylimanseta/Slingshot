@@ -3,6 +3,7 @@
 
 local config = require("config")
 local ProjectileManager = require("managers.ProjectileManager")
+local RelicSystem = require("core.RelicSystem")
 
 local ProjectileEffects = {}
 ProjectileEffects.__index = ProjectileEffects
@@ -512,8 +513,16 @@ function ProjectileEffects:destroyBlockByBlackHole(block)
     hitReward = 0
     local rewardByHp = (config.armor and config.armor.rewardByHp) or {}
     local hp = (block and block.hp) or 1
-    local armorGain = rewardByHp[hp] or rewardByHp[1] or 3
+    local baseArmor = rewardByHp[hp] or rewardByHp[1] or 3
+    local armorGain = RelicSystem.applyArmorReward(baseArmor, {
+      hp = hp,
+      block = block,
+      source = "black_hole",
+      scene = self.scene,
+    })
+    armorGain = math.floor(armorGain + 0.5)
     rewardData.armorGain = armorGain
+    rewardData.baseArmorGain = baseArmor
     BattleState.trackDamage("armor", armorGain)
   elseif kind == "potion" then
     hitReward = 0
