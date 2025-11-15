@@ -261,10 +261,19 @@ function BattleScene:load(bounds, battleProfile)
     end
   end
   
+  -- Check if next encounter enemies should spawn with 1 HP
+  local enemiesShouldBe1HP = false
+  local playerState = PlayerState.getInstance()
+  if playerState and playerState:shouldNextEncounterEnemiesBe1HP() then
+    enemiesShouldBe1HP = true
+    -- Clear the flag after using it
+    playerState:setNextEncounterEnemies1HP(false)
+  end
+  
   -- Create a modified battle profile copy with reduced HP for elite encounters
   -- This ensures both BattleScene and BattleState use the same modified values
   local modifiedProfile = battleProfile
-  if isEliteEncounter and eliteHpMultiplier ~= 1.0 and battleProfile.enemies then
+  if (isEliteEncounter and eliteHpMultiplier ~= 1.0) or enemiesShouldBe1HP then
     modifiedProfile = {}
     for k, v in pairs(battleProfile) do
       modifiedProfile[k] = v
@@ -275,7 +284,11 @@ function BattleScene:load(bounds, battleProfile)
       for k, v in pairs(enemyConfig) do
         modifiedEnemy[k] = v
       end
-      if modifiedEnemy.maxHP then
+      if enemiesShouldBe1HP then
+        -- Set to 1 HP
+        modifiedEnemy.maxHP = 1
+      elseif isEliteEncounter and eliteHpMultiplier ~= 1.0 and modifiedEnemy.maxHP then
+        -- Apply elite HP multiplier
         modifiedEnemy.maxHP = math.max(1, math.floor(modifiedEnemy.maxHP * eliteHpMultiplier + 0.5))
       end
       table.insert(modifiedProfile.enemies, modifiedEnemy)
@@ -310,9 +323,9 @@ function BattleScene:load(bounds, battleProfile)
 
   self:_ensureBattleState(modifiedProfile)
   
-  -- Apply elite HP reduction to BattleState enemies directly
+  -- Apply HP modifications to BattleState enemies directly
   -- This ensures BattleState has the correct HP values matching our modified profile
-  if isEliteEncounter and eliteHpMultiplier ~= 1.0 and self.battleState and self.battleState.enemies and modifiedProfile.enemies then
+  if ((isEliteEncounter and eliteHpMultiplier ~= 1.0) or enemiesShouldBe1HP) and self.battleState and self.battleState.enemies and modifiedProfile.enemies then
     for i, stateEnemy in ipairs(self.battleState.enemies) do
       local modifiedEnemyConfig = modifiedProfile.enemies[i]
       if modifiedEnemyConfig and modifiedEnemyConfig.maxHP then

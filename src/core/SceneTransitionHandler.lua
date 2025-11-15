@@ -66,15 +66,6 @@ function SceneTransitionHandler:handleReturnToMap(data)
   local goldReward = data.goldReward or 0
   local skipTransition = data.skipTransition
   
-  -- If there's a previousScene (e.g., EventSelectScene), return to it instead of map
-  if self.previousScene then
-    local prevScene = self.previousScene
-    self.previousScene = nil
-    self.sceneManager:set(prevScene)
-    self.setCursorForScene(prevScene)
-    return
-  end
-  
   -- Ensure map scene exists
   if not self.mapScene then
     self.mapScene = MapScene.new()
@@ -102,6 +93,14 @@ function SceneTransitionHandler:handleReturnToMap(data)
     self.sceneManager:set(rewardsScene)
     self.setCursorForScene(rewardsScene)
   else
+    -- If there's a previousScene (e.g., EventSelectScene), return to it instead of map
+    if self.previousScene then
+      local prevScene = self.previousScene
+      self.previousScene = nil
+      self.sceneManager:set(prevScene)
+      self.setCursorForScene(prevScene)
+      return
+    end
     -- If skipTransition is explicitly false, use transition; otherwise skip for events/defeat
     -- Rest sites set skipTransition = false to enable transitions
     -- If we previously set a pending flag (coming back from battle rewards), force transition
@@ -320,7 +319,7 @@ function SceneTransitionHandler:handleOpenEvent(data)
   if currentScene then
     self.previousScene = currentScene
   elseif not self.previousScene then
-    self.previousScene = self.mapScene
+  self.previousScene = self.mapScene
   end
   local eventScene = EventScene.new(eventId)
   self.sceneManager:set(eventScene)

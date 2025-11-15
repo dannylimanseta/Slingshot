@@ -146,7 +146,7 @@ function SplitScene:load()
   local decorPath = "assets/images/decor_1.png"
   local okDecor, imgDecor = pcall(love.graphics.newImage, decorPath)
   if okDecor then self.decorImage = imgDecor end
-  
+
   -- Black band image for turn indicator overlay
   self.blackBandImage = nil
   local blackBandPath = "assets/images/fx/black_band.png"
@@ -756,9 +756,9 @@ function SplitScene:draw()
       love.graphics.setColor(1, 1, 1, 1)
     else
       -- Fallback to black overlay if image not loaded
-      love.graphics.setColor(0, 0, 0, 0.6 * alpha)
-      love.graphics.rectangle("fill", 0, 0, w, h)
-      love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setColor(0, 0, 0, 0.6 * alpha)
+    love.graphics.rectangle("fill", 0, 0, w, h)
+    love.graphics.setColor(1, 1, 1, 1)
     end
     
     -- Pop-in scale animation (easeOutBack)

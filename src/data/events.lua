@@ -90,6 +90,22 @@ local EVENTS = {
       }
     }
   },
+  weakened_foes = {
+    id = "weakened_foes",
+    title = "Weakened Foes",
+    image = "event_placeholder.png",
+    text = "You come across a clearing where the fog seems thinner, and the air carries a strange, metallic tang. Scattered across the ground are fragments of calcified stone, cracked and brittle. Some still bear the faint outlines of faces, their expressions frozen in what might be pain or exhaustion.\n\nAs you examine the fragments, you feel a strange resonance. The next enemies you face will be weakened, their life force already drained. They will fall quickly, but you wonder what price was paid for this advantage.",
+    choices = {
+      {
+        text = "Absorb the weakened essence. Next encounter enemies spawn with 1 HP.",
+        effects = { nextEncounterEnemies1HP = true }
+      },
+      {
+        text = "Leave the fragments alone. Nothing happens.",
+        effects = {}
+      }
+    }
+  },
   -- Add more events here as needed
   -- Example template:
   -- [event_id] = {

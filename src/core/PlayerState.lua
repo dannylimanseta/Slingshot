@@ -24,6 +24,7 @@ function PlayerState.new()
       order = {},
     },
     seenEvents = {}, -- Track which events have been shown
+    nextEncounterEnemies1HP = false, -- Flag for next encounter enemies spawn with 1 HP
   }, PlayerState)
 end
 
@@ -129,6 +130,14 @@ end
 
 function PlayerState:resetSeenEvents()
   self.seenEvents = {}
+end
+
+function PlayerState:setNextEncounterEnemies1HP(value)
+  self.nextEncounterEnemies1HP = value == true
+end
+
+function PlayerState:shouldNextEncounterEnemiesBe1HP()
+  return self.nextEncounterEnemies1HP == true
 end
 
 return PlayerState

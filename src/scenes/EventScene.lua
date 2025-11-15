@@ -334,6 +334,11 @@ function EventScene:_applyChoiceEffects(effects)
     end
   end
   
+  -- Set next encounter enemies to 1 HP
+  if effects.nextEncounterEnemies1HP == true then
+    playerState:setNextEncounterEnemies1HP(true)
+  end
+  
   -- Add more effect types here as needed
 end
 
@@ -875,6 +880,7 @@ function EventScene:_drawChoiceText(button, alpha, hoverScale)
     { pattern = "Upgrade (%d+) random orbs by 1 level%.", color = { 195/255, 235/255, 139/255 } },  -- green (#C3EB8B) for orb upgrades
     { pattern = "Upgrade a random Orb%.", color = { 195/255, 235/255, 139/255 } },  -- green (#C3EB8B) for single orb upgrade
     { pattern = "Gain (%d+) Max HP%.", color = { 195/255, 235/255, 139/255 } },  -- green (#C3EB8B) for max HP gain
+    { pattern = "Next encounter enemies spawn with 1 HP%.", color = { 195/255, 235/255, 139/255 } },  -- green for 1 HP next encounter
     { pattern = "Transform a random Orb into another Orb%.", color = { 195/255, 235/255, 139/255 } },  -- green (#C3EB8B) for orb transformation
     { pattern = "Lose (%d+)%% Max HP%.", color = { 224/255, 112/255, 126/255 } },  -- red (#E0707E) for percentage HP loss
     { pattern = "Lose (%d+) HP%.", color = { 224/255, 112/255, 126/255 } },  -- red (#E0707E) for HP loss

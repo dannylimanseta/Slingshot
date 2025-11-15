@@ -144,15 +144,32 @@ function BattleState.new(opts)
     },
   }
 
+  -- Check if next encounter enemies should spawn with 1 HP
+  local enemiesShouldBe1HP = false
+  local PlayerState = require("core.PlayerState")
+  local playerState = PlayerState.getInstance()
+  if playerState and playerState:shouldNextEncounterEnemiesBe1HP() then
+    enemiesShouldBe1HP = true
+    -- Clear the flag after using it
+    playerState:setNextEncounterEnemies1HP(false)
+  end
+  
   -- Populate enemies from profile (high-level data only)
   if profile and profile.enemies then
     for index, enemyConfig in ipairs(profile.enemies) do
+      local enemyHP = enemyConfig.maxHP or 25
+      local enemyMaxHP = enemyConfig.maxHP or 25
+      -- Apply 1 HP effect if flag is set
+      if enemiesShouldBe1HP then
+        enemyHP = 1
+        enemyMaxHP = 1
+      end
       table.insert(state.enemies, {
         id = enemyConfig.id or ("enemy_" .. index),
         index = index,
         name = enemyConfig.name or ("Enemy " .. tostring(index)),
-        hp = enemyConfig.maxHP or 25,
-        maxHP = enemyConfig.maxHP or 25,
+        hp = enemyHP,
+        maxHP = enemyMaxHP,
         armor = enemyConfig.armor or 0,
         damageMin = enemyConfig.damageMin or 3,
         damageMax = enemyConfig.damageMax or 8,
