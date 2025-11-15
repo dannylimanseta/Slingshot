@@ -17,6 +17,7 @@ function RestSiteScene.new()
     textFont = nil,
     restButton = nil,
     removeOrbButton = nil,
+    leaveButton = nil,
     backButton = nil,
     topBar = TopBar.new(),
     mouseX = 0,
@@ -122,6 +123,18 @@ function RestSiteScene:load()
     end,
   })
   
+  self.leaveButton = Button.new({
+    label = "Leave the rest site",
+    font = self.textFont,
+    bgColor = { 0, 0, 0, 0.7 },
+    align = "left",
+    onClick = function()
+      if self._choiceMade then return end
+      self._choiceMade = true
+      self._exitRequested = true
+    end,
+  })
+  
   -- Create Back button for orb removal screen (match OrbsUI close button style)
   do
     local baseFontSize = 24
@@ -140,6 +153,7 @@ function RestSiteScene:load()
   -- Initialize scale for hover effect
   self.restButton._scale = 1.0
   self.removeOrbButton._scale = 1.0
+  self.leaveButton._scale = 1.0
 end
 
 function RestSiteScene:_buildOrbSelection()
@@ -244,9 +258,11 @@ function RestSiteScene:update(dt, mouseX, mouseY)
     self.restButton:setLayout(rightPanelX, buttonY, buttonWidth, buttonHeight)
     buttonY = buttonY + buttonHeight + buttonSpacing
     self.removeOrbButton:setLayout(rightPanelX, buttonY, buttonWidth, buttonHeight)
+    buttonY = buttonY + buttonHeight + buttonSpacing
+    self.leaveButton:setLayout(rightPanelX, buttonY, buttonWidth, buttonHeight)
     
     -- Clamp selected index to valid range
-    self._selectedIndex = math.max(1, math.min(self._selectedIndex, 2))
+    self._selectedIndex = math.max(1, math.min(self._selectedIndex, 3))
     
     -- Detect selection change and reset glow fade
     if self._selectedIndex ~= self._prevSelectedIndex then
@@ -270,19 +286,25 @@ function RestSiteScene:update(dt, mouseX, mouseY)
     if not self._choiceMade then
       self.restButton:update(dt, self.mouseX, self.mouseY)
       self.removeOrbButton:update(dt, self.mouseX, self.mouseY)
+      self.leaveButton:update(dt, self.mouseX, self.mouseY)
       -- Merge mouse hover with keyboard selection
       local restWasSelected = (self._prevSelectedIndex == 1 and self._selectedIndex ~= 1)
       local removeWasSelected = (self._prevSelectedIndex == 2 and self._selectedIndex ~= 2)
+      local leaveWasSelected = (self._prevSelectedIndex == 3 and self._selectedIndex ~= 3)
       local restMouseHovered = self.restButton._hovered
       local removeMouseHovered = self.removeOrbButton._hovered
-      local anyMouseHovered = (restMouseHovered == true) or (removeMouseHovered == true)
+      local leaveMouseHovered = self.leaveButton._hovered
+      local anyMouseHovered = (restMouseHovered == true) or (removeMouseHovered == true) or (leaveMouseHovered == true)
       self.restButton._keySelected = (self._selectedIndex == 1)
       self.removeOrbButton._keySelected = (self._selectedIndex == 2)
+      self.leaveButton._keySelected = (self._selectedIndex == 3)
       self.restButton._wasSelected = restWasSelected
       self.removeOrbButton._wasSelected = removeWasSelected
+      self.leaveButton._wasSelected = leaveWasSelected
       -- Suppress key-selected highlight when any button is mouse-hovered
       self.restButton._hovered = restMouseHovered or (self.restButton._keySelected and not anyMouseHovered)
       self.removeOrbButton._hovered = removeMouseHovered or (self.removeOrbButton._keySelected and not anyMouseHovered)
+      self.leaveButton._hovered = leaveMouseHovered or (self.leaveButton._keySelected and not anyMouseHovered)
       -- Tween hover progress
       local rhp = self.restButton._hoverProgress or 0
       local rtarget = self.restButton._hovered and 1 or 0
@@ -292,11 +314,17 @@ function RestSiteScene:update(dt, mouseX, mouseY)
       self.removeOrbButton._hoverProgress = mhp + (mtarget - mhp) * math.min(1, 10 * dt)
       self.restButton._scale = 1.0 + 0.05 * (self.restButton._hoverProgress or 0)
       self.removeOrbButton._scale = 1.0 + 0.05 * (self.removeOrbButton._hoverProgress or 0)
+      local lhp = self.leaveButton._hoverProgress or 0
+      local ltarget = self.leaveButton._hovered and 1 or 0
+      self.leaveButton._hoverProgress = lhp + (ltarget - lhp) * math.min(1, 10 * dt)
+      self.leaveButton._scale = 1.0 + 0.05 * (self.leaveButton._hoverProgress or 0)
     else
       self.restButton._hovered = false
       self.restButton._scale = 1.0
       self.removeOrbButton._hovered = false
       self.removeOrbButton._scale = 1.0
+      self.leaveButton._hovered = false
+      self.leaveButton._scale = 1.0
     end
     
     -- Update hit rects for click detection (needed since we manually draw buttons)
@@ -319,6 +347,16 @@ function RestSiteScene:update(dt, mouseX, mouseY)
       y = math.floor(removeCy - self.removeOrbButton.h * removeScale * 0.5),
       w = math.floor(self.removeOrbButton.w * removeScale),
       h = math.floor(self.removeOrbButton.h * removeScale),
+    }
+    
+    local leaveScale = self.leaveButton._scale or 1.0
+    local leaveCx = self.leaveButton.x + self.leaveButton.w * 0.5
+    local leaveCy = self.leaveButton.y + self.leaveButton.h * 0.5
+    self.leaveButton._hitRect = {
+      x = math.floor(leaveCx - self.leaveButton.w * leaveScale * 0.5),
+      y = math.floor(leaveCy - self.leaveButton.h * leaveScale * 0.5),
+      w = math.floor(self.leaveButton.w * leaveScale),
+      h = math.floor(self.leaveButton.h * leaveScale),
     }
   end
   
@@ -567,6 +605,66 @@ function RestSiteScene:_drawMainChoices(fadeAlpha)
   
   -- Draw remove orb button text
   self:_drawChoiceText(self.removeOrbButton, buttonAlpha, hoverScale)
+  
+  -- Draw leave button
+  buttonAlpha = fadeAlpha
+  if self._choiceMade then
+    buttonAlpha = fadeAlpha * 0.5
+  end
+  self.leaveButton.alpha = buttonAlpha
+  
+  cx = self.leaveButton.x + self.leaveButton.w * 0.5
+  cy = self.leaveButton.y + self.leaveButton.h * 0.5
+  hoverScale = self.leaveButton._scale or 1.0
+  if self._choiceMade then
+    hoverScale = 1.0
+  end
+  
+  love.graphics.push()
+  love.graphics.translate(cx, cy)
+  love.graphics.scale(hoverScale, hoverScale)
+  
+  bg = self.leaveButton.bgColor or { 0, 0, 0, 0.7 }
+  love.graphics.setColor(bg[1], bg[2], bg[3], (bg[4] or 1) * fadeAlpha)
+  love.graphics.rectangle("fill", -self.leaveButton.w * 0.5, -self.leaveButton.h * 0.5, self.leaveButton.w, self.leaveButton.h, Button.defaults.cornerRadius, Button.defaults.cornerRadius)
+  
+  love.graphics.setColor(bc[1], bc[2], bc[3], (bc[4] or 1) * fadeAlpha)
+  love.graphics.setLineWidth(Button.defaults.borderWidth)
+  love.graphics.rectangle("line", -self.leaveButton.w * 0.5, -self.leaveButton.h * 0.5, self.leaveButton.w, self.leaveButton.h, Button.defaults.cornerRadius, Button.defaults.cornerRadius)
+  love.graphics.setLineWidth(oldLW or 1)
+  
+  -- Draw multi-layer faint white glow when hovered/highlighted or fading out
+  if self.leaveButton._hovered or (self.leaveButton._wasSelected and self._prevGlowFadeAlpha > 0) then
+    love.graphics.setBlendMode("add")
+    
+    -- Pulsing animation (sine wave)
+    local pulseSpeed = 1.0
+    local pulseAmount = 0.15
+    local pulse = 1.0 + math.sin(self._glowTime * pulseSpeed * math.pi * 2) * pulseAmount
+    
+    -- Draw multiple glow layers
+    local glowFadeAlpha = self.leaveButton._wasSelected and self._prevGlowFadeAlpha or (self._glowFadeAlpha * (self.leaveButton._hoverProgress or 0))
+    local baseAlpha = 0.12 * fadeAlpha * glowFadeAlpha
+    local layers = { { width = 4, alpha = 0.4 }, { width = 7, alpha = 0.25 }, { width = 10, alpha = 0.15 } }
+    
+    for _, layer in ipairs(layers) do
+      local glowAlpha = baseAlpha * layer.alpha * pulse
+      local glowWidth = layer.width * pulse
+      love.graphics.setColor(1, 1, 1, glowAlpha)
+      love.graphics.setLineWidth(glowWidth)
+      love.graphics.rectangle("line", -self.leaveButton.w * 0.5 - glowWidth * 0.5, -self.leaveButton.h * 0.5 - glowWidth * 0.5, 
+                             self.leaveButton.w + glowWidth, self.leaveButton.h + glowWidth, 
+                             Button.defaults.cornerRadius + glowWidth * 0.5, Button.defaults.cornerRadius + glowWidth * 0.5)
+    end
+    
+    love.graphics.setBlendMode("alpha")
+    love.graphics.setLineWidth(oldLW or 1)
+  end
+  
+  love.graphics.pop()
+  
+  -- Draw leave button text
+  self:_drawChoiceText(self.leaveButton, buttonAlpha, hoverScale)
 end
 
 function RestSiteScene:_drawChoiceText(button, alpha, hoverScale)
@@ -896,6 +994,9 @@ function RestSiteScene:mousepressed(x, y, button)
     if self.removeOrbButton:mousepressed(x, y, button) then
       return nil
     end
+    if self.leaveButton:mousepressed(x, y, button) then
+      return nil
+    end
   end
   
   return nil
@@ -916,7 +1017,7 @@ function RestSiteScene:keypressed(key, scancode, isRepeat)
     return nil
   elseif key == "s" or key == "down" then
     self._selectedIndex = self._selectedIndex + 1
-    if self._selectedIndex > 2 then self._selectedIndex = 1 end
+    if self._selectedIndex > 3 then self._selectedIndex = 1 end
     return nil
   elseif key == "space" or key == "return" then
     -- Activate selected button
@@ -924,6 +1025,8 @@ function RestSiteScene:keypressed(key, scancode, isRepeat)
       self.restButton.onClick()
     elseif self._selectedIndex == 2 and self.removeOrbButton and self.removeOrbButton.onClick then
       self.removeOrbButton.onClick()
+    elseif self._selectedIndex == 3 and self.leaveButton and self.leaveButton.onClick then
+      self.leaveButton.onClick()
     end
     return nil
   end
