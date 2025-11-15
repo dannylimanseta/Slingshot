@@ -600,7 +600,8 @@ end
 -- External API: show player turn indicator
 function BattleScene:showPlayerTurn()
   -- Queue "YOUR TURN" indicator with delay
-  self._pendingTurnIndicator = { text = "YOUR TURN", t = 1.0 }
+  -- Slow down animation by 50% (multiply duration by 1.5)
+  self._pendingTurnIndicator = { text = "YOUR TURN", t = 1.0 * 1.5, duration = 1.0 * 1.5 }
   self.turnIndicatorDelay = 0.3
 end
 
@@ -608,8 +609,10 @@ end
 function BattleScene:showTurnIndicator(text, duration)
   text = text or "TURN"
   duration = duration or 1.0
+  -- Slow down animation by 50% (multiply duration by 1.5)
+  local slowedDuration = duration * 1.5
   -- Clear any existing pending indicator to avoid conflicts
-  self._pendingTurnIndicator = { text = text, t = duration }
+  self._pendingTurnIndicator = { text = text, t = slowedDuration, duration = slowedDuration }
   self.turnIndicatorDelay = 0.3
 end
 

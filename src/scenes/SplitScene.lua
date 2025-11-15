@@ -146,6 +146,12 @@ function SplitScene:load()
   local decorPath = "assets/images/decor_1.png"
   local okDecor, imgDecor = pcall(love.graphics.newImage, decorPath)
   if okDecor then self.decorImage = imgDecor end
+  
+  -- Black band image for turn indicator overlay
+  self.blackBandImage = nil
+  local blackBandPath = "assets/images/fx/black_band.png"
+  local okBand, imgBand = pcall(love.graphics.newImage, blackBandPath)
+  if okBand then self.blackBandImage = imgBand end
 
 
   -- Set up callback for when player takes damage
@@ -680,19 +686,80 @@ function SplitScene:draw()
 
   -- Draw turn indicator overlay and text at highest z-depth (on top of everything)
   if self.right and self.right.turnIndicator then
-    local lifetime = 1.0
+    -- Use the duration from turnIndicator (already slowed by 50% at source), or default to 1.5
+    local lifetime = self.right.turnIndicator.duration or 1.5
     local t = self.right.turnIndicator.t / lifetime -- 1 -> 0
-    local fadeStart = 0.4 -- Start fading at 40% of lifetime
+    local fadeInEnd = 0.85 -- Fade in completes at 85% of lifetime remaining (15% through animation)
+    local fadeOutStart = 0.15 -- Start fading out at 15% of lifetime remaining
+    
+    -- Calculate alpha with fade in and fade out
     local alpha = 1.0
-    if t < fadeStart then
-      -- Fade out
-      alpha = t / fadeStart
+    if t > fadeInEnd then
+      -- Fade in phase (t goes from 1.0 to fadeInEnd)
+      local fadeInProgress = (1.0 - t) / (1.0 - fadeInEnd) -- 0 -> 1
+      alpha = fadeInProgress
+    elseif t < fadeOutStart then
+      -- Fade out phase (t goes from fadeOutStart to 0)
+      alpha = t / fadeOutStart
+    else
+      -- Hold phase (full alpha)
+      alpha = 1.0
     end
     
-    -- Draw black overlay (0.6 alpha)
-    love.graphics.setColor(0, 0, 0, 0.6 * alpha)
-    love.graphics.rectangle("fill", 0, 0, w, h)
-    love.graphics.setColor(1, 1, 1, 1)
+    -- Draw black band image instead of full screen overlay
+    if self.blackBandImage then
+      local bandW, bandH = self.blackBandImage:getDimensions()
+      -- Scale to fit screen width, then increase size by 50% (scale by 1.5)
+      local baseScaleX = w / bandW
+      local scaleX = baseScaleX * 1.5 -- Increase size by 50%
+      
+      -- Calculate height scale - grows during fade in, continues expanding slowly during hold, shrinks only during fade out
+      local heightScale = 1.0
+      if t > fadeInEnd then
+        -- Fade in phase: grow from 30% to 100% height
+        local fadeInProgress = (1.0 - t) / (1.0 - fadeInEnd) -- 0 -> 1
+        -- Ease-out for smooth growth
+        local easedProgress = 1.0 - (1.0 - fadeInProgress) * (1.0 - fadeInProgress)
+        local minHeightScale = 0.3
+        heightScale = minHeightScale + (1.0 - minHeightScale) * easedProgress
+      elseif t < fadeOutStart then
+        -- Fade out phase: shrink from 105% to 30% height
+        local fadeOutProgress = t / fadeOutStart -- 1 -> 0
+        -- Ease-in for smooth shrinking
+        local easedProgress = fadeOutProgress * fadeOutProgress
+        local minHeightScale = 0.3
+        -- Start shrinking from the expanded height (1.05 = 105%)
+        local maxExpandedHeight = 1.05
+        heightScale = minHeightScale + (maxExpandedHeight - minHeightScale) * easedProgress
+      else
+        -- Hold phase: continue expanding slowly from 100% to 105%
+        -- Calculate progress through hold phase (t goes from fadeInEnd to fadeOutStart)
+        local holdProgress = (t - fadeOutStart) / (fadeInEnd - fadeOutStart) -- 1 -> 0 (inverse)
+        -- Ease-out for slow expansion
+        local easedHoldProgress = 1.0 - (1.0 - holdProgress) * (1.0 - holdProgress)
+        -- Expand from 1.0 (100%) to 1.05 (105%)
+        heightScale = 1.0 + (0.05 * easedHoldProgress)
+      end
+      
+      local scaleY = scaleX * heightScale -- Apply height scale
+      local scaledH = bandH * scaleY
+      
+      -- Center vertically (accounting for height change)
+      local bandY = (h - scaledH) * 0.5
+      
+      -- Center horizontally (since band is now wider than screen)
+      local bandX = (w - (bandW * scaleX)) * 0.5
+      
+      -- Fade in/out the band
+      love.graphics.setColor(1, 1, 1, alpha)
+      love.graphics.draw(self.blackBandImage, bandX, bandY, 0, scaleX, scaleY)
+      love.graphics.setColor(1, 1, 1, 1)
+    else
+      -- Fallback to black overlay if image not loaded
+      love.graphics.setColor(0, 0, 0, 0.6 * alpha)
+      love.graphics.rectangle("fill", 0, 0, w, h)
+      love.graphics.setColor(1, 1, 1, 1)
+    end
     
     -- Pop-in scale animation (easeOutBack)
     local scale = 1.0
@@ -711,6 +778,12 @@ function SplitScene:draw()
     local centerRect = self.layoutManager:getCenterRect(w, h)
     local centerX = centerRect.x + centerRect.w * 0.5 -- Center of center area
     local centerY = h * 0.5 - 20 -- Shifted up by 80px (was 130px, now shifted down by 50px)
+    -- Adjust text position based on turn type
+    if text == "YOUR TURN" then
+      centerY = centerY - 10 -- Shift YOUR TURN up by 10px
+    elseif text == "ENEMY'S TURN" then
+      centerY = centerY + 20 -- Lower ENEMY'S TURN by 20px
+    end
     
     -- Spacing between decorative images and text
     local decorSpacing = 40

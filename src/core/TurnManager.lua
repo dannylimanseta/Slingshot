@@ -189,8 +189,7 @@ function TurnManager:startPlayerTurn()
     self:queueActions({
       { type = "wait", duration = 0.3 },
       { type = "show_indicator", text = "YOUR TURN" },
-      -- Ensure indicator has appeared on-screen before enabling shooter
-      { type = "wait", duration = 0.5 },
+      -- Indicator action now waits for full animation duration (1.5s), so no extra wait needed
       { type = "transition", state = TurnManager.States.PLAYER_TURN_ACTIVE },
     })
     return true
@@ -201,8 +200,7 @@ function TurnManager:startPlayerTurn()
     actions = {
       { type = "wait", duration = 0.3 },
       { type = "show_indicator", text = "YOUR TURN" },
-      -- Ensure indicator has appeared on-screen before enabling shooter
-      { type = "wait", duration = 0.5 },
+      -- Indicator action now waits for full animation duration (1.5s), so no extra wait needed
       { type = "transition", state = TurnManager.States.PLAYER_TURN_ACTIVE },
     }
   })

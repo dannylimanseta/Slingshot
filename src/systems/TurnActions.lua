@@ -42,7 +42,11 @@ ShowIndicatorAction.__index = ShowIndicatorAction
 
 function ShowIndicatorAction.new(params)
   local self = Action.new(params)
-  self.duration = params.duration or 0.2
+  -- Calculate actual indicator duration (slowed by 50%)
+  local indicatorDuration = params.indicatorDuration or 1.0
+  local slowedDuration = indicatorDuration * 1.5
+  -- Set action duration to match indicator animation duration so turn waits for it to complete
+  self.duration = slowedDuration
   return setmetatable(self, ShowIndicatorAction)
 end
 
@@ -50,9 +54,11 @@ function ShowIndicatorAction:execute(turnManager)
   -- Extract text and duration from params (params contains the full actionDef)
   local text = self.params.text or "TURN"
   local duration = self.params.indicatorDuration or 1.0
+  -- Slow down animation by 50% (multiply duration by 1.5)
+  local slowedDuration = duration * 1.5
   turnManager:emit("show_turn_indicator", {
     text = text,
-    duration = duration,
+    duration = slowedDuration,
   })
 end
 
