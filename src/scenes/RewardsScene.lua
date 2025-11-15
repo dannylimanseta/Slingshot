@@ -303,7 +303,8 @@ function RewardsScene:load()
   -- Relic option (if eligible)
   self._relicRewardEligible = (self.params and self.params.relicRewardEligible == true) or false
   if self._relicRewardEligible then
-    local relicDef = pickRelicReward()
+    -- Preserve existing relic if returning from orb reward scene
+    local relicDef = self._pendingRelicReward or pickRelicReward()
     if relicDef then
       self._pendingRelicReward = relicDef
       self._relicDescription = relicDef.description or ""
