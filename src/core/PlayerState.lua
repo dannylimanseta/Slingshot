@@ -23,6 +23,7 @@ function PlayerState.new()
       equipped = {},
       order = {},
     },
+    seenEvents = {}, -- Track which events have been shown
   }, PlayerState)
 end
 
@@ -109,6 +110,25 @@ end
 function PlayerState:hasRelic(id)
   ensureRelicState(self)
   return self.relics.equipped[id] == true
+end
+
+function PlayerState:markEventSeen(eventId)
+  if not eventId then return end
+  if not self.seenEvents then
+    self.seenEvents = {}
+  end
+  self.seenEvents[eventId] = true
+end
+
+function PlayerState:hasSeenEvent(eventId)
+  if not self.seenEvents then
+    self.seenEvents = {}
+  end
+  return self.seenEvents[eventId] == true
+end
+
+function PlayerState:resetSeenEvents()
+  self.seenEvents = {}
 end
 
 return PlayerState

@@ -46,7 +46,7 @@ local EVENTS = {
     id = "wandering_trader",
     title = "The Wandering Trader",
     image = "event_placeholder.png",
-    text = "A figure emerges from the fog, draped in tattered robes that seem to shift and shimmer. Their face is hidden beneath a hood, but you catch glimpses of calcified stone where skin should be. They carry a heavy satchel that clinks with the sound of metal and something else—something that hums with power.\n\n\"Gold for power,\" they whisper, their voice like wind through cracks. \"One hundred pieces, and I will grant you a boon that will serve you well. What say you?\"",
+    text = "A figure emerges from the fog, draped in tattered robes that seem to shift and shimmer. Their face is hidden beneath a hood, but you catch glimpses of calcified stone where skin should be. They carry a heavy satchel that clinks with the sound of metal and something else, something that hums with power.\n\n\"Gold for power,\" they whisper, their voice like wind through cracks. \"One hundred pieces, and I will grant you a boon that will serve you well. What say you?\"",
     choices = {
       {
         text = "Pay 100 Gold. Gain a Relic.",
@@ -55,6 +55,22 @@ local EVENTS = {
       {
         text = "Decline. Nothing happens.",
         effects = {}
+      }
+    }
+  },
+  ancient_spring = {
+    id = "ancient_spring",
+    title = "The Ancient Spring",
+    image = "event_placeholder.png",
+    text = "You stumble upon a clearing where the fog parts to reveal a small spring. The water glimmers with an otherworldly light, and strange runes circle its edge, carved in the same calcified stone as the masks you've seen.\n\nAs you approach, the water seems to call to you. You feel a choice forming: strengthen your body, or sharpen your tools. The spring's power can only grant one blessing.",
+    choices = {
+      {
+        text = "Drink from the spring. Gain 6 Max HP.",
+        effects = { maxHp = 6 }
+      },
+      {
+        text = "Dip your orbs in the water. Upgrade a random Orb.",
+        effects = { upgradeRandomOrbs = 1 }
       }
     }
   },
@@ -77,17 +93,46 @@ function M.get(id)
   return EVENTS[id]
 end
 
--- Get random event (for future use)
+-- Get random event that hasn't been seen yet
+-- Once all events have been seen, resets and starts over
 function M.getRandom()
-  local keys = {}
+  local PlayerState = require("core.PlayerState")
+  local playerState = PlayerState.getInstance()
+  
+  -- Get all event keys
+  local allKeys = {}
   for k, _ in pairs(EVENTS) do
-    table.insert(keys, k)
+    table.insert(allKeys, k)
   end
-  if #keys > 0 then
-    local key = keys[love.math.random(#keys)]
+  
+  if #allKeys == 0 then
+    return nil
+  end
+  
+  -- Filter out seen events
+  local unseenKeys = {}
+  for _, key in ipairs(allKeys) do
+    if not playerState:hasSeenEvent(key) then
+      table.insert(unseenKeys, key)
+    end
+  end
+  
+  -- If all events have been seen, reset and use all events
+  local availableKeys = unseenKeys
+  if #unseenKeys == 0 then
+    playerState:resetSeenEvents()
+    availableKeys = allKeys
+  end
+  
+  -- Pick a random event from available ones
+  if #availableKeys > 0 then
+    local key = availableKeys[love.math.random(#availableKeys)]
     local ev = EVENTS[key]
+    -- Mark this event as seen
+    playerState:markEventSeen(key)
     return ev
   end
+  
   return nil
 end
 

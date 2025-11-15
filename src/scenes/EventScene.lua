@@ -244,6 +244,17 @@ function EventScene:_applyChoiceEffects(effects)
     playerState:setHealth(newHP)
   end
   
+  -- Increase max HP
+  if effects.maxHp then
+    local currentMaxHP = playerState:getMaxHealth()
+    local newMaxHP = currentMaxHP + effects.maxHp
+    playerState:setMaxHealth(newMaxHP)
+    -- Also heal by the same amount (common pattern in roguelikes)
+    local currentHP = playerState:getHealth()
+    local newHP = currentHP + effects.maxHp
+    playerState:setHealth(newHP)
+  end
+  
   if effects.gold then
     playerState:addGold(effects.gold)
   end
@@ -804,6 +815,8 @@ function EventScene:_drawChoiceText(button, alpha, hoverScale)
   -- Patterns to match (order matters - more specific first)
   local patterns = {
     { pattern = "Upgrade (%d+) random orbs by 1 level%.", color = { 195/255, 235/255, 139/255 } },  -- green (#C3EB8B) for orb upgrades
+    { pattern = "Upgrade a random Orb%.", color = { 195/255, 235/255, 139/255 } },  -- green (#C3EB8B) for single orb upgrade
+    { pattern = "Gain (%d+) Max HP%.", color = { 195/255, 235/255, 139/255 } },  -- green (#C3EB8B) for max HP gain
     { pattern = "Lose (%d+)%% Max HP%.", color = { 224/255, 112/255, 126/255 } },  -- red (#E0707E) for percentage HP loss
     { pattern = "Lose (%d+) HP%.", color = { 224/255, 112/255, 126/255 } },  -- red (#E0707E) for HP loss
     { pattern = "Gain (%d+) Gold%.", color = { 195/255, 235/255, 139/255 } },  -- green (#C3EB8B) for gold gain
