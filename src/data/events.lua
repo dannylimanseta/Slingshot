@@ -42,6 +42,22 @@ local EVENTS = {
       }
     }
   },
+  wandering_trader = {
+    id = "wandering_trader",
+    title = "The Wandering Trader",
+    image = "event_placeholder.png",
+    text = "A figure emerges from the fog, draped in tattered robes that seem to shift and shimmer. Their face is hidden beneath a hood, but you catch glimpses of calcified stone where skin should be. They carry a heavy satchel that clinks with the sound of metal and something else—something that hums with power.\n\n\"Gold for power,\" they whisper, their voice like wind through cracks. \"One hundred pieces, and I will grant you a boon that will serve you well. What say you?\"",
+    choices = {
+      {
+        text = "Pay 100 Gold. Gain a Relic.",
+        effects = { gold = -100, relic = true }
+      },
+      {
+        text = "Decline. Nothing happens.",
+        effects = {}
+      }
+    }
+  },
   -- Add more events here as needed
   -- Example template:
   -- [event_id] = {

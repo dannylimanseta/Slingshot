@@ -5,6 +5,7 @@ local TopBar = require("ui.TopBar")
 local PlayerState = require("core.PlayerState")
 local events = require("data.events")
 local ProjectileManager = require("managers.ProjectileManager")
+local relics = require("data.relics")
 
 local EventScene = {}
 EventScene.__index = EventScene
@@ -46,7 +47,41 @@ function EventScene.new(eventId)
     _glowFadeAlpha = 1.0, -- Fade alpha for currently selected glow (0 to 1)
     _prevGlowFadeAlpha = 0.0, -- Fade alpha for previously selected glow (fades out)
     _glowFadeSpeed = 8.0, -- Speed of fade in/out
+    -- Relic notification tooltip
+    _relicTooltip = nil, -- Relic definition for tooltip
+    _relicTooltipTime = 0, -- Time since tooltip appeared
+    _relicTooltipFadeInDuration = 0.2, -- Fade in duration (also moves up)
+    _relicTooltipHoldDuration = 0.5, -- Hold duration (stays in place)
+    _relicTooltipFadeOutDuration = 0.2, -- Fade out duration (also moves up)
+    _relicTooltipMoveDistance = 80, -- Distance to move up during animation
   }, EventScene)
+end
+
+-- Helper function to pick a random unowned relic
+local function pickRelicReward()
+  local list = relics.list() or {}
+  if #list == 0 then return nil end
+
+  local playerState = PlayerState.getInstance()
+  local owned = {}
+  if playerState and playerState.getRelicState then
+    local relicState = playerState:getRelicState()
+    owned = relicState and relicState.owned or {}
+  end
+
+  local candidates = {}
+  for _, relicDef in ipairs(list) do
+    if not owned or owned[relicDef.id] ~= true then
+      table.insert(candidates, relicDef)
+    end
+  end
+
+  if #candidates == 0 then
+    return nil
+  end
+
+  local idx = love.math.random(1, #candidates)
+  return candidates[idx]
 end
 
 function EventScene:load()
@@ -106,24 +141,53 @@ function EventScene:load()
     if okGoldIcon then self.goldIcon = goldImg end
   end
   
+  -- Get player state for validation
+  local playerState = PlayerState.getInstance()
+  local playerGold = playerState:getGold()
+  
   -- Create choice buttons (styled like reward buttons)
   self.choiceButtons = {}
   for i, choice in ipairs(self.event.choices or {}) do
+    -- Check if choice requires gold and player doesn't have enough
+    local requiresGold = choice.effects and choice.effects.gold and choice.effects.gold < 0
+    local goldRequired = requiresGold and math.abs(choice.effects.gold) or 0
+    local hasEnoughGold = playerGold >= goldRequired
+    
+    -- Check if choice requires relic and all relics are owned
+    local requiresRelic = choice.effects and choice.effects.relic == true
+    local canGetRelic = true
+    if requiresRelic then
+      local availableRelic = pickRelicReward()
+      canGetRelic = (availableRelic ~= nil)
+    end
+    
+    -- Determine if button should be disabled
+    local isDisabled = (requiresGold and not hasEnoughGold) or (requiresRelic and not canGetRelic)
+    
+    -- Modify button text if disabled
+    local buttonText = choice.text
+    if isDisabled then
+      if requiresGold and not hasEnoughGold then
+        buttonText = buttonText .. " (Requires " .. goldRequired .. " Gold)"
+      elseif requiresRelic and not canGetRelic then
+        buttonText = buttonText .. " (No relics available)"
+      end
+    end
     local button = Button.new({
-      label = choice.text,
+      label = buttonText,
       font = self.textFont,
       bgColor = { 0, 0, 0, 0.7 },  -- Same style as reward buttons
       align = "left",
       onClick = function()
-        -- Prevent multiple clicks
-        if self._choiceMade then
+        -- Prevent multiple clicks or disabled button clicks
+        if self._choiceMade or isDisabled then
           return
         end
         
         self._choiceMade = true  -- Disable all buttons
         self._selectedChoice = choice
         self._clickedButtonIndex = i  -- Store which button was clicked for coin animation
-        -- Check if choice gives gold - if so, animate coins instead of immediately applying
+        -- Check if choice gives gold (positive) - if so, animate coins instead of immediately applying
         if choice.effects and choice.effects.gold and choice.effects.gold > 0 then
           -- Store gold amounts for counting animation
           local PlayerState = require("core.PlayerState")
@@ -136,7 +200,7 @@ function EventScene:load()
           if self.topBar then
             self.topBar.overrideGold = self._goldDisplayStart
           end
-          -- Apply other effects immediately (like HP)
+          -- Apply other effects immediately (like HP, relic)
           local otherEffects = {}
           for k, v in pairs(choice.effects) do
             if k ~= "gold" then
@@ -147,14 +211,17 @@ function EventScene:load()
             self:_applyChoiceEffects(otherEffects)
           end
         else
-          -- No gold, apply all effects immediately
+          -- No gold gain, apply all effects immediately (including negative gold)
           self:_applyChoiceEffects(choice.effects or {})
+          -- Set exit requested, but if relic was granted, wait for tooltip animation
           self._exitRequested = true
         end
       end,
     })
     -- Initialize scale for hover effect
     button._scale = 1.0
+    -- Store disabled state for visual feedback
+    button._disabled = isDisabled
     table.insert(self.choiceButtons, button)
   end
 end
@@ -179,6 +246,17 @@ function EventScene:_applyChoiceEffects(effects)
   
   if effects.gold then
     playerState:addGold(effects.gold)
+  end
+  
+  -- Grant relic
+  if effects.relic == true then
+    local relicDef = pickRelicReward()
+    if relicDef then
+      playerState:addRelic(relicDef.id)
+      -- Show relic notification tooltip
+      self._relicTooltip = relicDef
+      self._relicTooltipTime = 0
+    end
   end
   
   -- Upgrade random orbs
@@ -238,6 +316,22 @@ function EventScene:update(dt, mouseX, mouseY)
   -- Update fade timer
   self._fadeTimer = self._fadeTimer + dt
   self._glowTime = (self._glowTime or 0) + dt
+  
+  -- Update relic tooltip animation
+  if self._relicTooltip then
+    self._relicTooltipTime = self._relicTooltipTime + dt
+    -- Calculate total duration
+    local totalDuration = self._relicTooltipFadeInDuration + self._relicTooltipHoldDuration + self._relicTooltipFadeOutDuration
+    -- Remove tooltip after animation completes
+    if self._relicTooltipTime >= totalDuration then
+      self._relicTooltip = nil
+      self._relicTooltipTime = 0
+      -- Exit scene after tooltip finishes if exit was requested
+      if self._exitRequested then
+        -- Exit will be handled in the check below
+      end
+    end
+  end
   
   -- Calculate button layout first (needed for coin animation source position)
   local vw = config.video.virtualWidth
@@ -365,7 +459,7 @@ function EventScene:update(dt, mouseX, mouseY)
       end
     end
   end
-  -- Update buttons (hover effects) - disable if choice already made
+    -- Update buttons (hover effects) - disable if choice already made or button disabled
   for i, button in ipairs(self.choiceButtons) do
     -- Initialize scale if not set
     if not button._scale then
@@ -373,8 +467,8 @@ function EventScene:update(dt, mouseX, mouseY)
     end
     
     -- Update button (this will use hitRect to determine hover and update scale)
-    -- Disable hover if choice already made
-    if self._choiceMade then
+    -- Disable hover if choice already made or button is disabled
+    if self._choiceMade or button._disabled then
       -- Reset hover state and scale
       button._hovered = false
       button._scale = 1.0
@@ -395,14 +489,19 @@ function EventScene:update(dt, mouseX, mouseY)
     end
   end
   
-  -- Check for exit (but wait for coin animations and counting to complete if gold was gained)
+  -- Check for exit (but wait for coin animations, counting, or relic tooltip to complete)
   if self._exitRequested then
     -- If gold counting is in progress, wait for it to complete
     if self._goldCounting then
       -- Still counting, don't exit yet
       return nil
     end
-    -- No gold or counting complete, safe to exit with shader transition
+    -- If relic tooltip is showing, wait for it to complete
+    if self._relicTooltip then
+      -- Still showing tooltip, don't exit yet
+      return nil
+    end
+    -- All animations complete, safe to exit with shader transition
     return { type = "return_to_map", skipTransition = false }
   end
   
@@ -414,22 +513,48 @@ function EventScene:keypressed(key, scancode, isRepeat)
   
   if #self.choiceButtons == 0 then return nil end
   
-  -- Clamp selected index to valid range
+  -- Helper function to find next enabled button
+  local function findNextEnabled(startIndex, direction)
+    local current = startIndex
+    local attempts = 0
+    while attempts < #self.choiceButtons do
+      current = current + direction
+      if current < 1 then
+        current = #self.choiceButtons
+      elseif current > #self.choiceButtons then
+        current = 1
+      end
+      if not self.choiceButtons[current]._disabled then
+        return current
+      end
+      attempts = attempts + 1
+    end
+    return startIndex -- Fallback if all disabled
+  end
+  
+  -- Clamp selected index to valid range and ensure it's not disabled
   self._selectedIndex = math.max(1, math.min(self._selectedIndex, #self.choiceButtons))
+  if self.choiceButtons[self._selectedIndex]._disabled then
+    -- Find first enabled button
+    for i = 1, #self.choiceButtons do
+      if not self.choiceButtons[i]._disabled then
+        self._selectedIndex = i
+        break
+      end
+    end
+  end
   
   -- Handle navigation keys
   if key == "w" or key == "up" then
-    self._selectedIndex = self._selectedIndex - 1
-    if self._selectedIndex < 1 then self._selectedIndex = #self.choiceButtons end
+    self._selectedIndex = findNextEnabled(self._selectedIndex, -1)
     return nil
   elseif key == "s" or key == "down" then
-    self._selectedIndex = self._selectedIndex + 1
-    if self._selectedIndex > #self.choiceButtons then self._selectedIndex = 1 end
+    self._selectedIndex = findNextEnabled(self._selectedIndex, 1)
     return nil
   elseif key == "space" or key == "return" then
-    -- Activate selected button
+    -- Activate selected button (only if not disabled)
     local selectedButton = self.choiceButtons[self._selectedIndex]
-    if selectedButton and selectedButton.onClick then
+    if selectedButton and not selectedButton._disabled and selectedButton.onClick then
       selectedButton.onClick()
     end
     return nil
@@ -529,10 +654,12 @@ function EventScene:draw()
   local buttonStartY = currentY
   
   for i, button in ipairs(self.choiceButtons) do
-    -- Layout is already set in update(), set alpha (reduce if choice made)
+    -- Layout is already set in update(), set alpha (reduce if choice made or disabled)
     local buttonAlpha = fadeAlpha
     if self._choiceMade then
       buttonAlpha = fadeAlpha * 0.5  -- Reduce opacity when disabled
+    elseif button._disabled then
+      buttonAlpha = fadeAlpha * 0.5  -- Reduce opacity for disabled buttons
     end
     button.alpha = buttonAlpha
     
@@ -541,7 +668,7 @@ function EventScene:draw()
     local cx = button.x + button.w * 0.5
     local cy = button.y + button.h * 0.5
     local hoverScale = button._scale or 1.0
-    if self._choiceMade then
+    if self._choiceMade or button._disabled then
       hoverScale = 1.0  -- No hover scale when disabled
     end
     
@@ -597,6 +724,8 @@ function EventScene:draw()
     local textAlpha = fadeAlpha
     if self._choiceMade then
       textAlpha = fadeAlpha * 0.5  -- Reduce text opacity when disabled
+    elseif button._disabled then
+      textAlpha = fadeAlpha * 0.5  -- Reduce text opacity for disabled buttons
     end
     self:_drawChoiceText(button, textAlpha, hoverScale)
     
@@ -605,6 +734,9 @@ function EventScene:draw()
   
   -- Draw coin animations above everything (z-order)
   self:_drawCoinAnimations()
+  
+  -- Draw relic notification tooltip (on top of everything)
+  self:_drawRelicTooltip(fadeAlpha)
 end
 
 function EventScene:_wordWrap(text, maxWidth, font)
@@ -675,6 +807,8 @@ function EventScene:_drawChoiceText(button, alpha, hoverScale)
     { pattern = "Lose (%d+)%% Max HP%.", color = { 224/255, 112/255, 126/255 } },  -- red (#E0707E) for percentage HP loss
     { pattern = "Lose (%d+) HP%.", color = { 224/255, 112/255, 126/255 } },  -- red (#E0707E) for HP loss
     { pattern = "Gain (%d+) Gold%.", color = { 195/255, 235/255, 139/255 } },  -- green (#C3EB8B) for gold gain
+    { pattern = "Gain a Relic%.", color = { 195/255, 235/255, 139/255 } },  -- green (#C3EB8B) for relic gain
+    { pattern = "Pay (%d+) Gold%.", color = { 224/255, 112/255, 126/255 } },  -- red (#E0707E) for gold loss
   }
   
   local lastPos = 1
@@ -875,6 +1009,202 @@ function EventScene:mousepressed(x, y, button)
   end
   
   return nil
+end
+
+function EventScene:_drawRelicTooltip(fadeAlpha)
+  if not self._relicTooltip then return end
+  
+  local relicDef = self._relicTooltip
+  local vw = config.video.virtualWidth
+  local vh = config.video.virtualHeight
+  
+  local font = theme.fonts.base
+  love.graphics.setFont(font)
+  
+  -- Icon size and padding
+  local iconSize = 48
+  local iconPadding = 8
+  local padding = 8
+  
+  -- Load icon
+  local iconImg = nil
+  if relicDef.icon then
+    local ok, img = pcall(love.graphics.newImage, relicDef.icon)
+    if ok then iconImg = img end
+  end
+  
+  -- Build tooltip text (name + description)
+  local tooltipText = ""
+  if relicDef.name then
+    tooltipText = tooltipText .. relicDef.name
+  end
+  if relicDef.description then
+    if tooltipText ~= "" then
+      tooltipText = tooltipText .. "\n" .. relicDef.description
+    else
+      tooltipText = relicDef.description
+    end
+  end
+  
+  if tooltipText == "" then return end
+  
+  -- Calculate size
+  local textLines = {}
+  for line in tooltipText:gmatch("[^\n]+") do
+    table.insert(textLines, line)
+  end
+  
+  local textScale = 0.75
+  local maxTextW = 0
+  for _, line in ipairs(textLines) do
+    local w = font:getWidth(line) * textScale
+    if w > maxTextW then maxTextW = w end
+  end
+  
+  local baseTextH = font:getHeight() * #textLines
+  local textW = maxTextW
+  local textH = baseTextH * textScale
+  
+  -- Limit text width
+  local maxTextWidth = 200
+  if textW > maxTextWidth then
+    textW = maxTextWidth
+  end
+  
+  -- Calculate tooltip dimensions
+  local tooltipW = padding * 2
+  if iconImg then
+    tooltipW = tooltipW + iconSize + iconPadding
+  end
+  tooltipW = tooltipW + textW
+  
+  -- Calculate text wrap width
+  local availableTextWidth = tooltipW - padding * 2
+  if iconImg then
+    availableTextWidth = availableTextWidth - iconSize - iconPadding
+  end
+  local textWrapWidth = availableTextWidth / textScale
+  
+  -- Word wrap text
+  local wrappedLines = {}
+  for _, line in ipairs(textLines) do
+    local words = {}
+    for word in line:gmatch("%S+") do
+      table.insert(words, word)
+    end
+    
+    local currentLine = ""
+    for _, word in ipairs(words) do
+      local testLine = currentLine == "" and word or currentLine .. " " .. word
+      local testW = font:getWidth(testLine)
+      if testW > textWrapWidth and currentLine ~= "" then
+        table.insert(wrappedLines, currentLine)
+        currentLine = word
+      else
+        currentLine = testLine
+      end
+    end
+    if currentLine ~= "" then
+      table.insert(wrappedLines, currentLine)
+    end
+  end
+  
+  local actualTextH = font:getHeight() * #wrappedLines * textScale
+  local tooltipH = padding * 2 + math.max(iconSize, actualTextH)
+  
+  -- Calculate position (top right)
+  local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
+  local startY = topBarHeight + 20 -- Below top bar
+  
+  -- Calculate total duration and phases
+  local totalDuration = self._relicTooltipFadeInDuration + self._relicTooltipHoldDuration + self._relicTooltipFadeOutDuration
+  
+  -- Phase 1: Fade in + move up (0.2s)
+  local fadeInProgress = 1.0
+  local moveProgress = 0.0
+  if self._relicTooltipTime < self._relicTooltipFadeInDuration then
+    local phaseT = self._relicTooltipTime / self._relicTooltipFadeInDuration
+    fadeInProgress = phaseT
+    -- Ease-in-out for movement during fade in
+    -- Ease-in-out cubic: t < 0.5 ? 4t³ : 1 - pow(-2t + 2, 3) / 2
+    if phaseT < 0.5 then
+      moveProgress = 4 * phaseT * phaseT * phaseT
+    else
+      moveProgress = 1 - math.pow(-2 * phaseT + 2, 3) / 2
+    end
+    -- Scale to 50% of total movement during fade in
+    moveProgress = moveProgress * 0.5
+  end
+  
+  -- Phase 2: Hold (0.5s) - movement stays at 50%
+  local holdStart = self._relicTooltipFadeInDuration
+  local holdEnd = holdStart + self._relicTooltipHoldDuration
+  if self._relicTooltipTime >= holdStart and self._relicTooltipTime <= holdEnd then
+    moveProgress = 0.5
+  end
+  
+  -- Phase 3: Fade out + move up more (0.2s)
+  local fadeOutStart = self._relicTooltipFadeInDuration + self._relicTooltipHoldDuration
+  local fadeOutProgress = 1.0
+  if self._relicTooltipTime > fadeOutStart then
+    local phaseT = (self._relicTooltipTime - fadeOutStart) / self._relicTooltipFadeOutDuration
+    fadeOutProgress = 1.0 - phaseT
+    -- Ease-in-out for movement during fade out (from 50% to 100%)
+    local moveOutT = phaseT
+    local moveOutEased = 0.0
+    if moveOutT < 0.5 then
+      moveOutEased = 4 * moveOutT * moveOutT * moveOutT
+    else
+      moveOutEased = 1 - math.pow(-2 * moveOutT + 2, 3) / 2
+    end
+    -- Scale from 0.5 to 1.0
+    moveProgress = 0.5 + (moveOutEased * 0.5)
+  end
+  
+  -- Apply movement
+  local tooltipY = startY - (moveProgress * self._relicTooltipMoveDistance)
+  
+  -- Position at top right
+  local tooltipX = vw - tooltipW - 20 -- 20px from right edge
+  
+  -- Calculate alpha (combine fade in, fade out, and scene fade)
+  local alpha = fadeInProgress * fadeOutProgress * fadeAlpha
+  
+  -- Draw background
+  love.graphics.setColor(0, 0, 0, 0.85 * alpha)
+  love.graphics.rectangle("fill", tooltipX, tooltipY, tooltipW, tooltipH, 4, 4)
+  
+  -- Draw border
+  love.graphics.setColor(1, 1, 1, 0.3 * alpha)
+  love.graphics.setLineWidth(1)
+  love.graphics.rectangle("line", tooltipX, tooltipY, tooltipW, tooltipH, 4, 4)
+  
+  -- Draw icon (top left)
+  if iconImg then
+    local iconX = tooltipX + padding
+    local iconY = tooltipY + padding
+    local iconScale = iconSize / math.max(iconImg:getWidth(), iconImg:getHeight())
+    love.graphics.setColor(1, 1, 1, alpha)
+    love.graphics.draw(iconImg, iconX, iconY, 0, iconScale, iconScale)
+  end
+  
+  -- Draw text (to the right of icon, or left if no icon)
+  local textX = tooltipX + padding
+  if iconImg then
+    textX = textX + iconSize + iconPadding
+  end
+  local textY = tooltipY + padding
+  
+  love.graphics.push()
+  love.graphics.translate(textX, textY)
+  love.graphics.scale(textScale, textScale)
+  local currentY = 0
+  for i, line in ipairs(wrappedLines) do
+    love.graphics.setColor(1, 1, 1, alpha)
+    love.graphics.print(line, 0, currentY)
+    currentY = currentY + font:getHeight()
+  end
+  love.graphics.pop()
 end
 
 function EventScene:unload()
