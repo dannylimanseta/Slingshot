@@ -389,7 +389,7 @@ function VisualEffects:drawTooltip(bounds)
   -- Calculate size
   local baseTextW = font:getWidth(text)
   local baseTextH = font:getHeight()
-  local textScale = 0.5
+  local textScale = 0.65 -- Increased from 0.5
   local textW = baseTextW * textScale
   local textH = baseTextH * textScale
   local padding = 8

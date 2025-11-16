@@ -1494,7 +1494,7 @@ function Visuals.draw(scene, bounds)
         local font = theme.fonts.base
         love.graphics.setFont(font)
         
-        local textScale = 0.5
+        local textScale = 0.65 -- Increased from 0.5
         local padding = 8
         local maxTextWidth = 180 -- Max width in pixels (at scaled size)
         local maxTextWidthUnscaled = maxTextWidth / textScale -- Max width in unscaled font units
