@@ -1198,6 +1198,11 @@ function Visuals.draw(scene, bounds)
     turnManager:getState() == TurnManager.States.PLAYER_TURN_ACTIVE
   )
   
+  -- Track hovered intent for tooltips
+  scene.hoveredIntentIndex = nil
+  local mouseX = scene.mouseX or 0
+  local mouseY = scene.mouseY or 0
+  
   -- Draw intents if they exist and have fade time (allows fade out after player turn)
   for i, pos in ipairs(enemyPositions) do
     local enemy = pos.enemy
@@ -1331,6 +1336,45 @@ function Visuals.draw(scene, bounds)
           iconX = enemyCenterX - (gapWidth + textW) * 0.5 + nudgeX
         end
         
+        -- Check if mouse is hovering over intent icon or text
+        local iconCenterX = iconX
+        local iconCenterY = iconY + bobOffset
+        local iconRadius = math.max(iconW * iconScale * 0.5, iconH * iconScale * 0.5) + 10 -- Add padding for easier hover
+        local dx = mouseX - iconCenterX
+        local dy = mouseY - iconCenterY
+        local distSq = dx * dx + dy * dy
+        local isHovering = false
+        
+        -- Check if hovering over icon
+        if distSq <= iconRadius * iconRadius then
+          isHovering = true
+        end
+        
+        -- Also check if hovering over text (for charge/spore skills with text labels)
+        if valueText and not isHovering then
+          local textX, textY
+          if (isChargeSkill or isSporeSkill) and textW > 0 then
+            local textCenterX = (pos.curX or pos.x) + nudgeX
+            textX = textCenterX - textW * 0.5
+            textY = iconCenterY + textH * -0.28
+          else
+            local iconRightEdge = iconX + iconWidth * 0.5
+            textX = iconRightEdge + gapWidth
+            textY = iconCenterY + textH * -0.28
+          end
+          
+          -- Check if mouse is within text bounds (with padding)
+          local textPadding = 5
+          if mouseX >= textX - textPadding and mouseX <= textX + textW + textPadding and
+             mouseY >= textY - textPadding and mouseY <= textY + textH + textPadding then
+            isHovering = true
+          end
+        end
+        
+        if isHovering then
+          scene.hoveredIntentIndex = i
+        end
+        
         -- Draw icon with fade
         love.graphics.setColor(1, 1, 1, alpha)
         love.graphics.draw(intentIcon, iconX, iconY + bobOffset, 0, iconScale, iconScale, iconW * 0.5, iconH * 0.5)
@@ -1358,6 +1402,205 @@ function Visuals.draw(scene, bounds)
         end
         
         love.graphics.setColor(1, 1, 1, 1) -- Reset color
+      end
+    end
+  end
+  
+  -- Draw intent tooltip if hovering
+  if scene.hoveredIntentIndex and scene.intentHoverTime >= 0.3 then
+    local hoveredPos = enemyPositions[scene.hoveredIntentIndex]
+    local hoveredEnemy = hoveredPos and hoveredPos.enemy
+    if hoveredEnemy and hoveredEnemy.intent and hoveredEnemy.intentFadeTime and hoveredEnemy.intentFadeTime > 0 then
+      local intent = hoveredEnemy.intent
+      local tooltipText = nil
+      
+      -- Get tooltip text based on intent type
+      if intent.type == "attack" then
+        local hits = intent.hits or 1
+        if intent.attackType == "charged" then
+          tooltipText = "Charged attack dealing 12-16 damage"
+        elseif hits > 1 then
+          if intent.damage then
+            tooltipText = string.format("Multi-hit attack: %d damage x %d hits", intent.damage, hits)
+          elseif intent.damageMin and intent.damageMax then
+            if intent.damageMin == intent.damageMax then
+              tooltipText = string.format("Multi-hit attack: %d damage x %d hits", intent.damageMin, hits)
+            else
+              tooltipText = string.format("Multi-hit attack: %d-%d damage x %d hits", intent.damageMin, intent.damageMax, hits)
+            end
+          else
+            tooltipText = string.format("Multi-hit attack: %d hits", hits)
+          end
+        else
+          if intent.damage then
+            tooltipText = string.format("Deals %d damage", intent.damage)
+          elseif intent.damageMin and intent.damageMax then
+            if intent.damageMin == intent.damageMax then
+              tooltipText = string.format("Deals %d damage", intent.damageMin)
+            else
+              tooltipText = string.format("Deals %d-%d damage", intent.damageMin, intent.damageMax)
+            end
+          else
+            tooltipText = "Deals damage"
+          end
+        end
+      elseif intent.type == "armor" then
+        local amount = intent.amount or 0
+        tooltipText = string.format("Gains %d armor (reduces incoming damage)", amount)
+      elseif intent.type == "skill" then
+        if intent.skillType == "heal" then
+          local amount = intent.amount or 0
+          tooltipText = string.format("Heals self or ally for %d HP", amount)
+        elseif intent.skillType == "spore" then
+          local count = intent.sporeCount or 2
+          tooltipText = string.format("Spawns %d spore blocks that destroy orbs on hit", count)
+        elseif intent.skillType == "calcify" then
+          local count = intent.blockCount or 3
+          tooltipText = string.format("Calcifies %d random blocks (makes them indestructible)", count)
+        elseif intent.skillType == "charge" then
+          tooltipText = "Charges up, spawns armor blocks. Deals massive damage next turn"
+        elseif intent.skillType == "shockwave" then
+          local damage = intent.damage or 6
+          tooltipText = string.format("Deals %d damage and destroys a few blocks", damage)
+        else
+          tooltipText = "Uses a special skill"
+        end
+      end
+      
+      if tooltipText then
+        -- Calculate intent icon position for tooltip placement
+        local iconW, iconH = 0, 0
+        local intentIcon = nil
+        if intent.type == "attack" then
+          intentIcon = scene.iconIntentAttack
+        elseif intent.type == "armor" then
+          intentIcon = scene.iconIntentArmor
+        elseif intent.type == "skill" then
+          intentIcon = scene.iconIntentSkill
+        end
+        
+        if intentIcon then
+          iconW, iconH = intentIcon:getWidth(), intentIcon:getHeight()
+        end
+        
+        local iconScale = 0.34
+        local enemyY = hoveredPos.curY or hoveredPos.y
+        local enemyHeight = hoveredEnemy.img and (hoveredEnemy.img:getHeight() * hoveredPos.scale) or (r * 2)
+        local enemyTop = enemyY - enemyHeight
+        local iconY = enemyTop - iconH * iconScale * 0.5 - 20
+        local iconX = hoveredPos.curX or hoveredPos.x
+        
+        -- Draw tooltip above intent icon
+        local font = theme.fonts.base
+        love.graphics.setFont(font)
+        
+        local textScale = 0.5
+        local padding = 8
+        local maxTextWidth = 180 -- Max width in pixels (at scaled size)
+        local maxTextWidthUnscaled = maxTextWidth / textScale -- Max width in unscaled font units
+        
+        -- Word wrap the text
+        local function wrapText(text, font, maxWidth)
+          local words = {}
+          for word in text:gmatch("%S+") do
+            table.insert(words, word)
+          end
+          
+          local lines = {}
+          local currentLine = ""
+          
+          for _, word in ipairs(words) do
+            local testLine = currentLine == "" and word or currentLine .. " " .. word
+            local width = font:getWidth(testLine)
+            
+            if width > maxWidth and currentLine ~= "" then
+              table.insert(lines, currentLine)
+              currentLine = word
+            else
+              currentLine = testLine
+            end
+          end
+          
+          if currentLine ~= "" then
+            table.insert(lines, currentLine)
+          end
+          
+          return lines
+        end
+        
+        local wrappedLines = wrapText(tooltipText, font, maxTextWidthUnscaled)
+        local baseTextH = font:getHeight()
+        local textH = baseTextH * textScale
+        local lineCount = #wrappedLines
+        
+        -- Calculate actual width of each line and find the widest one
+        local maxLineWidth = 0
+        for _, line in ipairs(wrappedLines) do
+          local lineWidth = font:getWidth(line) * textScale
+          if lineWidth > maxLineWidth then
+            maxLineWidth = lineWidth
+          end
+        end
+        
+        -- Use dynamic width but cap at maxTextWidth
+        local actualTextWidth = math.min(maxLineWidth, maxTextWidth)
+        local totalTextH = textH * lineCount
+        
+        -- Calculate tooltip dimensions (dynamic width based on text)
+        local tooltipW = actualTextWidth + padding * 2
+        local tooltipH = totalTextH + padding * 2
+        
+        local tooltipX = iconX
+        local baseTooltipY = iconY - 30 -- Shifted up by 40px (from -10 to -50)
+        
+        -- Clamp to canvas bounds
+        local canvasLeft = 0
+        local canvasRight = bounds and bounds.w or love.graphics.getWidth()
+        local tooltipLeft = tooltipX - tooltipW * 0.5
+        local tooltipRight = tooltipX + tooltipW * 0.5
+        
+        if tooltipLeft < canvasLeft then
+          tooltipX = canvasLeft + tooltipW * 0.5
+        elseif tooltipRight > canvasRight then
+          tooltipX = canvasRight - tooltipW * 0.5
+        end
+        
+        -- Fade in
+        local fadeProgress = math.min(1.0, (scene.intentHoverTime - 0.3) / 0.3)
+        
+        -- Bounce animation
+        local bounceHeight = 8
+        local bounceProgress = fadeProgress
+        local c1, c3 = 1.70158, 2.70158
+        local u = (bounceProgress - 1)
+        local bounce = 1 + c3 * (u * u * u) + c1 * (u * u)
+        local bounceOffset = (1 - bounce) * bounceHeight
+        local tooltipY = baseTooltipY - bounceOffset - tooltipH
+        
+        -- Draw background
+        love.graphics.setColor(0, 0, 0, 0.85 * fadeProgress)
+        love.graphics.rectangle("fill", tooltipX - tooltipW * 0.5, tooltipY, tooltipW, tooltipH, 4, 4)
+        
+        -- Draw border
+        love.graphics.setColor(1, 1, 1, 0.3 * fadeProgress)
+        love.graphics.setLineWidth(1)
+        love.graphics.rectangle("line", tooltipX - tooltipW * 0.5, tooltipY, tooltipW, tooltipH, 4, 4)
+        
+        -- Draw text (line by line)
+        love.graphics.push()
+        love.graphics.translate(tooltipX - tooltipW * 0.5 + padding, tooltipY + padding)
+        love.graphics.scale(textScale, textScale)
+        love.graphics.setColor(1, 1, 1, fadeProgress)
+        
+        local currentY = 0
+        for i, line in ipairs(wrappedLines) do
+          love.graphics.print(line, 0, currentY)
+          currentY = currentY + baseTextH
+        end
+        
+        love.graphics.pop()
+        
+        love.graphics.setColor(1, 1, 1, 1)
       end
     end
   end

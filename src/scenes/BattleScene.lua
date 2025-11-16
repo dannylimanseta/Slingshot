@@ -234,6 +234,11 @@ function BattleScene.new()
     puffImageRight = nil,
     -- Shockwave smoke effect
     smokeImage = nil,
+    -- Intent tooltip tracking
+    mouseX = 0,
+    mouseY = 0,
+    hoveredIntentIndex = nil, -- Index of enemy whose intent is hovered
+    intentHoverTime = 0, -- Time hovering over intent
   }, BattleScene)
 end
 
@@ -584,6 +589,13 @@ end
 function BattleScene:update(dt, bounds)
   self._lastBounds = bounds or self._lastBounds
   UpdateController.update(self, dt)
+  
+  -- Update intent hover time
+  if self.hoveredIntentIndex then
+    self.intentHoverTime = self.intentHoverTime + dt
+  else
+    self.intentHoverTime = 0
+  end
 end
 
 function BattleScene:triggerShake(mag, dur)
@@ -1077,6 +1089,12 @@ end
 -- Handle mouse clicks for enemy selection
 function BattleScene:mousepressed(x, y, button, bounds)
   EnemyController.handleMousePressed(self, x, y, button, bounds)
+end
+
+-- Handle mouse movement for intent tooltips
+function BattleScene:mousemoved(x, y)
+  self.mouseX = x or 0
+  self.mouseY = y or 0
 end
 
 BattleScene._ensureBattleState = StateBridge.ensure
