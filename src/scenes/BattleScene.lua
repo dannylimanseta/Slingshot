@@ -5,6 +5,7 @@ local SpriteAnimation = require("utils.SpriteAnimation")
 local DisintegrationShader = require("utils.DisintegrationShader")
 local WhiteSilhouetteShader = require("utils.WhiteSilhouetteShader")
 local FogShader = require("utils.FogShader")
+local PlayerAttackShader = require("utils.PlayerAttackShader")
 local ImpactSystem = require("scenes.battle.ImpactSystem")
 local Visuals = require("scenes.battle.Visuals")
 local EnemySkills = require("scenes.battle.EnemySkills")
@@ -214,6 +215,11 @@ function BattleScene.new()
     enemyKnockbackEvents = {}, -- Array of {delay, startTime} for staggered knockbacks
     disintegrationShader = nil,
     whiteSilhouetteShader = nil,
+    playerAttackShader = nil,
+    attackShaderAlpha = 0,
+    attackShaderTime = 0,
+    attackShaderHoldTimer = 0,
+    attackShaderBaseIntensity = 1,
     -- Lunge speed streaks
     lungeStreaks = {},
     lungeStreakAcc = 0,
@@ -248,6 +254,11 @@ function BattleScene:load(bounds, battleProfile)
   
   -- Store battle profile for Visuals.lua to access
   self._battleProfile = battleProfile
+  self.attackShaderAlpha = 0
+  self.attackShaderTime = 0
+  self.attackShaderHoldTimer = 0
+  local shaderCfgInit = config.battle and config.battle.playerAttackShader
+  self.attackShaderBaseIntensity = (shaderCfgInit and shaderCfgInit.intensity) or 1.0
   
   -- Determine if current encounter is elite and compute relic multipliers
   local isEliteEncounter = false
@@ -456,6 +467,21 @@ function BattleScene:load(bounds, battleProfile)
     self.fogShader = nil
   end
   
+  -- Load player attack shader overlay
+  do
+    local shaderCfg = config.battle and config.battle.playerAttackShader
+    if not shaderCfg or shaderCfg.enabled ~= false then
+      local okAttackShader, attackShader = pcall(function() return PlayerAttackShader.getShader() end)
+      if okAttackShader and attackShader then
+        self.playerAttackShader = attackShader
+      else
+        self.playerAttackShader = nil
+      end
+    else
+      self.playerAttackShader = nil
+    end
+  end
+  
   -- Load selection indicator image
   local indicatorPath = "assets/images/selected_indicator.png"
   local ok, img = pcall(love.graphics.newImage, indicatorPath)
@@ -618,6 +644,10 @@ function BattleScene:draw(bounds)
   end
   
   -- Note: Calcify particles are drawn in SplitScene after blocks for proper z-ordering
+end
+
+function BattleScene:drawAttackOverlay(bounds)
+  Visuals.drawPlayerAttackOverlay(self, bounds)
 end
 
 -- (Jackpot API removed)

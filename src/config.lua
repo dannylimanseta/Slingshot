@@ -324,6 +324,16 @@ config.battle = {
     alpha = 0.45,
     jitterY = 18, -- vertical jitter around mid-height
   },
+  playerAttackShader = {
+    enabled = true,
+    radius = 12.0,
+    edge = 0.3,
+    intensity = 1.0,
+    holdDuration = 0.35,
+    fadeInSpeed = 8.0,
+    fadeOutSpeed = 6.0,
+    blendMode = "add",
+  },
   -- Idle bob (vertical-only stretch)
   idleBobScaleY = 0.03, -- +3% max additional height
   idleBobSpeed = 1.2,   -- cycles per second

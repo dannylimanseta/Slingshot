@@ -543,8 +543,9 @@ function SplitScene:draw()
   end
 
   -- Draw battle scene across full screen first (so gameplay can overlay center)
+  local battleBounds = { x = 0, y = 0, w = w, h = h, center = { x = centerX, w = centerW, h = h } }
   if self.right and self.right.draw then
-    self.right:draw({ x = 0, y = 0, w = w, h = h, center = { x = centerX, w = centerW, h = h } })
+    self.right:draw(battleBounds)
   end
 
   -- Draw boundary images at left and right edges of breakout canvas (outside scissor so they extend outward)
@@ -620,6 +621,10 @@ function SplitScene:draw()
     if self.left and self.left.draw then self.left:draw({ x = 0, y = 0, w = centerW, h = h }) end
   love.graphics.pop()
   
+  if self.right and self.right.drawAttackOverlay then
+    self.right:drawAttackOverlay(battleBounds)
+  end
+
   if self.right and self.right.drawSkillParticles then
     self.right:drawSkillParticles()
   end

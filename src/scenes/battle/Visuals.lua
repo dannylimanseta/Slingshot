@@ -99,6 +99,23 @@ local function drawBorderFragments(fragments)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
+local function isPlayerAttackActive(scene)
+  if not scene then return false end
+  if scene.playerLungeTime and scene.playerLungeTime > 0 then
+    return true
+  end
+  if scene.impactInstances and #scene.impactInstances > 0 then
+    return true
+  end
+  if scene.lightningStrikes and #scene.lightningStrikes > 0 then
+    return true
+  end
+  if scene.blackHoleAttacks and #scene.blackHoleAttacks > 0 then
+    return true
+  end
+  return false
+end
+
 function Visuals.update(scene, dt)
   if not scene then return end
   local enemySpeed = 0.85
@@ -264,6 +281,42 @@ function Visuals.update(scene, dt)
       end
     end
     scene.lungeStreaks = alive
+  end
+
+  scene.attackShaderTime = (scene.attackShaderTime or 0) + dt
+  local shaderCfg = config.battle and config.battle.playerAttackShader
+  local shaderEnabled = scene.playerAttackShader and (not shaderCfg or shaderCfg.enabled ~= false)
+  local baseIntensity = (shaderCfg and shaderCfg.intensity) or 1.0
+  scene.attackShaderBaseIntensity = baseIntensity
+
+  local holdDuration = (shaderCfg and shaderCfg.holdDuration) or 0
+  local attackActive = isPlayerAttackActive(scene)
+  if attackActive then
+    scene.attackShaderHoldTimer = holdDuration
+  elseif scene.attackShaderHoldTimer and scene.attackShaderHoldTimer > 0 then
+    scene.attackShaderHoldTimer = math.max(0, scene.attackShaderHoldTimer - dt)
+  end
+
+  local shouldShowShader = attackActive or (scene.attackShaderHoldTimer and scene.attackShaderHoldTimer > 0)
+
+  if shaderEnabled then
+    local targetAlpha = shouldShowShader and 1 or 0
+    local currentAlpha = scene.attackShaderAlpha or 0
+    local fadeInSpeed = (shaderCfg and shaderCfg.fadeInSpeed) or 8.0
+    local fadeOutSpeed = (shaderCfg and shaderCfg.fadeOutSpeed) or 6.0
+    local speed = targetAlpha > currentAlpha and fadeInSpeed or fadeOutSpeed
+    speed = math.max(speed, 0)
+    local step = speed > 0 and math.min(1, speed * dt) or 1
+    local newAlpha = currentAlpha + (targetAlpha - currentAlpha) * step
+    if newAlpha < 1e-4 then
+      newAlpha = 0
+    elseif newAlpha > 1 then
+      newAlpha = 1
+    end
+    scene.attackShaderAlpha = newAlpha
+  else
+    scene.attackShaderAlpha = 0
+    scene.attackShaderHoldTimer = 0
   end
 end
 
@@ -1900,6 +1953,118 @@ function Visuals.draw(scene, bounds)
 
   love.graphics.pop()
   love.graphics.setColor(1, 1, 1, 1)
+end
+
+function Visuals.drawPlayerAttackOverlay(scene, bounds)
+  if not scene then return end
+
+  local w, h
+  if bounds and bounds.w and bounds.h then
+    w = bounds.w
+    h = bounds.h
+  else
+    w = love.graphics.getWidth()
+    h = love.graphics.getHeight()
+  end
+
+  local center = bounds and bounds.center or nil
+  local centerX = center and center.x or math.floor(w * 0.5) - math.floor((w * 0.5) * 0.5)
+  local centerW = center and center.w or math.floor(w * 0.5)
+  local leftWidth = math.max(0, centerX)
+  local rightStart = centerX + centerW
+  local rightWidth = math.max(0, w - rightStart)
+
+  local pad = 12
+  local r = 24
+  local yOffset = (config.battle and config.battle.positionOffsetY) or 0
+  local baselineY = h * 0.55 + r + yOffset
+  local enemyX = (rightWidth > 0) and (rightStart + rightWidth * 0.5) or (w - pad - r)
+
+  local shader = scene.playerAttackShader
+  local shaderCfg = config.battle and config.battle.playerAttackShader
+  local enabled = shader and (not shaderCfg or shaderCfg.enabled ~= false)
+  local alpha = enabled and (scene.attackShaderAlpha or 0) or 0
+  local baseIntensity = scene.attackShaderBaseIntensity or ((shaderCfg and shaderCfg.intensity) or 1.0)
+  local intensity = math.max(0.0, baseIntensity) * alpha
+
+  if not (enabled and intensity > 0.0001) then
+    return
+  end
+
+  local radius = (shaderCfg and shaderCfg.radius) or 12.0
+  local edge = (shaderCfg and shaderCfg.edge) or 0.3
+
+  local attackCenterX, attackCenterY
+
+  if scene.blackHoleAttacks and #scene.blackHoleAttacks > 0 then
+    local sumX, sumY, count = 0, 0, 0
+    for _, attack in ipairs(scene.blackHoleAttacks) do
+      if attack.x and attack.y then
+        sumX = sumX + attack.x
+        sumY = sumY + attack.y
+        count = count + 1
+      end
+    end
+    if count > 0 then
+      attackCenterX = sumX / count
+      attackCenterY = sumY / count
+    end
+  end
+
+  if not attackCenterX and scene.lightningStrikes and #scene.lightningStrikes > 0 then
+    local sumX, sumY, count = 0, 0, 0
+    for _, strike in ipairs(scene.lightningStrikes) do
+      if strike.x and strike.y then
+        sumX = sumX + strike.x
+        sumY = sumY + strike.y
+        count = count + 1
+      end
+    end
+    if count > 0 then
+      attackCenterX = sumX / count
+      attackCenterY = sumY / count
+    end
+  end
+
+  if not attackCenterX and scene.impactInstances and #scene.impactInstances > 0 then
+    local sumX, sumY, count = 0, 0, 0
+    for _, instance in ipairs(scene.impactInstances) do
+      if instance.x and instance.y then
+        sumX = sumX + instance.x
+        sumY = sumY + instance.y
+        count = count + 1
+      end
+    end
+    if count > 0 then
+      attackCenterX = sumX / count
+      attackCenterY = sumY / count
+    end
+  end
+
+  if not attackCenterX and scene.getEnemyHitPoint then
+    local hitBounds = { x = 0, y = 0, w = w, h = h, center = { x = centerX, w = centerW, h = h } }
+    attackCenterX, attackCenterY = scene:getEnemyHitPoint(hitBounds)
+  end
+
+  attackCenterX = attackCenterX or enemyX
+  attackCenterY = attackCenterY or (baselineY - r * 0.7)
+
+  local supersamplingFactor = _G.supersamplingFactor or 1
+
+  shader:send("u_time", scene.attackShaderTime or 0)
+  shader:send("u_resolution", { w * supersamplingFactor, h * supersamplingFactor })
+  shader:send("u_center", { attackCenterX * supersamplingFactor, attackCenterY * supersamplingFactor })
+  shader:send("u_radius", radius)
+  shader:send("u_edge", edge)
+  shader:send("u_intensity", intensity)
+
+  love.graphics.push("all")
+  love.graphics.setBlendMode((shaderCfg and shaderCfg.blendMode) or "add")
+  love.graphics.setShader(shader)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.rectangle("fill", 0, 0, w, h)
+  love.graphics.setShader()
+  love.graphics.pop()
 end
 
 return Visuals

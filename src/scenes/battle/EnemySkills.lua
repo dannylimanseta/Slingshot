@@ -1,6 +1,7 @@
 local config = require("config")
 local Trail = require("utils.trail")
 local BattleState = require("core.BattleState")
+local TurnManager = require("core.TurnManager")
 
 local EnemySkills = {}
 
