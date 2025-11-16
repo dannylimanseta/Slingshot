@@ -1,6 +1,7 @@
 local theme = require("theme")
 local config = require("config")
 local IridescentShader = require("utils.IridescentShader")
+local MultiplierFlameShader = require("utils.MultiplierFlameShader")
 local RelicSystem = require("core.RelicSystem")
 
 -- Shared sprites for blocks (loaded once)
@@ -135,8 +136,9 @@ function Block.new(world, cx, cy, hp, kind, opts)
     -- bobbing animation (for spore blocks)
     bobTime = love.math.random() * (2 * math.pi), -- random phase offset for different timings
     bobScale = 1.0, -- size multiplier for bobbing (1.0 +/- 0.05)
-    -- shader timing offset so iridescence isn't synchronized across blocks
+    -- shader timing offsets so effects aren't synchronized across blocks
     shaderTimeOffset = love.math.random() * 10.0,
+    flameTimeOffset = love.math.random() * 10.0,
     -- calcify state (indestructible for 1 turn)
     calcified = false,
     calcifiedTurnsRemaining = 0,
@@ -346,6 +348,7 @@ function Block:draw()
     brightnessMultiplier = 1 + math.sin(self.pulseTime or 0) * variation
   end
 
+  local spriteDrawWidth, spriteDrawHeight = nil, nil
   -- Draw sprite if available, else fallback to colored rectangle
   local sprite
   if self.kind == "armor" then
@@ -371,8 +374,12 @@ function Block:draw()
     local rotation = self.dropRotation or self._bhTwistAngle or 0
     local centerX = self.cx + xOffset
     local centerY = self.cy + yOffset
-    local dx = centerX - iw * s * 0.5
-    local dy = centerY - ih * s * 0.5
+    local drawWidth = iw * s
+    local drawHeight = ih * s
+    spriteDrawWidth = drawWidth
+    spriteDrawHeight = drawHeight
+    local dx = centerX - drawWidth * 0.5
+    local dy = centerY - drawHeight * 0.5
     
     -- Calcify visual effect: desaturated white tint with blend mode
     local prevBlendMode = love.graphics.getBlendMode()
@@ -516,6 +523,8 @@ function Block:draw()
     local bobScale = (self.kind == "spore" and self.bobScale) or 1.0
     local scaledW = w * bobScale
     local scaledH = h * bobScale
+    spriteDrawWidth = scaledW
+    spriteDrawHeight = scaledH
     local scaledX = centerX - scaledW * 0.5
     local scaledY = centerY - scaledH * 0.5
     if rotation ~= 0 then
@@ -565,6 +574,46 @@ function Block:draw()
       end
       love.graphics.setBlendMode("alpha")
       love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
+    end
+  end
+  
+  local flameConfig = (config.blocks and config.blocks.multiplierFlame) or {}
+  if self.kind == "multiplier" and flameConfig.enabled ~= false then
+    local flameShader = MultiplierFlameShader and MultiplierFlameShader.getShader and MultiplierFlameShader.getShader()
+    if flameShader then
+      local visualWidth = spriteDrawWidth or w
+      local visualHeight = spriteDrawHeight or h
+      if visualWidth and visualHeight and visualWidth > 0 and visualHeight > 0 then
+        local width = math.max(1, visualWidth * (flameConfig.widthScale or 1.0))
+        local height = math.max(1, visualHeight * (flameConfig.heightScale or 1.0))
+        local lift = flameConfig.lift or 0
+        local offsetX = flameConfig.offsetX or 0
+        local centerX = self.cx + xOffset
+        local topEdge = (self.cy + yOffset) - visualHeight * 0.5
+        local rectX = centerX - width * 0.5 + offsetX
+        local rectY = topEdge - height - lift
+        local shaderOriginX, shaderOriginY = rectX, rectY
+        local shaderWidth, shaderHeight = width, height
+        if love.graphics.transformPoint then
+          local sx1, sy1 = love.graphics.transformPoint(rectX, rectY)
+          local sx2, sy2 = love.graphics.transformPoint(rectX + width, rectY + height)
+          shaderOriginX = math.min(sx1, sx2)
+          shaderOriginY = math.min(sy1, sy2)
+          shaderWidth = math.max(1e-3, math.abs(sx2 - sx1))
+          shaderHeight = math.max(1e-3, math.abs(sy2 - sy1))
+        end
+        flameShader:send("u_time", love.timer.getTime())
+        flameShader:send("u_timeOffset", self.flameTimeOffset or 0)
+        flameShader:send("u_rectOrigin", { shaderOriginX, shaderOriginY })
+        flameShader:send("u_rectSize", { shaderWidth, shaderHeight })
+        flameShader:send("u_intensity", flameConfig.intensity or 1.0)
+        love.graphics.push("all")
+        love.graphics.setShader(flameShader)
+        love.graphics.setBlendMode(flameConfig.blendMode or "add")
+        love.graphics.setColor(1, 1, 1, alpha * (flameConfig.alpha or 1.0))
+        love.graphics.rectangle("fill", rectX, rectY, width, height)
+        love.graphics.pop()
+      end
     end
   end
   

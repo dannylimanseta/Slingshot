@@ -191,6 +191,16 @@ config.blocks = {
     speed = 1.2, -- pulse speed (cycles per second)
     brightnessVariation = 0.08, -- +/- 10% brightness variation
   },
+  multiplierFlame = {
+    enabled = true,
+    widthScale = 1.2, -- relative to sprite width
+    heightScale = 0.4, -- relative to sprite height
+    lift = -3, -- pixels to lift the flame above the sprite top (negative to dip)
+    offsetX = 0,
+    alpha = 1.0,
+    intensity = 1.0,
+    blendMode = "alpha",
+  },
 }
 
 config.score = {
