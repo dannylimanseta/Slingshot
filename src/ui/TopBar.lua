@@ -43,6 +43,11 @@ function TopBar.new()
   -- Step fade state
   self._stepAlpha = {}
   self._lastTime = (love.timer and love.timer.getTime()) or 0
+  self._iconHover = {
+    inventory = 0,
+    orbs = 0
+  }
+  self._hoverLastTime = self._lastTime
   return self
 end
 
@@ -50,6 +55,8 @@ function TopBar:draw()
   local vw = config.video.virtualWidth
   local vh = config.video.virtualHeight
   local barHeight = (config.playfield and config.playfield.topBarHeight) or 60
+  local mouseX, mouseY = self:_getVirtualMousePosition()
+  local hoverDt = self:_computeHoverDt()
   
   -- Get player state
   local playerState = PlayerState.getInstance()
@@ -139,11 +146,15 @@ function TopBar:draw()
       love.graphics.draw(self.inventoryIcon, inventoryIconX, inventoryIconY, 0, iconSize / self.inventoryIcon:getWidth(), iconSize / self.inventoryIcon:getHeight())
       -- Do not expose clickable bounds when disabled
       self.inventoryIconBounds = nil
+      self:_updateHoverValue("inventory", false, hoverDt)
     else
       -- Ensure we have valid coordinates
       if inventoryIconX and inventoryIconY then
+        local hovered = mouseX and mouseY and self:_pointInBounds(mouseX, mouseY, inventoryIconX, inventoryIconY, iconSize, iconSize)
+        local hoverAmount = self:_updateHoverValue("inventory", hovered, hoverDt)
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.draw(self.inventoryIcon, inventoryIconX, inventoryIconY, 0, iconSize / self.inventoryIcon:getWidth(), iconSize / self.inventoryIcon:getHeight())
+        self:_applyHoverTint(self.inventoryIcon, inventoryIconX, inventoryIconY, iconSize, hoverAmount)
         -- Store clickable bounds for MapScene
         self.inventoryIconBounds = {
           x = inventoryIconX,
@@ -153,10 +164,12 @@ function TopBar:draw()
         }
       else
         self.inventoryIconBounds = nil
+        self:_updateHoverValue("inventory", false, hoverDt)
       end
     end
   else
     self.inventoryIconBounds = nil
+    self:_updateHoverValue("inventory", false, hoverDt)
   end
   
   -- Draw orbs icon on the right side
@@ -170,9 +183,13 @@ function TopBar:draw()
       love.graphics.draw(self.orbsIcon, orbsIconX, orbsIconY, 0, iconSize / self.orbsIcon:getWidth(), iconSize / self.orbsIcon:getHeight())
       -- Do not expose clickable bounds when disabled
       self.orbsIconBounds = nil
+      self:_updateHoverValue("orbs", false, hoverDt)
     else
+      local hovered = mouseX and mouseY and self:_pointInBounds(mouseX, mouseY, orbsIconX, orbsIconY, iconSize, iconSize)
+      local hoverAmount = self:_updateHoverValue("orbs", hovered, hoverDt)
       love.graphics.setColor(1, 1, 1, 1)
       love.graphics.draw(self.orbsIcon, orbsIconX, orbsIconY, 0, iconSize / self.orbsIcon:getWidth(), iconSize / self.orbsIcon:getHeight())
+      self:_applyHoverTint(self.orbsIcon, orbsIconX, orbsIconY, iconSize, hoverAmount)
       -- Store clickable bounds for MapScene
       self.orbsIconBounds = {
         x = orbsIconX,
@@ -183,6 +200,7 @@ function TopBar:draw()
     end
   else
     self.orbsIconBounds = nil
+    self:_updateHoverValue("orbs", false, hoverDt)
   end
   
   love.graphics.setColor(1, 1, 1, 1)
@@ -283,6 +301,68 @@ function TopBar:_drawDayAndSteps(leftBound, rightBound, topPadding, iconSize)
     x = x + rectW + spacing
   end
   love.graphics.setColor(1, 1, 1, 1)
+end
+
+function TopBar:_getVirtualMousePosition()
+  if not (love and love.mouse and love.mouse.getPosition and love.graphics and love.graphics.getDimensions) then
+    return nil, nil
+  end
+  local mx, my = love.mouse.getPosition()
+  if not (mx and my) then return nil, nil end
+  local vw = config.video.virtualWidth
+  local vh = config.video.virtualHeight
+  local winW, winH = love.graphics.getDimensions()
+  if not (winW and winH) or winW == 0 or winH == 0 then
+    return nil, nil
+  end
+  local scaleFactor = math.min(winW / vw, winH / vh)
+  if scaleFactor == 0 then return nil, nil end
+  local offsetX = math.floor((winW - vw * scaleFactor) * 0.5)
+  local offsetY = math.floor((winH - vh * scaleFactor) * 0.5)
+  local vx = (mx - offsetX) / scaleFactor
+  local vy = (my - offsetY) / scaleFactor
+  return vx, vy
+end
+
+function TopBar:_computeHoverDt()
+  local now = (love.timer and love.timer.getTime()) or 0
+  local last = self._hoverLastTime or now
+  local dt = math.max(0, math.min(0.1, now - last))
+  self._hoverLastTime = now
+  return dt
+end
+
+function TopBar:_pointInBounds(px, py, x, y, w, h)
+  if not (px and py and x and y and w and h) then return false end
+  return px >= x and px <= (x + w) and py >= y and py <= (y + h)
+end
+
+function TopBar:_updateHoverValue(key, shouldHover, dt)
+  self._iconHover = self._iconHover or {}
+  local target = shouldHover and 1 or 0
+  local current = self._iconHover[key]
+  if current == nil or (dt or 0) <= 0 then
+    current = target
+  else
+    local speed = 10
+    current = current + (target - current) * math.min(1, speed * dt)
+    if current > 0.995 then current = 1 end
+    if current < 0.005 then current = 0 end
+  end
+  self._iconHover[key] = current
+  return current
+end
+
+function TopBar:_applyHoverTint(icon, x, y, iconSize, amount)
+  if not icon or not amount or amount <= 0 then return end
+  if not (love.graphics and love.graphics.push and love.graphics.pop) then return end
+  love.graphics.push("all")
+  love.graphics.setBlendMode("add", "alphamultiply")
+  love.graphics.setColor(1, 1, 1, 0.5 * amount)
+  local sx = iconSize / icon:getWidth()
+  local sy = iconSize / icon:getHeight()
+  love.graphics.draw(icon, x, y, 0, sx, sy)
+  love.graphics.pop()
 end
 
 return TopBar

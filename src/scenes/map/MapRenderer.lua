@@ -429,8 +429,15 @@ function MapRenderer:draw(scene)
     local centerX = vw * 0.5
     local centerY = vh * 0.5 - 50 -- Shifted up by 50px
     
-    -- Spacing between decorative images and text
-    local decorSpacing = 40
+    -- Spacing + scale between decorative images and text (animated ease-out)
+    local baseDecorSpacing = 40
+    local startDecorSpacing = 6
+    local baseDecorScale = 0.7
+    local decorExpandDuration = 0.35
+    local decorProgress = math.min(1, math.max(0, (1 - t) / decorExpandDuration))
+    local decorEase = 1 - (1 - decorProgress) * (1 - decorProgress) * (1 - decorProgress)
+    local decorSpacing = startDecorSpacing + (baseDecorSpacing - startDecorSpacing) * decorEase
+    local decorScale = baseDecorScale * (0.5 + 0.5 * decorEase)
     
     love.graphics.push()
     love.graphics.translate(centerX, centerY)
@@ -440,7 +447,6 @@ function MapRenderer:draw(scene)
     if scene.decorImage then
       local decorW = scene.decorImage:getWidth()
       local decorH = scene.decorImage:getHeight()
-      local decorScale = 0.7 -- 30% size reduction (70% of original)
       local scaledW = decorW * decorScale
       local scaledH = decorH * decorScale
       

@@ -790,8 +790,15 @@ function SplitScene:draw()
       centerY = centerY + 20 -- Lower ENEMY'S TURN by 20px
     end
     
-    -- Spacing between decorative images and text
-    local decorSpacing = 40
+    -- Spacing + scale between decorative images and text (animated ease-out)
+    local baseDecorSpacing = 40
+    local startDecorSpacing = 6
+    local baseDecorScale = 0.7
+    local decorExpandDuration = 0.35
+    local decorProgress = math.min(1, math.max(0, (1 - t) / decorExpandDuration))
+    local decorEase = 1 - (1 - decorProgress) * (1 - decorProgress) * (1 - decorProgress)
+    local decorSpacing = startDecorSpacing + (baseDecorSpacing - startDecorSpacing) * decorEase
+    local decorScale = baseDecorScale * (0.5 + 0.5 * decorEase)
     
     love.graphics.push()
     love.graphics.translate(centerX, centerY)
@@ -801,7 +808,6 @@ function SplitScene:draw()
     if self.decorImage then
       local decorW = self.decorImage:getWidth()
       local decorH = self.decorImage:getHeight()
-      local decorScale = 0.7 -- 30% size reduction (70% of original)
       local scaledW = decorW * decorScale
       local scaledH = decorH * decorScale
       
