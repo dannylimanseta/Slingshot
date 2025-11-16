@@ -3,6 +3,8 @@ local Visuals = require("scenes.battle.Visuals")
 local EnemySkills = require("scenes.battle.EnemySkills")
 local ImpactSystem = require("scenes.battle.ImpactSystem")
 local PlayerState = require("core.PlayerState")
+local RelicSystem = require("core.RelicSystem")
+local BattleState = require("core.BattleState")
 local TurnManager = require("core.TurnManager")
 local EnemyController = require("scenes.battle.EnemyController")
 local PopupController = require("scenes.battle.PopupController")
@@ -638,6 +640,22 @@ function UpdateController.updatePlayerAttackDelay(scene, dt)
         end
       end
       pushLog(scene, "You dealt " .. dmg)
+    end
+
+    local healAmount = RelicSystem.getPlayerAttackHeal({
+      damage = dmg,
+      isAOE = isAOE,
+      projectileId = projectileId,
+      blockHitSequence = blockHitSequence,
+      critCount = pending.critCount or 0,
+      multiplierCount = pending.multiplierCount or 0,
+      source = "player_attack_resolved",
+    })
+    if healAmount and healAmount > 0 then
+      BattleState.trackDamage("heal", healAmount)
+      if scene.applyHealing then
+        scene:applyHealing(healAmount)
+      end
     end
 
     scene._pendingPlayerAttackDamage = nil

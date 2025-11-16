@@ -153,16 +153,64 @@ end
 -- @return number - The final healing amount after applying multipliers
 function RelicSystem.applyRestSiteHeal(baseHealAmount, context)
   local amount = baseHealAmount or 0
+  local overridden = false
   forEachEffect("rest_site_heal_multiplier", function(effect)
     local mode = effect.mode or "multiply"
+    if mode == "override" then
+      amount = tonumber(effect.value) or amount
+      overridden = true
+    elseif not overridden then
     if mode == "multiply" then
       local mult = tonumber(effect.value) or 1.0
       amount = amount * mult
     elseif mode == "add" then
       amount = amount + (tonumber(effect.value) or 0)
+      end
+    end
+    if effect.min then
+      amount = math.max(amount, effect.min)
+    end
+    if effect.max then
+      amount = math.min(amount, effect.max)
     end
   end, context)
   return math.floor(amount + 0.5) -- Round to nearest integer
+end
+
+-- Calculates the total healing granted after the player's attack resolves.
+-- @param context table|nil Optional data about the attack (damage, projectileId, etc.)
+-- @return integer Amount of healing to apply
+function RelicSystem.getPlayerAttackHeal(context)
+  local amount = (context and context.baseHealAmount) or 0
+  local overridden = false
+  forEachEffect("player_attack_resolved", function(effect)
+    local action = effect.action or "heal_player"
+    if action == "heal_player" then
+      local mode = effect.mode or "add"
+      local value = tonumber(effect.value) or 0
+      if mode == "override" then
+        amount = value
+        overridden = true
+      elseif not overridden then
+        if mode == "multiply" then
+          local mult = tonumber(effect.value) or 1.0
+          amount = amount * mult
+        else -- "add"
+          amount = amount + value
+        end
+      end
+      if effect.min then
+        amount = math.max(amount, effect.min)
+      end
+      if effect.max then
+        amount = math.min(amount, effect.max)
+      end
+    end
+  end, context)
+  if amount < 0 then
+    amount = 0
+  end
+  return math.floor(amount + 0.5)
 end
 
 function RelicSystem.debugEquip(id)

@@ -584,7 +584,7 @@ function InventoryScene:_drawDetailPanel(relicDef, alpha)
   local textX = panelX + 32 -- Left-aligned X position for all text
   local centerX = panelX + panelW * 0.5
   local descX = textX + 80 -- Shifted right by 80px for all text elements
-  local currentY = 160
+  local currentY = 80
   
   -- Large icon (centered, 50% larger)
   if relicDef.icon then
