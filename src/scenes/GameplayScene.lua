@@ -253,7 +253,7 @@ function GameplayScene:update(dt, bounds)
           due = now >= block._lightningHitAt
         else
           -- Backward-compat: fall back to delay counter if present
-          block._lightningHitDelay = (block._lightningHitDelay or 0) - dt
+        block._lightningHitDelay = (block._lightningHitDelay or 0) - dt
           due = block._lightningHitDelay <= 0
         end
         if due then

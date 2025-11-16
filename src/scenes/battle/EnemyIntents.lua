@@ -105,7 +105,7 @@ local function evaluateIntent(scene, enemy, index)
       type = "skill",
       skillType = "heal",
       targetIndex = healTargetIndex,
-      amount = 18,
+      amount = 12,
     }
     if isMender then
       enemy.healTurnCounter = 0

@@ -212,7 +212,7 @@ function EnemySkills.performSpore(scene, enemy, sporeCount)
 end
 
 function EnemySkills.performHeal(scene, enemy, targetIndex, amount)
-  amount = amount or 18
+  amount = amount or 12
   local enemyIndex = findEnemyIndex(scene, enemy)
   scene._attackingEnemyIndex = enemyIndex
 
