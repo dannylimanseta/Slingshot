@@ -624,7 +624,7 @@ function SplitScene:draw()
   if self.right and self.right.drawAttackOverlay then
     self.right:drawAttackOverlay(battleBounds)
   end
-
+  
   if self.right and self.right.drawSkillParticles then
     self.right:drawSkillParticles()
   end

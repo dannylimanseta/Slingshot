@@ -683,31 +683,64 @@ function Block:draw()
   
   -- Draw small top-right corner label for crit/multiplier (e.g., x2, x4)
   if cornerLabel then
-    local font = (theme.fonts and (theme.fonts.tiny or theme.fonts.small)) or theme.fonts.base or love.graphics.getFont()
+    local labelRoot = (config.blocks and config.blocks.cornerLabel) or {}
+    local labelCfg = labelRoot[self.kind] or labelRoot
+    local font = (theme.fonts and (theme.fonts.small or theme.fonts.base)) or love.graphics.getFont()
     love.graphics.setFont(font)
     local textW = font:getWidth(cornerLabel)
     local textH = font:getHeight()
-    local marginX = 6
-    local marginY = 2
-    local drawX, drawY
-    if sprite then
-      -- Use sprite bounds for positioning
-      local iw, ih = sprite:getWidth(), sprite:getHeight()
-      local s = self.size / math.max(1, math.max(iw, ih))
-      local mul = (config.blocks and config.blocks.spriteScale) or 1
-      s = s * mul
-      local dx = (self.cx + xOffset) - iw * s * 0.5
-      local dy = (self.cy + yOffset) - ih * s * 0.5
-      drawX = dx + iw * s - textW - marginX
-      drawY = dy + marginY
-    else
-      -- Use rectangle AABB
-      drawX = (x + xOffset) + w - textW - marginX
-      drawY = (y + yOffset) + marginY
+    local scale = labelCfg.scale or 1.1
+    local centerX = self.cx + xOffset
+    local centerY = self.cy + yOffset
+    local offsetX = labelCfg.offsetX or 0
+    local offsetY = labelCfg.offsetY or 0
+    local drawX = math.floor(centerX + offsetX + 0.5)
+    local drawY = math.floor(centerY + offsetY + 0.5)
+    local outlineWidth = math.max(0, labelCfg.outlineWidth or 2)
+    local outlineColor = labelCfg.outlineColor or { 1.0, 0.9, 0.2, 1.0 }
+    local textColor = labelCfg.textColor or { 0.0, 0.0, 0.0, 1.0 }
+
+    local offsets = {
+      { -outlineWidth, 0 },
+      { outlineWidth, 0 },
+      { 0, -outlineWidth },
+      { 0, outlineWidth },
+      { -outlineWidth, -outlineWidth },
+      { outlineWidth, -outlineWidth },
+      { -outlineWidth, outlineWidth },
+      { outlineWidth, outlineWidth },
+    }
+
+    love.graphics.setColor(
+      outlineColor[1] or 1,
+      outlineColor[2] or 0.9,
+      outlineColor[3] or 0.2,
+      (outlineColor[4] or 1) * alpha
+    )
+    for _, offset in ipairs(offsets) do
+      love.graphics.print(
+        cornerLabel,
+        drawX + offset[0 + 1],
+        drawY + offset[1 + 1],
+        0,
+        scale,
+        scale,
+        textW * 0.5,
+        textH * 0.5
+      )
     end
-    drawX = drawX + 2
-    love.graphics.setColor(0, 0, 0, 0.5 * alpha)
-    love.graphics.print(cornerLabel, math.floor(drawX + 0.5), math.floor(drawY + 0.5))
+
+    love.graphics.setColor(textColor[1] or 0, textColor[2] or 0, textColor[3] or 0, (textColor[4] or 1) * alpha)
+    love.graphics.print(
+      cornerLabel,
+      drawX,
+      drawY,
+      0,
+      scale,
+      scale,
+      textW * 0.5,
+      textH * 0.5
+    )
   end
   
   -- Reset color for other draw calls

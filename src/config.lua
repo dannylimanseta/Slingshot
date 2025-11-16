@@ -201,6 +201,25 @@ config.blocks = {
     intensity = 1.0,
     blendMode = "alpha",
   },
+  cornerLabel = {
+    scale = 1.15,
+    offsetX = 4,
+    offsetY = -18,
+    outlineWidth = 2,
+    outlineColor = { 1.0, 0.9, 0.2, 1.0 },
+    textColor = { 0.0, 0.0, 0.0, 1.0 },
+    crit = {
+      scale = 1.05,
+      offsetX = 5,
+      offsetY = -18,
+      outlineColor = { 1.0, 0.62, 0.1, 1.0 },
+    },
+    multiplier = {
+      scale = 1.05,
+      offsetX = 5,
+      offsetY = -18,
+    },
+  },
 }
 
 config.score = {
