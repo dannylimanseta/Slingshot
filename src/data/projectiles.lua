@@ -55,6 +55,70 @@ projectiles.data = {
     icon = "assets/images/orb_lightning.png",
     description = "Shoots a lightning orb that bounces between blocks."
   },
+  {
+    id = "multi_strike",
+    name = "Multi Strike",
+    rarity = projectiles.Rarity.UNCOMMON,
+    level = 1,
+    baseDamage = 3,
+    levels = {
+      [1] = { baseDamage = 3, maxBounces = 3, count = 3 },
+      [2] = { baseDamage = 4, maxBounces = 3, count = 3 },
+      [3] = { baseDamage = 5, maxBounces = 4, count = 3 },
+      [4] = { baseDamage = 6, maxBounces = 4, count = 4 },
+      [5] = { baseDamage = 8, maxBounces = 5, count = 4 },
+    },
+    icon = "assets/images/orb_multi_strike.png",
+    description = "Fires multiple projectiles in a spread pattern."
+  },
+  {
+    id = "twin_strike",
+    name = "Twin Strike",
+    rarity = projectiles.Rarity.UNCOMMON,
+    level = 1,
+    baseDamage = 4,
+    levels = {
+      [1] = { baseDamage = 4, maxBounces = 5, count = 2 },
+      [2] = { baseDamage = 5, maxBounces = 6, count = 2 },
+      [3] = { baseDamage = 7, maxBounces = 7, count = 2 },
+      [4] = { baseDamage = 9, maxBounces = 8, count = 2 },
+      [5] = { baseDamage = 12, maxBounces = 9, count = 2 },
+    },
+    icon = "assets/images/orb_twin_strike.png",
+    description = "Fires two mirrored projectiles simultaneously."
+  },
+  {
+    id = "pierce",
+    name = "Pierce Orb",
+    rarity = projectiles.Rarity.RARE,
+    level = 1,
+    baseDamage = 4,
+    levels = {
+      [1] = { baseDamage = 4, maxPierce = 6 },
+      [2] = { baseDamage = 5, maxPierce = 7 },
+      [3] = { baseDamage = 6, maxPierce = 8 },
+      [4] = { baseDamage = 8, maxPierce = 9 },
+      [5] = { baseDamage = 10, maxPierce = 10 },
+    },
+    icon = "assets/images/orb_pierce.png",
+    description = "Pierces through multiple blocks in a straight line."
+  },
+  {
+    id = "black_hole",
+    name = "Black Hole",
+    rarity = projectiles.Rarity.EPIC,
+    level = 1,
+    baseDamage = 6,
+    levels = {
+      [1] = { baseDamage = 6, maxBounces = 3 },
+      [2] = { baseDamage = 7, maxBounces = 4 },
+      [3] = { baseDamage = 9, maxBounces = 5 },
+      [4] = { baseDamage = 11, maxBounces = 6 },
+      [5] = { baseDamage = 14, maxBounces = 7 },
+    },
+    icon = "assets/images/orb_black_hole.png",
+    description = "Creates a black hole that pulls in and destroys nearby blocks."
+  },
 }
 
 -- Helper function to get projectile by ID
