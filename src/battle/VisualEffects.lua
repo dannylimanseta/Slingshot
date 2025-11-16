@@ -456,6 +456,10 @@ function VisualEffects:updateAimGuide(dt, canShoot)
   local step = math.min(1, math.max(-1, k * dt))
   self.guideAlpha = self.guideAlpha + delta * step
   self.guideAlpha = math.max(0, math.min(1, self.guideAlpha))
+
+  local flowSpeed = guide.dotFlowSpeed or 2.5
+  self.guideDotPhase = (self.guideDotPhase or 0) - (flowSpeed * dt)
+  self.guideDotPhase = self.guideDotPhase % 1
 end
 
 function VisualEffects:setAimStart(x, y)
@@ -493,6 +497,7 @@ function VisualEffects:drawAimGuide(shooter, blocks, gridStartX, gridEndX, width
   local fade = guide.fade ~= false
   local aStart = (guide.alphaStart ~= nil) and guide.alphaStart or 1.0
   local aEnd = (guide.alphaEnd ~= nil) and guide.alphaEnd or 0.0
+  local phaseOffset = (self.guideDotPhase or 0) * spacing
   
   -- Helper function to find first bounce
   local function firstBounce(originX, originY, dirX, dirY)
@@ -614,23 +619,33 @@ function VisualEffects:drawAimGuide(shooter, blocks, gridStartX, gridEndX, width
     local ox, oy = self.aimStartX, self.aimStartY
     local drawnSteps = 0
     
-    if isPierce then
-      -- Pierce: straight line only
-      local steps = math.floor(remaining / spacing)
-      for i = 1, steps do
-        local t = i * spacing
-        local px = ox + dirX * t
-        local py = oy + dirY * t
-        local idx = i
+    local function drawLeg(startX, startY, dirX, dirY, legLength, startIdx)
+      local drawn = 0
+      local t = -phaseOffset
+      while true do
+        t = t + spacing
+        if t > legLength then break end
+        local px = startX + dirX * t
+        local py = startY + dirY * t
+        local idx = startIdx + drawn + 1
         local alpha = 1
         if fade then
           local frac = idx / totalSteps
           alpha = aStart + (aEnd - aStart) * math.min(1, math.max(0, frac))
         end
         alpha = alpha * self.guideAlpha
-        love.graphics.setColor(1, 1, 1, alpha)
-        love.graphics.circle("fill", px, py, r)
+        if alpha > 0 then
+          love.graphics.setColor(1, 1, 1, alpha)
+          love.graphics.circle("fill", px, py, r)
+        end
+        drawn = drawn + 1
       end
+      return drawn
+    end
+
+    if isPierce then
+      -- Pierce: straight line only
+      drawLeg(ox, oy, dirX, dirY, remaining, 0)
     else
       -- Regular: with bounce prediction
       local hitT, hx, hy, nx, ny = firstBounce(ox, oy, dirX, dirY)
@@ -640,22 +655,8 @@ function VisualEffects:drawAimGuide(shooter, blocks, gridStartX, gridEndX, width
       end
       
       -- Draw first leg
-      local steps = math.floor(leg1 / spacing)
-      for i = 1, steps do
-        local t = i * spacing
-        local px = ox + dirX * t
-        local py = oy + dirY * t
-        local idx = drawnSteps + i
-        local alpha = 1
-        if fade then
-          local frac = idx / totalSteps
-          alpha = aStart + (aEnd - aStart) * math.min(1, math.max(0, frac))
-        end
-        alpha = alpha * self.guideAlpha
-        love.graphics.setColor(1, 1, 1, alpha)
-        love.graphics.circle("fill", px, py, r)
-      end
-      drawnSteps = drawnSteps + steps
+      local firstDrawn = drawLeg(ox, oy, dirX, dirY, leg1, drawnSteps)
+      drawnSteps = drawnSteps + firstDrawn
       remaining = math.max(0, remaining - leg1)
       
       -- Draw reflected second leg
@@ -665,21 +666,7 @@ function VisualEffects:drawAimGuide(shooter, blocks, gridStartX, gridEndX, width
         rx = rx - 2 * dot * nx
         ry = ry - 2 * dot * ny
         
-        local steps = math.floor(remaining / spacing)
-        for i = 1, steps do
-          local t = i * spacing
-          local px = hx + rx * t
-          local py = hy + ry * t
-          local idx = drawnSteps + i
-          local alpha = 1
-          if fade then
-            local frac = idx / totalSteps
-            alpha = aStart + (aEnd - aStart) * math.min(1, math.max(0, frac))
-          end
-          alpha = alpha * self.guideAlpha
-          love.graphics.setColor(1, 1, 1, alpha)
-          love.graphics.circle("fill", px, py, r)
-        end
+        drawLeg(hx, hy, rx, ry, remaining, drawnSteps)
       end
     end
   end

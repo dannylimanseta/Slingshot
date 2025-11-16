@@ -95,12 +95,6 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "crit",
-                              x = 0.502,
-                              y = 0.05
-                            },
-                    {
-                              hp = 1,
                               kind = "damage",
                               x = 0.468,
                               y = 0.191
@@ -113,27 +107,21 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "damage",
-                              x = 0.342,
-                              y = 0.119
+                              kind = "potion",
+                              x = 0.5,
+                              y = 0.298
+                            },
+                    {
+                              hp = 1,
+                              kind = "potion",
+                              x = 0.5,
+                              y = 0.362
                             },
                     {
                               hp = 1,
                               kind = "damage",
-                              x = 0.658,
-                              y = 0.119
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.658,
-                              y = 0.191
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.342,
-                              y = 0.191
+                              x = 0.5,
+                              y = 0.051
                             }
                   },
             type = "predefined"
@@ -150,24 +138,6 @@ local ENCOUNTERS = {
             predefined = {
                     {
                               hp = 1,
-                              kind = "damage",
-                              x = 0.405,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.5,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.595,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
                               kind = "armor",
                               x = 0.436,
                               y = 0.549
@@ -192,12 +162,6 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "crit",
-                              x = 0.5,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
                               kind = "damage",
                               x = 0.595,
                               y = 0.477
@@ -210,44 +174,20 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "multiplier",
-                              x = 0.5,
-                              y = 0.406
-                            },
-                    {
-                              hp = 1,
                               kind = "armor",
                               x = 0.564,
                               y = 0.406
                             },
                     {
                               hp = 1,
-                              kind = "crit",
-                              x = 0.405,
-                              y = 0.334
-                            },
-                    {
-                              hp = 1,
                               kind = "damage",
                               x = 0.5,
-                              y = 0.334
-                            },
-                    {
-                              hp = 1,
-                              kind = "crit",
-                              x = 0.595,
                               y = 0.334
                             },
                     {
                               hp = 1,
                               kind = "potion",
                               x = 0.405,
-                              y = 0.262
-                            },
-                    {
-                              hp = 1,
-                              kind = "crit",
-                              x = 0.5,
                               y = 0.262
                             },
                     {
@@ -279,6 +219,48 @@ local ENCOUNTERS = {
                               kind = "armor",
                               x = 0.721,
                               y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.5,
+                              y = 0.405
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.342,
+                              y = 0.336
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.658,
+                              y = 0.334
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.5,
+                              y = 0.228
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.437,
+                              y = 0.617
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.502,
+                              y = 0.617
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.565,
+                              y = 0.615
                             }
                   },
             type = "predefined"
@@ -298,19 +280,163 @@ local ENCOUNTERS = {
                               hp = 1,
                               kind = "damage",
                               x = 0.279,
-                              y = 0.621
+                              y = 0.191
                             },
                     {
                               hp = 1,
                               kind = "damage",
                               x = 0.342,
-                              y = 0.621
+                              y = 0.191
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.279,
+                              y = 0.262
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.342,
+                              y = 0.262
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.216,
+                              y = 0.262
                             },
                     {
                               hp = 1,
                               kind = "damage",
                               x = 0.405,
-                              y = 0.621
+                              y = 0.262
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.405,
+                              y = 0.334
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.216,
+                              y = 0.334
+                            },
+                    {
+                              hp = 1,
+                              kind = "aoe",
+                              x = 0.405,
+                              y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "aoe",
+                              x = 0.216,
+                              y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "aoe",
+                              x = 0.595,
+                              y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "aoe",
+                              x = 0.784,
+                              y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.595,
+                              y = 0.334
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.595,
+                              y = 0.262
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.658,
+                              y = 0.191
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.721,
+                              y = 0.191
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.784,
+                              y = 0.262
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.784,
+                              y = 0.334
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.658,
+                              y = 0.262
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.721,
+                              y = 0.262
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.405,
+                              y = 0.477
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.216,
+                              y = 0.477
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.595,
+                              y = 0.477
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.784,
+                              y = 0.477
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.658,
+                              y = 0.549
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.721,
+                              y = 0.549
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.689,
+                              y = 0.617
                             },
                     {
                               hp = 1,
@@ -320,129 +446,51 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "damage",
+                              kind = "armor",
                               x = 0.342,
                               y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "crit",
-                              x = 0.405,
-                              y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.342,
-                              y = 0.477
                             },
                     {
                               hp = 1,
                               kind = "armor",
-                              x = 0.405,
-                              y = 0.477
+                              x = 0.311,
+                              y = 0.617
                             },
                     {
                               hp = 1,
-                              kind = "crit",
-                              x = 0.342,
-                              y = 0.406
+                              kind = "armor",
+                              x = 0.691,
+                              y = 0.123
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.314,
+                              y = 0.124
                             },
                     {
                               hp = 1,
                               kind = "potion",
-                              x = 0.216,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.595,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.658,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.721,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
-                              kind = "crit",
-                              x = 0.595,
-                              y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.658,
-                              y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "armor",
-                              x = 0.721,
-                              y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "armor",
-                              x = 0.595,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.658,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "crit",
-                              x = 0.658,
-                              y = 0.406
+                              x = 0.309,
+                              y = 0.37
                             },
                     {
                               hp = 1,
                               kind = "potion",
-                              x = 0.784,
-                              y = 0.477
+                              x = 0.689,
+                              y = 0.368
                             },
                     {
                               hp = 1,
-                              kind = "aoe",
-                              x = 0.468,
-                              y = 0.477
+                              kind = "potion",
+                              x = 0.691,
+                              y = 0.436
                             },
                     {
                               hp = 1,
-                              kind = "aoe",
-                              x = 0.532,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "crit",
-                              x = 0.5,
-                              y = 0.334
-                            },
-                    {
-                              hp = 1,
-                              kind = "armor",
-                              x = 0.468,
-                              y = 0.406
-                            },
-                    {
-                              hp = 1,
-                              kind = "armor",
-                              x = 0.532,
-                              y = 0.406
+                              kind = "potion",
+                              x = 0.309,
+                              y = 0.436
                             }
                   },
             type = "predefined"
@@ -460,189 +508,159 @@ local ENCOUNTERS = {
             predefined = {
                     {
                               hp = 1,
-                              kind = "damage",
-                              x = 0.216,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.279,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.342,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
-                              kind = "armor",
-                              x = 0.216,
-                              y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.279,
-                              y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "crit",
-                              x = 0.342,
-                              y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.279,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "armor",
-                              x = 0.342,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "crit",
-                              x = 0.279,
-                              y = 0.406
-                            },
-                    {
-                              hp = 1,
-                              kind = "multiplier",
-                              x = 0.216,
-                              y = 0.334
-                            },
-                    {
-                              hp = 1,
                               kind = "potion",
-                              x = 0.153,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.658,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.721,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.784,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
-                              kind = "crit",
-                              x = 0.658,
-                              y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.721,
-                              y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "armor",
-                              x = 0.784,
-                              y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "armor",
-                              x = 0.658,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.721,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "crit",
-                              x = 0.721,
-                              y = 0.406
-                            },
-                    {
-                              hp = 1,
-                              kind = "multiplier",
-                              x = 0.784,
-                              y = 0.334
-                            },
-                    {
-                              hp = 1,
-                              kind = "potion",
-                              x = 0.847,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "aoe",
                               x = 0.405,
-                              y = 0.477
+                              y = 0.439
                             },
                     {
                               hp = 1,
-                              kind = "aoe",
-                              x = 0.468,
-                              y = 0.477
+                              kind = "potion",
+                              x = 0.593,
+                              y = 0.436
                             },
                     {
                               hp = 1,
-                              kind = "aoe",
-                              x = 0.532,
-                              y = 0.477
+                              kind = "damage",
+                              x = 0.344,
+                              y = 0.503
                             },
                     {
                               hp = 1,
-                              kind = "aoe",
-                              x = 0.595,
-                              y = 0.477
+                              kind = "damage",
+                              x = 0.656,
+                              y = 0.503
                             },
                     {
                               hp = 1,
-                              kind = "crit",
-                              x = 0.468,
-                              y = 0.406
+                              kind = "damage",
+                              x = 0.502,
+                              y = 0.503
                             },
                     {
                               hp = 1,
-                              kind = "crit",
-                              x = 0.532,
-                              y = 0.406
+                              kind = "damage",
+                              x = 0.437,
+                              y = 0.567
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.566,
+                              y = 0.567
                             },
                     {
                               hp = 1,
                               kind = "armor",
                               x = 0.5,
-                              y = 0.334
+                              y = 0.264
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.405,
+                              y = 0.304
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.596,
+                              y = 0.298
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.311,
+                              y = 0.371
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.691,
+                              y = 0.375
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.249,
+                              y = 0.443
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.754,
+                              y = 0.441
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.249,
+                              y = 0.511
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.754,
+                              y = 0.511
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.437,
+                              y = 0.633
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.566,
+                              y = 0.633
+                            },
+                    {
+                              hp = 1,
+                              kind = "aoe",
+                              x = 0.502,
+                              y = 0.377
                             },
                     {
                               hp = 1,
                               kind = "damage",
-                              x = 0.468,
-                              y = 0.549
+                              x = 0.502,
+                              y = 0.633
+                            },
+                    {
+                              hp = 1,
+                              kind = "aoe",
+                              x = 0.503,
+                              y = 0.566
                             },
                     {
                               hp = 1,
                               kind = "damage",
-                              x = 0.532,
-                              y = 0.549
+                              x = 0.629,
+                              y = 0.566
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.374,
+                              y = 0.567
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.439,
+                              y = 0.699
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.502,
+                              y = 0.699
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.566,
+                              y = 0.698
                             }
                   },
             type = "predefined"
@@ -661,6 +679,108 @@ local ENCOUNTERS = {
                     {
                               hp = 1,
                               kind = "damage",
+                              x = 0.468,
+                              y = 0.119
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.532,
+                              y = 0.119
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.405,
+                              y = 0.191
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.595,
+                              y = 0.191
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.468,
+                              y = 0.191
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.532,
+                              y = 0.191
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.503,
+                              y = 0.047
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.405,
+                              y = 0.262
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.595,
+                              y = 0.262
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.405,
+                              y = 0.334
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.595,
+                              y = 0.334
+                            },
+                    {
+                              hp = 1,
+                              kind = "potion",
+                              x = 0.342,
+                              y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "potion",
+                              x = 0.658,
+                              y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.279,
+                              y = 0.477
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
+                              x = 0.721,
+                              y = 0.477
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.784,
+                              y = 0.549
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.216,
+                              y = 0.549
+                            },
+                    {
+                              hp = 1,
+                              kind = "damage",
                               x = 0.279,
                               y = 0.621
                             },
@@ -672,177 +792,93 @@ local ENCOUNTERS = {
                             },
                     {
                               hp = 1,
-                              kind = "armor",
-                              x = 0.279,
-                              y = 0.549
+                              kind = "damage",
+                              x = 0.658,
+                              y = 0.621
                             },
                     {
                               hp = 1,
                               kind = "damage",
-                              x = 0.342,
-                              y = 0.549
+                              x = 0.721,
+                              y = 0.621
                             },
                     {
                               hp = 1,
                               kind = "damage",
-                              x = 0.279,
-                              y = 0.477
+                              x = 0.503,
+                              y = 0.696
                             },
                     {
                               hp = 1,
-                              kind = "crit",
-                              x = 0.342,
+                              kind = "armor",
+                              x = 0.439,
+                              y = 0.698
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.568,
+                              y = 0.694
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.405,
+                              y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.595,
+                              y = 0.406
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.595,
                               y = 0.477
                             },
                     {
                               hp = 1,
                               kind = "armor",
-                              x = 0.279,
-                              y = 0.406
+                              x = 0.405,
+                              y = 0.477
                             },
                     {
                               hp = 1,
-                              kind = "crit",
-                              x = 0.342,
-                              y = 0.406
+                              kind = "armor",
+                              x = 0.468,
+                              y = 0.549
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.532,
+                              y = 0.549
                             },
                     {
                               hp = 1,
                               kind = "multiplier",
-                              x = 0.216,
-                              y = 0.334
+                              x = 0.5,
+                              y = 0.298
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.342,
+                              y = 0.549
+                            },
+                    {
+                              hp = 1,
+                              kind = "armor",
+                              x = 0.658,
+                              y = 0.549
                             },
                     {
                               hp = 1,
                               kind = "potion",
-                              x = 0.153,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.658,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.721,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.784,
-                              y = 0.621
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.658,
-                              y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "armor",
-                              x = 0.721,
-                              y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.784,
-                              y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "armor",
-                              x = 0.658,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "crit",
-                              x = 0.721,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "armor",
-                              x = 0.784,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.658,
-                              y = 0.406
-                            },
-                    {
-                              hp = 1,
-                              kind = "crit",
-                              x = 0.721,
-                              y = 0.406
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.784,
-                              y = 0.406
-                            },
-                    {
-                              hp = 1,
-                              kind = "potion",
-                              x = 0.658,
-                              y = 0.334
-                            },
-                    {
-                              hp = 1,
-                              kind = "potion",
-                              x = 0.784,
-                              y = 0.334
-                            },
-                    {
-                              hp = 1,
-                              kind = "aoe",
-                              x = 0.468,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "aoe",
-                              x = 0.532,
-                              y = 0.477
-                            },
-                    {
-                              hp = 1,
-                              kind = "aoe",
-                              x = 0.5,
-                              y = 0.549
-                            },
-                    {
-                              hp = 1,
-                              kind = "crit",
-                              x = 0.468,
-                              y = 0.406
-                            },
-                    {
-                              hp = 1,
-                              kind = "crit",
-                              x = 0.532,
-                              y = 0.406
-                            },
-                    {
-                              hp = 1,
-                              kind = "armor",
-                              x = 0.5,
-                              y = 0.334
-                            },
-                    {
-                              hp = 1,
-                              kind = "damage",
-                              x = 0.5,
-                              y = 0.262
+                              x = 0.499,
+                              y = 0.441
                             }
                   },
             type = "predefined"
