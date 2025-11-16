@@ -916,26 +916,36 @@ function RewardsScene:_startCoinAnimation(goldAmount, vw, vh)
   
   local coinCount = math.min(math.max(5, math.floor(goldAmount / 5)), 30)
   
+  local baseDelayStep = 0.05 * 1.3
+  local delayVariation = 0.18 * 0.6
   for i = 1, coinCount do
-    local delay = (i - 1) * 0.02
+    local delay = (i - 1) * baseDelayStep + love.math.random() * delayVariation
     local angle = love.math.random() * math.pi * 2
-    local speed = 200 + love.math.random() * 100
+    local speed = 200 + love.math.random() * 120
     local rotationSpeed = (love.math.random() * 2 - 1) * 5
+    local startOffsetX = (love.math.random() - 0.5) * 36 * 0.6
+    local startOffsetY = (love.math.random() - 0.5) * 24 * 0.6
+    local targetOffsetX = (love.math.random() - 0.5) * 26 * 0.6
+    local targetOffsetY = (love.math.random() - 0.5) * 18 * 0.6
+    local horizontalDrift = (love.math.random() - 0.5) * 42 * 0.6
+    local arcHeight = 30 + love.math.random() * 45 * 0.6
+    local duration = (0.75 + love.math.random() * 0.45) * (1 / 1.3)
     
     table.insert(self._coinAnimations, {
-      x = sourceX,
-      y = sourceY,
-      startX = sourceX,
-      startY = sourceY,
-      targetX = targetX,
-      targetY = targetY,
-      angle = angle,
-      speed = speed,
+      x = sourceX + startOffsetX,
+      y = sourceY + startOffsetY,
+      startX = sourceX + startOffsetX,
+      startY = sourceY + startOffsetY,
+      targetX = targetX + targetOffsetX,
+      targetY = targetY + targetOffsetY,
+      horizontalDrift = horizontalDrift,
+      arcHeight = arcHeight,
       rotationSpeed = rotationSpeed,
-      rotation = 0,
+      rotation = love.math.random() * math.pi * 2,
       delay = delay,
       t = 0,
-      duration = 0.8,
+      duration = duration,
+      alpha = 1,
       image = self.goldIcon,
     })
   end
@@ -952,13 +962,23 @@ function RewardsScene:_updateCoinAnimations(dt)
       local elapsed = coin.t - coin.delay
       local progress = math.min(1, elapsed / coin.duration)
       
-      -- Ease-out curve
       local eased = 1 - (1 - progress) * (1 - progress)
+      local sineProgress = math.sin(progress * math.pi)
+      local startX, startY = coin.startX, coin.startY
+      local targetX, targetY = coin.targetX, coin.targetY
+      local drift = coin.horizontalDrift or 0
+      local arc = coin.arcHeight or 0
       
-        coin.x = coin.startX + (coin.targetX - coin.startX) * eased
-      coin.y = coin.startY + (coin.targetY - coin.startY) * eased
-        coin.rotation = coin.rotation + coin.rotationSpeed * dt
-        
+      coin.x = startX + (targetX - startX) * eased + drift * sineProgress
+      coin.y = startY + (targetY - startY) * eased - arc * sineProgress
+      coin.rotation = coin.rotation + (coin.rotationSpeed or 0) * dt
+      local fadeStart = 0.9
+      if progress >= fadeStart then
+        coin.alpha = 1 - (progress - fadeStart) / (1 - fadeStart)
+      else
+        coin.alpha = 1
+      end
+      
       if progress >= 1 then
         table.remove(self._coinAnimations, i)
       end
@@ -1235,7 +1255,7 @@ function RewardsScene:_drawCoinAnimations()
   for _, coin in ipairs(self._coinAnimations) do
     if coin.t >= coin.delay and coin.image then
       local progress = math.min(1, (coin.t - coin.delay) / coin.duration)
-      local alpha = 1 - progress
+      local alpha = (coin.alpha ~= nil) and coin.alpha or (1 - progress)
       love.graphics.push()
       love.graphics.translate(coin.x, coin.y)
       love.graphics.rotate(coin.rotation)
