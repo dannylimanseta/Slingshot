@@ -697,8 +697,18 @@ function Block:draw()
     local drawX = math.floor(centerX + offsetX + 0.5)
     local drawY = math.floor(centerY + offsetY + 0.5)
     local outlineWidth = math.max(0, labelCfg.outlineWidth or 2)
-    local outlineColor = labelCfg.outlineColor or { 1.0, 0.9, 0.2, 1.0 }
-    local textColor = labelCfg.textColor or { 0.0, 0.0, 0.0, 1.0 }
+    local outlineColor = labelCfg.outlineColor or labelRoot.outlineColor or { 1.0, 0.9, 0.2, 1.0 }
+    local textColorDark = labelCfg.textColorDark or labelRoot.textColorDark or { 0.35, 0.0, 0.0, 1.0 }
+    local textColorBright = labelCfg.textColorBright or labelRoot.textColorBright or { 0.9, 0.1, 0.1, 1.0 }
+    local tweenSpeed = labelCfg.tweenSpeed or labelRoot.tweenSpeed or 2.5
+    local t = (love.timer.getTime and love.timer.getTime() or os.clock()) * tweenSpeed
+    local mix = 0.5 + 0.5 * math.sin(t)
+    local textColor = {
+      textColorDark[1] + (textColorBright[1] - textColorDark[1]) * mix,
+      textColorDark[2] + (textColorBright[2] - textColorDark[2]) * mix,
+      textColorDark[3] + (textColorBright[3] - textColorDark[3]) * mix,
+      textColorDark[4] + (textColorBright[4] - textColorDark[4]) * mix,
+    }
 
     local offsets = {
       { -outlineWidth, 0 },
