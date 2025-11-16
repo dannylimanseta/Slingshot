@@ -58,7 +58,9 @@ function ParticleManager.new()
   return setmetatable({ 
     systems = {}, 
     img = makeTriangleImage(32),
-    circleImg = makeCircleImage(32)
+    circleImg = makeCircleImage(32),
+    whiteGlowImg = nil,
+    glows = {},
   }, ParticleManager)
 end
 
@@ -133,6 +135,10 @@ local function makeExplosion(img, x, y, color)
 end
 
 function ParticleManager:emitSpark(x, y)
+  -- Add a brief white glow at the impact position
+  if x and y then
+    self:emitWhiteGlow(x, y)
+  end
   table.insert(self.systems, makeSpark(self.img, x, y, theme.colors.block))
 end
 
@@ -201,6 +207,10 @@ end
 
 -- Emit lightning spark particles (bright white glow)
 function ParticleManager:emitLightningSpark(x, y)
+  -- Add a brief white glow at the impact position
+  if x and y then
+    self:emitWhiteGlow(x, y)
+  end
   local ps = love.graphics.newParticleSystem(self.circleImg, 16)
   ps:setParticleLifetime(0.2, 0.4)
   ps:setEmissionRate(0)
@@ -211,13 +221,31 @@ function ParticleManager:emitLightningSpark(x, y)
   -- Bright white to cyan-blue
   ps:setColors(
     1.0, 1.0, 1.0, 1.0,      -- Start: pure white
-    0.9, 0.95, 1.0, 1.0,     -- Mid: slight blue tint
-    0.3, 0.7, 1.0, 0.8,      -- End: cyan-blue, fading
-    0.3, 0.7, 1.0, 0.0       -- Final: cyan-blue, transparent
+    1.0, 1.0, 1.0, 0.9,      -- Mid: pure white, slight fade
+    1.0, 1.0, 1.0, 0.5,      -- Late: pure white, more fade
+    1.0, 1.0, 1.0, 0.0       -- Final: pure white, transparent
   )
   ps:moveTo(x, y)
   ps:emit(12) -- 12 particles per spark
   table.insert(self.systems, ps)
+end
+
+-- Add a transient white glow sprite at a position
+function ParticleManager:emitWhiteGlow(x, y)
+  -- Lazy-load asset
+  if not self.whiteGlowImg then
+    local ok, img = pcall(love.graphics.newImage, "assets/images/fx/white_glow.png")
+    if ok and img then
+      self.whiteGlowImg = img
+    end
+  end
+  table.insert(self.glows, {
+    x = x,
+    y = y,
+    t = 0,
+    duration = 0.40, -- slightly longer flash
+    scale = 1.4, -- slightly larger base size
+  })
 end
 
 function ParticleManager:update(dt)
@@ -229,9 +257,42 @@ function ParticleManager:update(dt)
     end
   end
   self.systems = alive
+  -- Update glows
+  local glowAlive = {}
+  for _, g in ipairs(self.glows or {}) do
+    g.t = (g.t or 0) + dt
+    if g.t < (g.duration or 0.28) then
+      table.insert(glowAlive, g)
+    end
+  end
+  self.glows = glowAlive
 end
 
 function ParticleManager:draw()
+  -- Draw white glows (additive)
+  if self.glows and #self.glows > 0 then
+    love.graphics.push("all")
+    love.graphics.setBlendMode("add")
+    for _, g in ipairs(self.glows) do
+      local a = 1.0
+      local d = g.duration or 0.28
+      local u = math.max(0, math.min(1, (g.t or 0) / d))
+      -- Ease-out alpha
+      a = 1.0 - u
+      -- Scale up slightly over time
+      local s = (g.scale or 1.0) * (1.0 + 0.5 * u)
+      if self.whiteGlowImg then
+        local iw, ih = self.whiteGlowImg:getWidth(), self.whiteGlowImg:getHeight()
+        love.graphics.setColor(1, 1, 1, a)
+        love.graphics.draw(self.whiteGlowImg, g.x, g.y, 0, s, s, iw * 0.5, ih * 0.5)
+      else
+        -- Fallback: draw a simple white circle
+        love.graphics.setColor(1, 1, 1, a * 0.7)
+        love.graphics.circle("fill", g.x, g.y, 24 * s)
+      end
+    end
+    love.graphics.pop()
+  end
   for _, ps in ipairs(self.systems) do love.graphics.draw(ps) end
 end
 

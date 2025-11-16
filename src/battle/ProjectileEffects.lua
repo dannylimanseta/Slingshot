@@ -103,23 +103,17 @@ function ProjectileEffects:updateLightningSequence(ball, dt)
       time = love.timer.getTime()
     })
     
-    -- Emit particles
-    if self.scene.particles then
-      self.scene.particles:emitLightningSpark(target.x, target.y)
-    end
-    
-    -- Hit the block (with small delay for streak animation)
+    -- Hit the block when the streak visually reaches the target (timestamp-based)
     if target.block and target.block.alive and not self.scene._blocksHitThisFrame[target.block] then
       self.scene._blocksHitThisFrame[target.block] = true
-      -- Small delay to match lightning streak animation timing
+      -- Schedule exact hit time: segment time + animation duration
       local lcfg = (config.ball and config.ball.lightning) or {}
       local streakAnimDuration = lcfg.streakAnimDuration or 0.18
-      target.block._lightningHitDelay = streakAnimDuration * 0.5 -- Half the animation duration for subtle delay
+      target.block._lightningHitAt = love.timer.getTime() + streakAnimDuration
       target.block._lightningHitPending = true
       target.block._lightningHitRewardPending = true
-      if self.scene.particles then
-        self.scene.particles:emitSpark(target.x, target.y)
-      end
+      -- Defer particle emission to actual hit time to keep visuals in sync
+      target.block._emitLightningParticlesOnHit = true
     end
     
     seq.currentIndex = seq.currentIndex + 1
@@ -331,7 +325,7 @@ function ProjectileEffects:drawLightningStreaks(ballManager)
         local streakTime = math.max(path[i].time, path[i + 1].time)
         local age = currentTime - streakTime
         
-        local animDuration = lcfg.streakAnimDuration or 0.15
+        local animDuration = lcfg.streakAnimDuration or 0.18
         local progress = 1.0
         if age < animDuration then
           progress = age / animDuration

@@ -243,14 +243,28 @@ function GameplayScene:update(dt, bounds)
     self.blocks:update(dt)
   end
   
-  -- Process delayed lightning hits (small delay to match streak animation)
+  -- Process delayed lightning hits (timestamp-based for exact sync with streak arrival)
   if self.blocks and self.blocks.blocks then
     for _, block in ipairs(self.blocks.blocks) do
       if block and block.alive and block._lightningHitPending then
-        block._lightningHitDelay = (block._lightningHitDelay or 0) - dt
-        if block._lightningHitDelay <= 0 then
+        local now = love.timer.getTime()
+        local due = false
+        if block._lightningHitAt then
+          due = now >= block._lightningHitAt
+        else
+          -- Backward-compat: fall back to delay counter if present
+          block._lightningHitDelay = (block._lightningHitDelay or 0) - dt
+          due = block._lightningHitDelay <= 0
+        end
+        if due then
           block._lightningHitPending = false
           block._lightningHitDelay = nil
+          block._lightningHitAt = nil
+          -- Emit particles at the moment the streak visually arrives
+          if self.particles and block._emitLightningParticlesOnHit then
+            self.particles:emitLightningSpark(block.cx or 0, block.cy or 0)
+            block._emitLightningParticlesOnHit = nil
+          end
           -- Now actually hit the block
           if not block.hitThisFrame and not self._blocksHitThisFrame[block] then
             self._blocksHitThisFrame[block] = true
@@ -724,14 +738,15 @@ function GameplayScene:handleBallBlockCollision(ball, block, contact)
     return
   end
   
-  -- For lightning, add a small delay so block stays visible until streak reaches it
+  -- For lightning, schedule hit exactly when the streak visually reaches the block
   local lightningFirstHit = false
   if ball.lightning and ball.alive and not ball._lightningHidden then
     lightningFirstHit = true
-    -- Small delay to match lightning streak animation timing
+    -- Timestamp-based scheduling to match streak animation timing precisely
     local lcfg = config.ball.lightning or {}
     local streakAnimDuration = lcfg.streakAnimDuration or 0.18
-    block._lightningHitDelay = streakAnimDuration * 0.5 -- Half the animation duration for subtle delay
+    local now = love.timer.getTime()
+    block._lightningHitAt = now + streakAnimDuration -- fire when streak arrives
     block._lightningHitPending = true
     block._lightningHitRewardPending = true -- Mark first block for reward when delayed hit processes
   else

@@ -368,15 +368,8 @@ config.player = {
   -- Array of projectile IDs that appear in the shooter carousel
   -- Order matters: this is the sequence they rotate through
   equippedProjectiles = {
-    "strike",        -- Strike (basic projectile)
-    "multi_strike",  -- Multi Strike (spread shot)
-    "twin_strike",   -- Twin Strike (mirror projectiles)
-    "pierce",        -- Pierce (pierces through blocks)
-    "black_hole",    -- Black Hole (sucks blocks in)
-    "lightning",     -- Lightning Orb (bounces between blocks)
-    "strike",        -- Strike (duplicate)
-    "multi_strike",  -- Multi Strike (duplicate)
-    "pierce",        -- Pierce (duplicate)
+    "strike",
+    "lightning",
   },
 }
 
