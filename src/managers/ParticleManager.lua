@@ -135,10 +135,7 @@ local function makeExplosion(img, x, y, color)
 end
 
 function ParticleManager:emitSpark(x, y)
-  -- Add a brief white glow at the impact position
-  if x and y then
-    self:emitWhiteGlow(x, y)
-  end
+  -- No white glow for regular block hits (only for lightning)
   table.insert(self.systems, makeSpark(self.img, x, y, theme.colors.block))
 end
 
