@@ -24,6 +24,38 @@ vec4 effect(vec4 color, Image texture, vec2 uv, vec2 screen_coords) {
 }
 ]]
 
+local LENS_DISTORTION_SHADER_SOURCE = [[
+extern float strength;
+extern float zoom;
+
+vec4 effect(vec4 color, Image texture, vec2 uv, vec2 screen_coords) {
+  // Convert to normalized coordinates centered at (0, 0)
+  vec2 center = vec2(0.5, 0.5);
+  vec2 coord = uv - center;
+  
+  // Calculate distance from center
+  float dist = length(coord);
+  
+  // Apply barrel distortion (positive strength = barrel, negative = pincushion)
+  // Using a simple polynomial model: r' = r * (1 + strength * r^2)
+  float r = dist;
+  float r2 = r * r;
+  float distortion = 1.0 + strength * r2;
+  
+  // Apply zoom (scale factor)
+  coord *= distortion * zoom;
+  
+  // Convert back to texture coordinates
+  vec2 distortedUV = coord + center;
+  
+  // Clamp UV coordinates to prevent sampling outside texture bounds
+  distortedUV = clamp(distortedUV, vec2(0.0, 0.0), vec2(1.0, 1.0));
+  
+  // Sample the texture at the distorted coordinates
+  return Texel(texture, distortedUV) * color;
+}
+]]
+
 local MapRenderer = {}
 MapRenderer.__index = MapRenderer
 
@@ -36,9 +68,13 @@ function MapRenderer.new()
     _tiltShiftBlurCanvas = nil,
     _tiltShiftEffectWidth = nil,
     _tiltShiftEffectHeight = nil,
+    _lensDistortionEnabled = false,
+    _lensDistortionShader = nil,
+    _lensDistortionCanvas = nil,
   }, MapRenderer)
 
   renderer:_initializeTiltShift()
+  renderer:_initializeLensDistortion()
 
   return renderer
 end
@@ -92,6 +128,59 @@ function MapRenderer:_updateBlurSettings()
   local blurSigma = settings.blurSigma or 5.0
   if self._tiltShiftEffect.gaussianblur then
     self._tiltShiftEffect.gaussianblur.sigma = blurSigma
+  end
+end
+
+function MapRenderer:_initializeLensDistortion()
+  local settings = config.map and config.map.lensDistortion
+  if not (settings and settings.enabled) then
+    self._lensDistortionEnabled = false
+    return
+  end
+
+  local supportsCanvas = true
+  if type(love.graphics.isSupported) == "function" then
+    supportsCanvas = love.graphics.isSupported("canvas")
+  end
+
+  if not supportsCanvas then
+    self._lensDistortionEnabled = false
+    return
+  end
+
+  local shaderOk, shader = pcall(love.graphics.newShader, LENS_DISTORTION_SHADER_SOURCE)
+  if not shaderOk then
+    self._lensDistortionEnabled = false
+    return
+  end
+
+  self._lensDistortionShader = shader
+  self._lensDistortionEnabled = true
+  self:_updateLensDistortionUniforms()
+end
+
+function MapRenderer:_updateLensDistortionUniforms()
+  if not (self._lensDistortionEnabled and self._lensDistortionShader) then
+    return
+  end
+
+  local settings = config.map and config.map.lensDistortion or {}
+  local strength = settings.strength or 0.15
+  local zoom = settings.zoom or 1.0
+
+  self._lensDistortionShader:send("strength", strength)
+  self._lensDistortionShader:send("zoom", zoom)
+end
+
+function MapRenderer:_ensureLensDistortionResources(vw, vh)
+  if not self._lensDistortionEnabled then
+    return
+  end
+
+  if not self._lensDistortionCanvas
+    or self._lensDistortionCanvas:getWidth() ~= vw
+    or self._lensDistortionCanvas:getHeight() ~= vh then
+    self._lensDistortionCanvas = love.graphics.newCanvas(vw, vh)
   end
 end
 
@@ -153,10 +242,15 @@ function MapRenderer:draw(scene)
   local vh = config.video.virtualHeight
 
   local usedTiltShift = self:_renderTiltShift(scene, vw, vh)
-  if not usedTiltShift then
-    love.graphics.clear(theme.colors.background)
-    self:_drawWorldLayer(scene, vw, vh)
+  
+  -- If lens distortion is enabled, we need to capture the current render to a canvas
+  if self._lensDistortionEnabled and not usedTiltShift then
+    -- Tilt shift wasn't used, so capture the world layer to canvas for lens distortion
+    self:_captureWorldLayerForDistortion(scene, vw, vh)
   end
+
+  -- Apply lens distortion as post-process (works with or without tilt shift)
+  self:_applyLensDistortion(vw, vh)
 
   self:_drawOverlays(scene, vw, vh)
 end
@@ -182,23 +276,104 @@ function MapRenderer:_renderTiltShift(scene, vw, vh)
   self:_renderWorldToCanvas(scene, vw, vh, supersamplingFactor)
   self:_renderBlurredCanvas()
 
-  love.graphics.clear(theme.colors.background)
-  love.graphics.setColor(1, 1, 1, 1)
-  
-  -- Send blurred texture to shader before using it
-  if self._tiltShiftShader and self._tiltShiftBlurCanvas then
-    self._tiltShiftShader:send("blurred", self._tiltShiftBlurCanvas)
+  -- If lens distortion is enabled, render tilt shift result to a canvas for post-processing
+  -- Otherwise, draw directly to screen
+  if self._lensDistortionEnabled then
+    self:_ensureLensDistortionResources(canvasW, canvasH)
+    if self._lensDistortionCanvas then
+      love.graphics.push("all")
+      love.graphics.setCanvas(self._lensDistortionCanvas)
+      love.graphics.clear(theme.colors.background)
+      love.graphics.origin()
+      love.graphics.scale(supersamplingFactor, supersamplingFactor)
+      
+      love.graphics.setColor(1, 1, 1, 1)
+      
+      -- Send blurred texture to shader before using it
+      if self._tiltShiftShader and self._tiltShiftBlurCanvas then
+        self._tiltShiftShader:send("blurred", self._tiltShiftBlurCanvas)
+      end
+      
+      love.graphics.setShader(self._tiltShiftShader)
+      
+      -- Draw canvas scaled down by supersamplingFactor
+      love.graphics.draw(self._tiltShiftWorldCanvas, 0, 0, 0, 
+        1 / supersamplingFactor, 1 / supersamplingFactor)
+      love.graphics.setShader()
+      
+      love.graphics.pop()
+    end
+  else
+    love.graphics.clear(theme.colors.background)
+    love.graphics.setColor(1, 1, 1, 1)
+    
+    -- Send blurred texture to shader before using it
+    if self._tiltShiftShader and self._tiltShiftBlurCanvas then
+      self._tiltShiftShader:send("blurred", self._tiltShiftBlurCanvas)
+    end
+    
+    love.graphics.setShader(self._tiltShiftShader)
+    
+    -- Draw canvas scaled down by supersamplingFactor so when global transform scales it up,
+    -- it ends up at the correct size (1/supersamplingFactor * supersamplingFactor = 1)
+    love.graphics.draw(self._tiltShiftWorldCanvas, 0, 0, 0, 
+      1 / supersamplingFactor, 1 / supersamplingFactor)
+    love.graphics.setShader()
   end
-  
-  love.graphics.setShader(self._tiltShiftShader)
-  
-  -- Draw canvas scaled down by supersamplingFactor so when global transform scales it up,
-  -- it ends up at the correct size (1/supersamplingFactor * supersamplingFactor = 1)
-  love.graphics.draw(self._tiltShiftWorldCanvas, 0, 0, 0, 
-    1 / supersamplingFactor, 1 / supersamplingFactor)
-  love.graphics.setShader()
 
   return true
+end
+
+function MapRenderer:_captureWorldLayerForDistortion(scene, vw, vh)
+  if not self._lensDistortionEnabled then
+    return
+  end
+
+  local supersamplingFactor = _G.supersamplingFactor or 1
+  local canvasW = vw * supersamplingFactor
+  local canvasH = vh * supersamplingFactor
+
+  self:_ensureLensDistortionResources(canvasW, canvasH)
+  if not self._lensDistortionCanvas then
+    return
+  end
+
+  love.graphics.push("all")
+  love.graphics.setCanvas(self._lensDistortionCanvas)
+  love.graphics.clear(theme.colors.background)
+  love.graphics.origin()
+  love.graphics.scale(supersamplingFactor, supersamplingFactor)
+  
+  -- Draw world layer to canvas
+  self:_drawWorldLayer(scene, vw, vh)
+  
+  love.graphics.pop()
+end
+
+function MapRenderer:_applyLensDistortion(vw, vh)
+  if not (self._lensDistortionEnabled and self._lensDistortionShader) then
+    return
+  end
+
+  local sourceCanvas = self._lensDistortionCanvas
+  if not sourceCanvas then
+    return
+  end
+
+  -- Apply lens distortion shader to the canvas
+  self:_updateLensDistortionUniforms()
+  
+  love.graphics.clear(theme.colors.background)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.setShader(self._lensDistortionShader)
+  
+  -- Get supersampling factor
+  local supersamplingFactor = _G.supersamplingFactor or 1
+  
+  -- Draw the canvas with distortion applied
+  love.graphics.draw(sourceCanvas, 0, 0, 0, 
+    1 / supersamplingFactor, 1 / supersamplingFactor)
+  love.graphics.setShader()
 end
 
 function MapRenderer:_renderWorldToCanvas(scene, vw, vh, supersamplingFactor)

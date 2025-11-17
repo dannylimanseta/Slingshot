@@ -463,6 +463,12 @@ config.map = {
     maxBlurAmount = 1.0, -- blend multiplier (1 = full blur, 0 = none)
     falloffExponent = 1.0, -- power curve to accentuate blur falloff
   },
+  -- Lens distortion effect (barrel/pincushion)
+  lensDistortion = {
+    enabled = true, -- toggle for the lens distortion effect
+    strength = 0.15, -- distortion strength (positive = barrel, negative = pincushion)
+    zoom = 0.9, -- zoom factor to compensate for distortion (typically > 1.0 for barrel)
+  },
   -- Tree sway animation
   treeSway = {
     speed = 0.5, -- sway speed (oscillations per second)
