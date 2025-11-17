@@ -5,26 +5,19 @@ local moonshine = require("external.moonshine")
 
 local TILT_SHIFT_SHADER_SOURCE = [[
 extern Image blurred;
-extern float focusCenter;
-extern float focusRange;
-extern float focusFeather;
+extern float focusStart;
+extern float focusEnd;
 extern float maxBlurAmount;
-extern float falloffExponent;
 
 vec4 effect(vec4 color, Image texture, vec2 uv, vec2 screen_coords) {
   vec4 sharp = Texel(texture, uv);
   vec4 blurredSample = Texel(blurred, uv);
 
-  // Calculate distance from focus center (0.5 = middle of screen)
-  float distanceFromFocus = abs(uv.y - focusCenter);
+  // Calculate distance from center (0.5 = middle of screen)
+  float dist = abs(uv.y - 0.5);
   
-  // Calculate blend factor: 0 at center, 1 at edges
-  // smoothstep gives smooth transition from focusRange to focusRange + focusFeather
-  float blend = smoothstep(focusRange, focusRange + focusFeather, distanceFromFocus);
-  
-  // Apply power curve and max blur amount
-  blend = pow(blend, falloffExponent) * maxBlurAmount;
-  blend = clamp(blend, 0.0, 1.0);
+  // Use smoothstep for smooth transition (no branches = fewer variants)
+  float blend = smoothstep(focusStart, focusEnd, dist) * maxBlurAmount;
 
   // Mix sharp and blurred based on blend factor
   return mix(sharp, blurredSample, blend) * color;
@@ -112,13 +105,15 @@ function MapRenderer:_updateTiltShiftUniforms()
   local focusRange = settings.focusRange or 0.25
   local focusFeather = settings.focusFeather or 0.2
   local maxBlurAmount = settings.maxBlurAmount or 1.0
-  local falloffExponent = settings.falloffExponent or 1.0
 
-  self._tiltShiftShader:send("focusCenter", focusCenter)
-  self._tiltShiftShader:send("focusRange", math.max(0.0, focusRange))
-  self._tiltShiftShader:send("focusFeather", math.max(0.0001, focusFeather))
-  self._tiltShiftShader:send("maxBlurAmount", math.max(0.0, maxBlurAmount))
-  self._tiltShiftShader:send("falloffExponent", math.max(0.001, falloffExponent))
+  -- Calculate focus zone boundaries (distance from center where blur starts/ends)
+  -- focusRange is half-height of sharp band, focusFeather is transition zone
+  local focusStart = math.max(0.0, focusRange)
+  local focusEnd = math.max(focusStart + 0.001, focusRange + focusFeather)
+
+  self._tiltShiftShader:send("focusStart", focusStart)
+  self._tiltShiftShader:send("focusEnd", focusEnd)
+  self._tiltShiftShader:send("maxBlurAmount", math.max(0.0, math.min(1.0, maxBlurAmount)))
 end
 
 function MapRenderer:_ensureTiltShiftResources(vw, vh)
