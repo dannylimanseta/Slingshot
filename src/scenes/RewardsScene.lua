@@ -4,6 +4,7 @@ local RewardsBackdropShader = require("utils.RewardsBackdropShader")
 local Button = require("ui.Button")
 local TopBar = require("ui.TopBar")
 local relics = require("data.relics")
+local NotificationTooltip = require("ui.NotificationTooltip")
 
 local RewardsScene = {}
 RewardsScene.__index = RewardsScene
@@ -81,6 +82,9 @@ function RewardsScene.new(params)
     _relicDescription = nil,
     _relicFlavor = nil,
     _relicButtonClaimed = false,
+    
+    -- Notification tooltip
+    notificationTooltip = NotificationTooltip.new(),
     
     -- Flags
     _exitRequested = false,
@@ -389,6 +393,14 @@ function RewardsScene:_claimRelicReward()
     playerState:addRelic(self._pendingRelicReward.id)
   end
   
+  -- Show notification tooltip
+  self.notificationTooltip:setStackIndex(0)
+  self.notificationTooltip:show({
+    name = self._pendingRelicReward.name,
+    description = self._pendingRelicReward.description,
+    icon = self._pendingRelicReward.icon
+  })
+  
   self._relicClaimedName = self._pendingRelicReward.name or self._pendingRelicReward.id
   self._relicClaimedTimer = 3.0
   self._relicButtonClaimed = true -- For compatibility with SceneTransitionHandler
@@ -432,6 +444,9 @@ function RewardsScene:update(dt)
   self.time = self.time + dt
   self._uiFadeTimer = self._uiFadeTimer + dt
   self._glowTime = (self._glowTime or 0) + dt
+  
+  -- Update notification tooltip
+  self.notificationTooltip:update(dt)
   
   -- Update relic claimed timer
   if self._relicClaimedTimer and self._relicClaimedTimer > 0 then
@@ -776,6 +791,9 @@ function RewardsScene:draw()
     
   -- Draw tooltip (on top of everything)
   self:_drawTooltip()
+  
+  -- Draw notification tooltip (on top of everything)
+  self.notificationTooltip:draw(1.0)
       end
       
 function RewardsScene:_drawButtonGlow(button)
