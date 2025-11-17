@@ -152,7 +152,7 @@ function OrbsUI:keypressed(key)
   if count == 0 then return false end
   -- Recompute layout params to match draw()
   local vw = config.video.virtualWidth
-  local baseCardW = 288
+  local baseCardW = 274 -- Reduced by 5% from 288
   local baseCardSpacing = 40
   local sidePadding = 40
   local availableWidth = vw - (sidePadding * 2)
@@ -571,7 +571,7 @@ function OrbsUI:_drawOrbTooltip(orbIndex, bounds, fadeAlpha)
   local tooltipY = bounds.y
   
   -- If tooltip would go off screen, position it to the left instead
-  local tooltipW = 288 -- Same as ProjectileCard width
+  local tooltipW = 274 -- Same as ProjectileCard width (reduced by 5% from 288)
   if tooltipX + tooltipW > vw - 20 then
     tooltipX = bounds.x - tooltipW - 16
   end

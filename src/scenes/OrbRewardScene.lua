@@ -425,7 +425,7 @@ function OrbRewardScene:draw()
 
   -- Layout three options
   local spacing = 24
-  local cardW = 288
+  local cardW = 274 -- Reduced by 5% from 288
   local cardH = 120 -- will expand as needed by card itself
   local totalW = cardW * #self.options + spacing * math.max(0, #self.options - 1)
   local startX = math.floor((vw - totalW) * 0.5)

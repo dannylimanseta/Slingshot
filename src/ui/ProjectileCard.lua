@@ -130,7 +130,7 @@ end
 function ProjectileCard:calculateHeight(projectile)
   local padding = 12
   local spacing = 4
-  local cardW = 288
+  local cardW = 274 -- Reduced by 5% from 288
   local iconSize = 24 * 1.3
   local iconPadding = 12
   
@@ -189,7 +189,7 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   local effective = ProjectileManager.getEffective(projectile)
   
   -- Card dimensions
-  local cardW = 288 -- Increased by 20% from 240
+  local cardW = 274 -- Reduced by 5% from 288 (was 240, increased by 20%, then reduced by 5%)
   local cardH = self:calculateHeight(projectile) -- Dynamic height
   local padding = 12
   local iconSize = 24 * 1.3 -- Increased by 30% (was 24)
@@ -200,10 +200,10 @@ function ProjectileCard:draw(x, y, projectileId, alpha)
   love.graphics.setColor(0, 0, 0, 0.9 * alpha)
   love.graphics.rectangle("fill", x, y, cardW, cardH, cornerRadius, cornerRadius)
   
-  -- Border/highlight - use rarity color for border at 30% alpha
+  -- Border/highlight - use rarity color for border at 20% alpha (reduced from 30%)
   local rarity = projectile.rarity or "COMMON"
   local rarityColor = RARITY_COLORS[rarity] or RARITY_COLORS.COMMON
-  love.graphics.setColor(rarityColor[1], rarityColor[2], rarityColor[3], 0.3 * alpha)
+  love.graphics.setColor(rarityColor[1], rarityColor[2], rarityColor[3], 0.2 * alpha)
   love.graphics.setLineWidth(2)
   love.graphics.rectangle("line", x, y, cardW, cardH, cornerRadius, cornerRadius)
   
