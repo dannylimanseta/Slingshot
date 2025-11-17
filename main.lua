@@ -1,5 +1,15 @@
+local srcRequirePaths = ";src/?.lua;src/?/init.lua;src/?/?.lua"
+
 -- Expand Lua's package path to include `src/` for modules
-package.path = package.path .. ";src/?.lua;src/?/init.lua;src/?/?.lua"
+package.path = package.path .. srcRequirePaths
+
+-- Also update LÖVE's internal require path so packaged builds resolve modules
+if love and love.filesystem and love.filesystem.getRequirePath then
+  local current = love.filesystem.getRequirePath()
+  if not current:find("src/%?%.lua", 1, true) then
+    love.filesystem.setRequirePath(current .. ";" .. srcRequirePaths:sub(2))
+  end
+end
 
 local config = require("config")
 local SceneManager = require("core.SceneManager")

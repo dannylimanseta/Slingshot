@@ -30,6 +30,7 @@ function RewardsScene.new(params)
   return setmetatable({
     time = 0,
     shader = RewardsBackdropShader.getShader(),
+    _shaderSupportsTransition = true,
     params = params or {},
     decorImage = nil,
     _mouseX = 0,
@@ -480,7 +481,12 @@ function RewardsScene:update(dt)
         p = 0
       end
     end
-    self.shader:send("u_transitionProgress", p)
+    if self._shaderSupportsTransition then
+      local ok = pcall(self.shader.send, self.shader, "u_transitionProgress", p)
+      if not ok then
+        self._shaderSupportsTransition = false
+      end
+    end
   end
   
   if self._exitRequested then
