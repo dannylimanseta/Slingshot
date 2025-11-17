@@ -412,6 +412,7 @@ config.player = {
   -- Array of projectile IDs that appear in the shooter carousel
   -- Order matters: this is the sequence they rotate through
   equippedProjectiles = {
+    "flurry_strikes",
     "strike",
     "lightning",
   },

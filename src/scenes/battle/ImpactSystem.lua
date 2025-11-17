@@ -74,8 +74,8 @@ function ImpactSystem.create(scene, impactData)
   end
   
   -- Standard impact animation (for most projectiles)
-  -- Pierce uses single impact, crit uses 5, others based on block count
-  local spriteCount = (projectileId == "pierce") and 1 or (isCrit and 5 or math.min(blockCount, 4))
+  -- Pierce uses single impact, flurry_strikes uses 3, crit uses 5, others based on block count
+  local spriteCount = (projectileId == "pierce") and 1 or (projectileId == "flurry_strikes") and 3 or (isCrit and 5 or math.min(blockCount, 4))
 
   local w = (scene._lastBounds and scene._lastBounds.w) or love.graphics.getWidth()
   local h = (scene._lastBounds and scene._lastBounds.h) or love.graphics.getHeight()

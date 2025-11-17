@@ -19,6 +19,7 @@ function BallManager.new(world, shooter)
     isAiming = false,
     aimStartX = 0,
     aimStartY = 0,
+    flurryQueue = {}, -- Queue for sequential flurry strikes
   }, BallManager)
 end
 
@@ -53,6 +54,29 @@ function BallManager:update(dt, bounds)
       else
         -- Remove dead balls
         table.remove(self.balls, i)
+      end
+    end
+  end
+  
+  -- Update flurry strikes queue (sequential firing)
+  if self.flurryQueue and #self.flurryQueue > 0 then
+    for i = #self.flurryQueue, 1, -1 do
+      local flurry = self.flurryQueue[i]
+      flurry.delay = flurry.delay - dt
+      if flurry.delay <= 0 then
+        -- Spawn this projectile
+        local ball = Ball.new(self.world, flurry.x, flurry.y, flurry.dirX, flurry.dirY, {
+          radius = flurry.radius,
+          maxBounces = flurry.maxBounces,
+          spritePath = flurry.spritePath,
+          onLastBounce = function(ball) ball:destroy() end
+        })
+        if ball then
+          ball.projectileId = "flurry_strikes"
+          ball.score = flurry.baseDamage
+          table.insert(self.balls, ball)
+        end
+        table.remove(self.flurryQueue, i)
       end
     end
   end
@@ -156,6 +180,9 @@ function BallManager:shoot(dirX, dirY, projectileId)
   elseif projectileId == "lightning" then
     spawnedBalls = self:_spawnLightning(startX, startY, ndx, ndy, effective, spritePath, baseDamage)
     totalDamage = baseDamage
+  elseif projectileId == "flurry_strikes" then
+    spawnedBalls = self:_spawnFlurryStrikes(startX, startY, ndx, ndy, effective, spritePath, baseDamage)
+    totalDamage = baseDamage * ((effective and effective.count) or 3)
   else
     -- Standard single projectile
     spawnedBalls = self:_spawnStandard(startX, startY, ndx, ndy, effective, spritePath, baseDamage, projectileId)
@@ -258,6 +285,52 @@ function BallManager:_spawnMultiStrike(x, y, dirX, dirY, effective, spritePath, 
       ball.score = baseDamage
       table.insert(self.balls, ball)
     end
+  end
+  
+  return self.balls
+end
+
+-- Spawn flurry strikes (sequential firing in same direction)
+function BallManager:_spawnFlurryStrikes(x, y, dirX, dirY, effective, spritePath, baseDamage)
+  self.ball = nil
+  self.balls = {}
+  self.flurryQueue = {}
+  
+  local count = (effective and effective.count) or 3
+  local maxBounces = (effective and effective.maxBounces) or 3
+  local delayBetween = 0.35 -- Delay between each projectile (seconds, increased from 0.08)
+  
+  if not spritePath then
+    spritePath = "assets/images/orb_flurry.png"
+  end
+  
+  -- Spawn first projectile immediately
+  local ball = Ball.new(self.world, x, y, dirX, dirY, {
+    radius = config.ball.radius,
+    maxBounces = maxBounces,
+    spritePath = spritePath,
+    onLastBounce = function(ball) ball:destroy() end
+  })
+  
+  if ball then
+    ball.projectileId = "flurry_strikes"
+    ball.score = baseDamage
+    table.insert(self.balls, ball)
+  end
+  
+  -- Queue remaining projectiles with delays
+  for i = 2, count do
+    table.insert(self.flurryQueue, {
+      x = x,
+      y = y,
+      dirX = dirX,
+      dirY = dirY,
+      radius = config.ball.radius,
+      maxBounces = maxBounces,
+      spritePath = spritePath,
+      baseDamage = baseDamage,
+      delay = delayBetween * (i - 1)
+    })
   end
   
   return self.balls

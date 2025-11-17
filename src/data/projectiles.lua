@@ -119,6 +119,22 @@ projectiles.data = {
     icon = "assets/images/orb_black_hole.png",
     description = "Creates a black hole that pulls in and destroys nearby blocks."
   },
+  {
+    id = "flurry_strikes",
+    name = "Flurry Strikes",
+    rarity = projectiles.Rarity.UNCOMMON,
+    level = 1,
+    baseDamage = 2,
+    levels = {
+      [1] = { baseDamage = 2, maxBounces = 3, count = 3 },
+      [2] = { baseDamage = 3, maxBounces = 4, count = 3 },
+      [3] = { baseDamage = 4, maxBounces = 5, count = 4 },
+      [4] = { baseDamage = 5, maxBounces = 6, count = 4 },
+      [5] = { baseDamage = 7, maxBounces = 7, count = 5 },
+    },
+    icon = "assets/images/orb_flurry.png",
+    description = "Fires multiple projectiles in quick succession."
+  },
 }
 
 -- Helper function to get projectile by ID

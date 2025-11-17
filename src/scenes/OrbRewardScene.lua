@@ -211,7 +211,7 @@ function OrbRewardScene:update(dt)
 	if self.choice then
     -- Only apply choice once
     if not self._choiceApplied then
-      self:applyChoice(self.choice)
+    self:applyChoice(self.choice)
       self._choiceApplied = true
     end
     -- Wait for notification to complete before exiting

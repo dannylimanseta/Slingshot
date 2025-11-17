@@ -81,6 +81,12 @@ local function buildDynamicStats(projectile, effective, maxWidth, font)
     if effective and effective.maxBounces then
       table.insert(lines, string.format("Bounces %d times", effective.maxBounces))
     end
+  elseif id == "flurry_strikes" then
+    local count = (effective and effective.count) or 3
+    table.insert(lines, string.format("Fires %d projectiles in quick succession", count))
+    if effective and effective.maxBounces then
+      table.insert(lines, string.format("Bounces %d times", effective.maxBounces))
+    end
   elseif id == "pierce" then
     table.insert(lines, "Fires 1 projectile")
     if effective and effective.maxPierce then
@@ -102,8 +108,9 @@ function ProjectileCard.new()
   local rarityFont = theme.newFont(14)
   -- Name/Level: 20px (was 18px)
   local nameFont = theme.newFont(20)
-  -- Stats: 16px (was 14px)
-  local statFont = theme.newFont(16)
+  -- Stats: 16px (was 14px) - use regular (non-bold) Barlow font
+  local regularFontPath = "assets/fonts/BarlowCondensed-Regular.ttf"
+  local statFont = theme.newFont(16, regularFontPath)
   
   return setmetatable({
     iconImage = nil, -- Cached icon image

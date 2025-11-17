@@ -303,7 +303,7 @@ function RelicSelectScene:_equipAll()
   local count = 0
   for _, entry in ipairs(self.entries) do
     if not player:hasRelic(entry.id) then
-      player:addRelic(entry.id)
+    player:addRelic(entry.id)
       count = count + 1
     end
   end
@@ -324,7 +324,7 @@ function RelicSelectScene:_clearAll()
   local count = 0
   for _, entry in ipairs(self.entries) do
     if player:hasRelic(entry.id) then
-      player:removeRelic(entry.id)
+    player:removeRelic(entry.id)
       count = count + 1
     end
   end
