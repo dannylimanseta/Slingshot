@@ -19,6 +19,7 @@ EncounterManager.__index = EncounterManager
 
 local _currentEncounterId = nil
 local _currentBattleProfile = nil
+local _lastEncounterId = nil -- Track last encounter to avoid consecutive duplicates
 
 local function deepcopy(tbl)
 	if type(tbl) ~= "table" then return tbl end
@@ -90,6 +91,10 @@ local function buildBattleProfileFromEncounter(enc)
 end
 
 function EncounterManager.setEncounterById(id)
+	-- Update last encounter ID before setting new one
+	if _currentEncounterId then
+		_lastEncounterId = _currentEncounterId
+	end
 	_currentEncounterId = id
 	_currentBattleProfile = nil
 	-- Register encounter start for difficulty progression
@@ -126,7 +131,19 @@ function EncounterManager.pickRandomEncounterId(filterFn)
 	local pool = {}
 	for _, enc in ipairs(list) do
 		if not filterFn or filterFn(enc) then
-			table.insert(pool, enc.id)
+			-- Exclude the last encounter ID to avoid consecutive duplicates
+			if enc.id ~= _lastEncounterId then
+				table.insert(pool, enc.id)
+			end
+		end
+	end
+	-- If pool is empty after excluding last encounter, allow last encounter (edge case)
+	if #pool == 0 then
+		-- Rebuild pool without exclusion
+		for _, enc in ipairs(list) do
+			if not filterFn or filterFn(enc) then
+				table.insert(pool, enc.id)
+			end
 		end
 	end
 	if #pool == 0 then return nil end
