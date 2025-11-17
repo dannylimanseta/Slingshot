@@ -44,6 +44,7 @@ function OrbRewardScene.new(params)
 		pendingChoice = nil,         -- store choice to apply after anim
 		_choiceApplied = false,      -- track if choice has been applied (to prevent duplicate notifications)
     shader = nil,
+    _shaderSupportsTransition = true,
     decorImage = nil,
     arrowIcon = nil,
     titleFont = nil,
@@ -66,6 +67,7 @@ end
 function OrbRewardScene:load()
   -- Shader and decor image (match RewardsScene)
   self.shader = RewardsBackdropShader.getShader()
+  self._shaderSupportsTransition = true
   -- Fade-in timings for options
   self._fadeInDuration = 0.65
   self._fadeInDelayStep = 0.25
@@ -285,7 +287,12 @@ function OrbRewardScene:update(dt)
       -- Idle state (entry complete, exit not started yet)
       p = 0
     end
-    self.shader:send("u_transitionProgress", p)
+    if self._shaderSupportsTransition then
+      local ok = pcall(self.shader.send, self.shader, "u_transitionProgress", p)
+      if not ok then
+        self._shaderSupportsTransition = false
+      end
+    end
   end
   -- Layout skip button and update hover tween targets
   local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
