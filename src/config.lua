@@ -449,6 +449,16 @@ config.map = {
     pulsateSizeVariation = 0.15, -- size variation (15% larger/smaller)
     pulsateAlphaVariation = 0.2, -- alpha variation (20% brighter/dimmer)
   },
+  -- Tilt shift depth-of-field inspired blur
+  tiltShift = {
+    enabled = true, -- toggle for the blur effect
+    blurSigma = 8.0, -- gaussian sigma used by Moonshine (increased significantly for testing)
+    focusCenter = 0.5, -- normalized vertical center of the sharp band
+    focusRange = 0.12, -- half-height of the in-focus band (0-0.5, reduced for narrower focus band)
+    focusFeather = 0.14, -- how soft the falloff is between sharp/blurred
+    maxBlurAmount = 1.0, -- blend multiplier (1 = full blur, 0 = none)
+    falloffExponent = 1.0, -- power curve to accentuate blur falloff
+  },
   -- Tree sway animation
   treeSway = {
     speed = 0.5, -- sway speed (oscillations per second)

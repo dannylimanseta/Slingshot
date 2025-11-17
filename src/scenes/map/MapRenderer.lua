@@ -1,19 +1,344 @@
 local config = require("config")
 local theme = require("theme")
 local MapManager = require("managers.MapManager")
+local moonshine = require("external.moonshine")
+
+local TILT_SHIFT_SHADER_SOURCE = [[
+extern Image blurred;
+extern float focusCenter;
+extern float focusRange;
+extern float focusFeather;
+extern float maxBlurAmount;
+extern float falloffExponent;
+
+vec4 effect(vec4 color, Image texture, vec2 uv, vec2 screen_coords) {
+  vec4 sharp = Texel(texture, uv);
+  vec4 blurredSample = Texel(blurred, uv);
+
+  // Calculate distance from focus center (0.5 = middle of screen)
+  float distanceFromFocus = abs(uv.y - focusCenter);
+  
+  // Calculate blend factor: 0 at center, 1 at edges
+  // smoothstep gives smooth transition from focusRange to focusRange + focusFeather
+  float blend = smoothstep(focusRange, focusRange + focusFeather, distanceFromFocus);
+  
+  // Apply power curve and max blur amount
+  blend = pow(blend, falloffExponent) * maxBlurAmount;
+  blend = clamp(blend, 0.0, 1.0);
+
+  // Mix sharp and blurred based on blend factor
+  return mix(sharp, blurredSample, blend) * color;
+}
+]]
 
 local MapRenderer = {}
 MapRenderer.__index = MapRenderer
 
 function MapRenderer.new()
-  return setmetatable({}, MapRenderer)
+  local renderer = setmetatable({
+    _tiltShiftEnabled = false,
+    _tiltShiftEffect = nil,
+    _tiltShiftShader = nil,
+    _tiltShiftWorldCanvas = nil,
+    _tiltShiftBlurCanvas = nil,
+    _tiltShiftEffectWidth = nil,
+    _tiltShiftEffectHeight = nil,
+  }, MapRenderer)
+
+  renderer:_initializeTiltShift()
+
+  return renderer
+end
+
+function MapRenderer:_initializeTiltShift()
+  local settings = config.map and config.map.tiltShift
+  if not (settings and settings.enabled) then
+    self._tiltShiftEnabled = false
+    return
+  end
+
+  local supportsCanvas = true
+  if type(love.graphics.isSupported) == "function" then
+    supportsCanvas = love.graphics.isSupported("canvas")
+  end
+
+  if not supportsCanvas then
+    self._tiltShiftEnabled = false
+    return
+  end
+
+  local shaderOk, shader = pcall(love.graphics.newShader, TILT_SHIFT_SHADER_SOURCE)
+  if not shaderOk then
+    self._tiltShiftEnabled = false
+    return
+  end
+
+  local effectOk, effect = pcall(function()
+    return moonshine(moonshine.effects.gaussianblur)
+  end)
+
+  if not effectOk or not effect then
+    self._tiltShiftEnabled = false
+    return
+  end
+
+  self._tiltShiftShader = shader
+  self._tiltShiftEffect = effect
+
+  self._tiltShiftEnabled = true
+  self:_updateTiltShiftUniforms()
+  self:_updateBlurSettings()
+end
+
+function MapRenderer:_updateBlurSettings()
+  if not (self._tiltShiftEnabled and self._tiltShiftEffect) then
+    return
+  end
+
+  local settings = config.map and config.map.tiltShift or {}
+  local blurSigma = settings.blurSigma or 5.0
+  if self._tiltShiftEffect.gaussianblur then
+    self._tiltShiftEffect.gaussianblur.sigma = blurSigma
+  end
+end
+
+function MapRenderer:_updateTiltShiftUniforms()
+  if not (self._tiltShiftEnabled and self._tiltShiftShader) then
+    return
+  end
+
+  local settings = config.map and config.map.tiltShift or {}
+  local focusCenter = settings.focusCenter or 0.5
+  local focusRange = settings.focusRange or 0.25
+  local focusFeather = settings.focusFeather or 0.2
+  local maxBlurAmount = settings.maxBlurAmount or 1.0
+  local falloffExponent = settings.falloffExponent or 1.0
+
+  self._tiltShiftShader:send("focusCenter", focusCenter)
+  self._tiltShiftShader:send("focusRange", math.max(0.0, focusRange))
+  self._tiltShiftShader:send("focusFeather", math.max(0.0001, focusFeather))
+  self._tiltShiftShader:send("maxBlurAmount", math.max(0.0, maxBlurAmount))
+  self._tiltShiftShader:send("falloffExponent", math.max(0.001, falloffExponent))
+end
+
+function MapRenderer:_ensureTiltShiftResources(vw, vh)
+  if not self._tiltShiftEnabled then
+    return
+  end
+
+  local canvasDirty = false
+  if not self._tiltShiftWorldCanvas
+    or self._tiltShiftWorldCanvas:getWidth() ~= vw
+    or self._tiltShiftWorldCanvas:getHeight() ~= vh then
+    self._tiltShiftWorldCanvas = love.graphics.newCanvas(vw, vh)
+    canvasDirty = true
+  end
+
+  if not self._tiltShiftBlurCanvas
+    or self._tiltShiftBlurCanvas:getWidth() ~= vw
+    or self._tiltShiftBlurCanvas:getHeight() ~= vh then
+    self._tiltShiftBlurCanvas = love.graphics.newCanvas(vw, vh)
+    canvasDirty = true
+  end
+
+  if canvasDirty and self._tiltShiftShader and self._tiltShiftBlurCanvas then
+    self._tiltShiftShader:send("blurred", self._tiltShiftBlurCanvas)
+  end
+
+  if self._tiltShiftEffect
+    and (self._tiltShiftEffectWidth ~= vw or self._tiltShiftEffectHeight ~= vh) then
+    self._tiltShiftEffect.resize(vw, vh)
+    self._tiltShiftEffectWidth = vw
+    self._tiltShiftEffectHeight = vh
+  end
 end
 
 function MapRenderer:draw(scene)
   local vw = config.video.virtualWidth
   local vh = config.video.virtualHeight
 
+  local usedTiltShift = self:_renderTiltShift(scene, vw, vh)
+  if not usedTiltShift then
+    love.graphics.clear(theme.colors.background)
+    self:_drawWorldLayer(scene, vw, vh)
+  end
+
+  self:_drawOverlays(scene, vw, vh)
+end
+
+function MapRenderer:_renderTiltShift(scene, vw, vh)
+  if not (self._tiltShiftEnabled and self._tiltShiftEffect and self._tiltShiftShader) then
+    return false
+  end
+
+  -- Get supersampling factor and render canvases at supersampled resolution for crisp graphics
+  local supersamplingFactor = _G.supersamplingFactor or 1
+  local canvasW = vw * supersamplingFactor
+  local canvasH = vh * supersamplingFactor
+
+  self:_ensureTiltShiftResources(canvasW, canvasH)
+  if not (self._tiltShiftWorldCanvas and self._tiltShiftBlurCanvas) then
+    return false
+  end
+
+  self:_updateTiltShiftUniforms()
+  self:_updateBlurSettings()
+
+  self:_renderWorldToCanvas(scene, vw, vh, supersamplingFactor)
+  self:_renderBlurredCanvas()
+
   love.graphics.clear(theme.colors.background)
+  love.graphics.setColor(1, 1, 1, 1)
+  
+  -- Send blurred texture to shader before using it
+  if self._tiltShiftShader and self._tiltShiftBlurCanvas then
+    self._tiltShiftShader:send("blurred", self._tiltShiftBlurCanvas)
+  end
+  
+  love.graphics.setShader(self._tiltShiftShader)
+  
+  -- Draw canvas scaled down by supersamplingFactor so when global transform scales it up,
+  -- it ends up at the correct size (1/supersamplingFactor * supersamplingFactor = 1)
+  love.graphics.draw(self._tiltShiftWorldCanvas, 0, 0, 0, 
+    1 / supersamplingFactor, 1 / supersamplingFactor)
+  love.graphics.setShader()
+
+  return true
+end
+
+function MapRenderer:_renderWorldToCanvas(scene, vw, vh, supersamplingFactor)
+  -- Save current transform state
+  love.graphics.push("all")
+  love.graphics.setCanvas(self._tiltShiftWorldCanvas)
+  love.graphics.clear(theme.colors.background)
+  
+  -- Reset transform - canvas rendering is independent of global transform
+  love.graphics.origin()
+  
+  -- Apply supersampling scale so world renders at full resolution in the canvas
+  love.graphics.scale(supersamplingFactor, supersamplingFactor)
+  
+  -- Draw world layer - coordinates are in virtual space, scale handles upscaling
+  self:_drawWorldLayer(scene, vw, vh)
+  love.graphics.pop()
+end
+
+function MapRenderer:_renderBlurredCanvas()
+  if not (self._tiltShiftEffect and self._tiltShiftBlurCanvas and self._tiltShiftWorldCanvas) then
+    return
+  end
+
+  love.graphics.push("all")
+  love.graphics.setCanvas(self._tiltShiftBlurCanvas)
+  love.graphics.clear(0, 0, 0, 0)
+  
+  -- Reset transform to identity for blur effect
+  love.graphics.origin()
+  
+  -- Apply blur effect via Moonshine chain
+  self._tiltShiftEffect(function()
+    love.graphics.setColor(1, 1, 1, 1)
+    -- Draw the sharp canvas - Moonshine will blur it
+    love.graphics.draw(self._tiltShiftWorldCanvas, 0, 0)
+  end)
+  love.graphics.pop()
+end
+
+function MapRenderer:_drawOverlays(scene, vw, vh)
+  -- Draw darkening overlay when player runs out of turns (using tweened alpha)
+  local darkeningConfig = config.map.noTurnsDarkening
+  if darkeningConfig and darkeningConfig.enabled and scene._darkeningAlpha and scene._darkeningAlpha > 0 then
+    local color = darkeningConfig.color or {0, 0, 0}
+    love.graphics.setColor(color[1], color[2], color[3], scene._darkeningAlpha)
+    love.graphics.rectangle("fill", 0, 0, vw, vh)
+  end
+
+  -- Draw day indicator overlay and text (same style as turn indicators)
+  if scene.dayIndicator then
+    local lifetime = 1.0
+    local t = scene.dayIndicator.t / lifetime -- 1 -> 0
+    local fadeStart = 0.4 -- Start fading at 40% of lifetime
+    local alpha = 1.0
+    if t < fadeStart then
+      alpha = t / fadeStart
+    end
+
+    love.graphics.setColor(0, 0, 0, 0.6 * alpha)
+    love.graphics.rectangle("fill", 0, 0, vw, vh)
+    love.graphics.setColor(1, 1, 1, 1)
+
+    local scale = 1.0
+    if t > 0.7 then
+      local popT = (1.0 - t) / 0.3 -- 0 -> 1
+      local c1, c3 = 1.70158, 2.70158
+      local u = (popT - 1)
+      scale = 1 + c3 * (u * u * u) + c1 * (u * u)
+    end
+
+    love.graphics.push()
+    love.graphics.setFont(theme.fonts.jackpot or theme.fonts.large)
+    local text = scene.dayIndicator.text
+    local font = theme.fonts.jackpot or theme.fonts.large
+    local textW = font:getWidth(text)
+    local centerX = vw * 0.5
+    local centerY = vh * 0.5 - 50 -- Shifted up by 50px
+
+    local baseDecorSpacing = 40
+    local startDecorSpacing = 6
+    local baseDecorScale = 0.7
+    local decorExpandDuration = 0.35
+    local decorProgress = math.min(1, math.max(0, (1 - t) / decorExpandDuration))
+    local decorEase = 1 - (1 - decorProgress) * (1 - decorProgress) * (1 - decorProgress)
+    local decorSpacing = startDecorSpacing + (baseDecorSpacing - startDecorSpacing) * decorEase
+    local decorScale = baseDecorScale * (0.5 + 0.5 * decorEase)
+
+    love.graphics.push()
+    love.graphics.translate(centerX, centerY)
+    love.graphics.scale(scale, scale)
+
+    if scene.decorImage then
+      local decorW = scene.decorImage:getWidth()
+      local decorH = scene.decorImage:getHeight()
+      local scaledW = decorW * decorScale
+      local scaledH = decorH * decorScale
+
+      local leftCenterX = -textW * 0.5 - decorSpacing - scaledW * 0.5
+      local rightCenterX = textW * 0.5 + decorSpacing + scaledW * 0.5
+
+      love.graphics.setColor(1, 1, 1, alpha)
+
+      love.graphics.push()
+      love.graphics.translate(leftCenterX, 0)
+      love.graphics.scale(decorScale, decorScale)
+      love.graphics.draw(scene.decorImage, -decorW * 0.5, -decorH * 0.5)
+      love.graphics.pop()
+
+      love.graphics.push()
+      love.graphics.translate(rightCenterX, 0)
+      love.graphics.scale(-decorScale, decorScale)
+      love.graphics.draw(scene.decorImage, -decorW * 0.5, -decorH * 0.5)
+      love.graphics.pop()
+    end
+
+    love.graphics.setColor(1, 1, 1, alpha)
+    love.graphics.print(text, -textW * 0.5, -font:getHeight() * 0.5)
+    love.graphics.pop()
+
+    love.graphics.setFont(theme.fonts.base)
+    love.graphics.pop()
+  end
+
+  self:drawUI(scene)
+  if scene.topBar then
+    scene.topBar:draw()
+  end
+
+  if scene.drawUI then
+    scene:drawUI()
+  end
+end
+
+function MapRenderer:_drawWorldLayer(scene, vw, vh)
   love.graphics.push()
   love.graphics.translate(-scene.cameraX + vw * 0.5, -scene.cameraY + vh * 0.5)
 
@@ -383,112 +708,6 @@ function MapRenderer:draw(scene)
   end
 
   love.graphics.pop()
-
-  -- Draw darkening overlay when player runs out of turns (using tweened alpha)
-  local darkeningConfig = config.map.noTurnsDarkening
-  if darkeningConfig and darkeningConfig.enabled and scene._darkeningAlpha and scene._darkeningAlpha > 0 then
-    local vw = config.video.virtualWidth
-    local vh = config.video.virtualHeight
-    local color = darkeningConfig.color or {0, 0, 0}
-    love.graphics.setColor(color[1], color[2], color[3], scene._darkeningAlpha)
-    love.graphics.rectangle("fill", 0, 0, vw, vh)
-  end
-
-  -- Draw day indicator overlay and text (same style as turn indicators)
-  if scene.dayIndicator then
-    local vw = config.video.virtualWidth
-    local vh = config.video.virtualHeight
-    local lifetime = 1.0
-    local t = scene.dayIndicator.t / lifetime -- 1 -> 0
-    local fadeStart = 0.4 -- Start fading at 40% of lifetime
-    local alpha = 1.0
-    if t < fadeStart then
-      -- Fade out
-      alpha = t / fadeStart
-    end
-    
-    -- Draw black overlay (0.6 alpha)
-    love.graphics.setColor(0, 0, 0, 0.6 * alpha)
-    love.graphics.rectangle("fill", 0, 0, vw, vh)
-    love.graphics.setColor(1, 1, 1, 1)
-    
-    -- Pop-in scale animation (easeOutBack)
-    local scale = 1.0
-    if t > 0.7 then
-      local popT = (1.0 - t) / 0.3 -- 0 -> 1
-      local c1, c3 = 1.70158, 2.70158
-      local u = (popT - 1)
-      scale = 1 + c3 * (u * u * u) + c1 * (u * u)
-    end
-    
-    love.graphics.push()
-    love.graphics.setFont(theme.fonts.jackpot or theme.fonts.large)
-    local text = scene.dayIndicator.text
-    local font = theme.fonts.jackpot or theme.fonts.large
-    local textW = font:getWidth(text)
-    local centerX = vw * 0.5
-    local centerY = vh * 0.5 - 50 -- Shifted up by 50px
-    
-    -- Spacing + scale between decorative images and text (animated ease-out)
-    local baseDecorSpacing = 40
-    local startDecorSpacing = 6
-    local baseDecorScale = 0.7
-    local decorExpandDuration = 0.35
-    local decorProgress = math.min(1, math.max(0, (1 - t) / decorExpandDuration))
-    local decorEase = 1 - (1 - decorProgress) * (1 - decorProgress) * (1 - decorProgress)
-    local decorSpacing = startDecorSpacing + (baseDecorSpacing - startDecorSpacing) * decorEase
-    local decorScale = baseDecorScale * (0.5 + 0.5 * decorEase)
-    
-    love.graphics.push()
-    love.graphics.translate(centerX, centerY)
-    love.graphics.scale(scale, scale)
-    
-    -- Draw decorative images on both sides of text
-    if scene.decorImage then
-      local decorW = scene.decorImage:getWidth()
-      local decorH = scene.decorImage:getHeight()
-      local scaledW = decorW * decorScale
-      local scaledH = decorH * decorScale
-      
-      -- Calculate center positions for both images
-      local leftCenterX = -textW * 0.5 - decorSpacing - scaledW * 0.5
-      local rightCenterX = textW * 0.5 + decorSpacing + scaledW * 0.5
-      
-      love.graphics.setColor(1, 1, 1, alpha)
-      
-      -- Draw left decorative image (normal, scaled with center pivot)
-      love.graphics.push()
-      love.graphics.translate(leftCenterX, 0)
-      love.graphics.scale(decorScale, decorScale)
-      love.graphics.draw(scene.decorImage, -decorW * 0.5, -decorH * 0.5)
-      love.graphics.pop()
-      
-      -- Draw right decorative image (flipped horizontally, scaled with center pivot)
-      love.graphics.push()
-      love.graphics.translate(rightCenterX, 0)
-      love.graphics.scale(-decorScale, decorScale) -- Flip horizontally and scale
-      love.graphics.draw(scene.decorImage, -decorW * 0.5, -decorH * 0.5)
-      love.graphics.pop()
-    end
-    
-    -- Draw text (no outline)
-    love.graphics.setColor(1, 1, 1, alpha)
-    love.graphics.print(text, -textW * 0.5, -font:getHeight() * 0.5)
-    love.graphics.pop()
-    
-    love.graphics.setFont(theme.fonts.base)
-    love.graphics.pop()
-  end
-
-  self:drawUI(scene)
-  if scene.topBar then
-    scene.topBar:draw()
-  end
-  
-  -- Call scene's drawUI method if it exists (for UI overlays like orbs)
-  if scene.drawUI then
-    scene:drawUI()
-  end
 end
 
 function MapRenderer:drawUI(scene)
