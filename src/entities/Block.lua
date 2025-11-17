@@ -1,5 +1,6 @@
 local theme = require("theme")
 local config = require("config")
+local ShaderCache = require("utils.ShaderCache")
 local IridescentShader = require("utils.IridescentShader")
 local MultiplierFlameShader = require("utils.MultiplierFlameShader")
 local SheenShader = require("utils.SheenShader")
@@ -69,39 +70,44 @@ do
   end
 end
 
--- Shader to convert icon to pure black and remove shadows
-local shadowRemovalShader = nil
-do
-  local shaderCode = [[
-    vec4 effect(vec4 color, Image texture, vec2 texture_coords, vec2 screen_coords) {
-      vec4 texcolor = Texel(texture, texture_coords);
-      // Convert to grayscale and soft-threshold to retain highlight edges with AA
-      float gray = dot(texcolor.rgb, vec3(0.299, 0.587, 0.114));
-      float threshold = 0.3;
-      float width = 0.15; // smoothing width around threshold for anti-aliased edge
-      float mask = smoothstep(threshold - width, threshold + width, gray);
-      // Output pure black with softened alpha from mask and source alpha
-      return vec4(0.0, 0.0, 0.0, mask * texcolor.a * color.a);
-    }
-  ]]
-  local ok, shader = pcall(love.graphics.newShader, shaderCode)
-  if ok then shadowRemovalShader = shader end
+local SHADOW_REMOVAL_SOURCE = [[
+  vec4 effect(vec4 color, Image texture, vec2 texture_coords, vec2 screen_coords) {
+    vec4 texcolor = Texel(texture, texture_coords);
+    float gray = dot(texcolor.rgb, vec3(0.299, 0.587, 0.114));
+    float threshold = 0.3;
+    float width = 0.15;
+    float mask = smoothstep(threshold - width, threshold + width, gray);
+    return vec4(0.0, 0.0, 0.0, mask * texcolor.a * color.a);
+  }
+]]
+
+local DESATURATE_SOURCE = [[
+  vec4 effect(vec4 color, Image texture, vec2 texture_coords, vec2 screen_coords) {
+    vec4 texcolor = Texel(texture, texture_coords) * color;
+    float gray = dot(texcolor.rgb, vec3(0.299, 0.587, 0.114));
+    return vec4(gray, gray, gray, texcolor.a);
+  }
+]]
+
+local shadowRemovalWarningPrinted = false
+local desaturateWarningPrinted = false
+
+local function getShadowRemovalShader()
+  local shader, err = ShaderCache.get("block_shadow_removal", SHADOW_REMOVAL_SOURCE)
+  if not shader and err and not shadowRemovalWarningPrinted then
+    print("[Block] Failed to compile shadow removal shader:", err)
+    shadowRemovalWarningPrinted = true
+  end
+  return shader
 end
 
--- Shader to desaturate blocks (for calcify effect)
-local desaturateShader = nil
-do
-  local shaderCode = [[
-    vec4 effect(vec4 color, Image texture, vec2 texture_coords, vec2 screen_coords) {
-      vec4 texcolor = Texel(texture, texture_coords) * color;
-      // Convert to grayscale using standard RGB weights
-      float gray = dot(texcolor.rgb, vec3(0.299, 0.587, 0.114));
-      // Output grayscale with original alpha
-      return vec4(gray, gray, gray, texcolor.a);
-    }
-  ]]
-  local ok, shader = pcall(love.graphics.newShader, shaderCode)
-  if ok then desaturateShader = shader end
+local function getDesaturateShader()
+  local shader, err = ShaderCache.get("block_desaturate", DESATURATE_SOURCE)
+  if not shader and err and not desaturateWarningPrinted then
+    print("[Block] Failed to compile desaturate shader:", err)
+    desaturateWarningPrinted = true
+  end
+  return shader
 end
 
 local Block = {}
@@ -386,6 +392,7 @@ function Block:draw()
     local prevBlendMode = love.graphics.getBlendMode()
     
     if self.calcified then
+      local desaturateShader = getDesaturateShader()
       -- For calcified blocks: draw full grayscale desaturation, then white tint
       -- Skip normal colored draw - go straight to desaturated version
       local prevCalcifyShader = love.graphics.getShader()
@@ -687,6 +694,7 @@ function Block:draw()
     love.graphics.push("all")
     love.graphics.setBlendMode("alpha")
     love.graphics.setColor(1, 1, 1, alpha * 0.5)
+    local shadowRemovalShader = getShadowRemovalShader()
     if shadowRemovalShader then
       love.graphics.setShader(shadowRemovalShader)
     else
