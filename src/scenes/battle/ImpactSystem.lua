@@ -105,6 +105,23 @@ function ImpactSystem.create(scene, impactData)
   -- baseImage is the impact_1.png sprite sheet image (not the orb sprite)
   local baseImage = scene.impactAnimation and scene.impactAnimation.image
   local baseQuads = scene.impactAnimation and scene.impactAnimation.quads
+  
+  -- Load impact_2.png for twin_strike (if needed)
+  local twinStrikeImage = nil
+  local twinStrikeQuads = nil
+  if projectileId == "twin_strike" then
+    local twinStrikePath = "assets/images/fx/impact_2.png"
+    local twinStrikeAnim = SpriteAnimation.new(twinStrikePath, 512, 512, 4, 4, fps)
+    if twinStrikeAnim and twinStrikeAnim.image then
+      twinStrikeImage = twinStrikeAnim.image
+      twinStrikeQuads = twinStrikeAnim.quads
+    end
+    -- Fallback to base image if twin strike image failed to load
+    if not twinStrikeImage then
+      twinStrikeImage = baseImage
+      twinStrikeQuads = baseQuads
+    end
+  end
 
   scene.impactInstances = scene.impactInstances or {}
   scene.enemyFlashEvents = scene.enemyFlashEvents or {}
@@ -202,9 +219,13 @@ function ImpactSystem.create(scene, impactData)
       })
     else
       -- Regular impact: animation with rotation
+      -- Use impact_2.png for twin_strike, impact_1.png for others
+      local impactImage = (projectileId == "twin_strike" and twinStrikeImage) or baseImage
+      local impactQuads = (projectileId == "twin_strike" and twinStrikeQuads) or baseQuads
+      
       local anim = {
-        image = baseImage,
-        quads = baseQuads,
+        image = impactImage,
+        quads = impactQuads,
         frameW = 512,
         frameH = 512,
         fps = fps,
