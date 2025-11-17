@@ -152,8 +152,32 @@ function ImpactSystem.create(scene, impactData)
       local endX = hitX + enemySpriteWidth * 0.5 + 100 -- End 100px to the right of enemy
       local pierceDuration = 0.3 -- Duration for pierce animation
       
-      -- Use 9th quad from impact_1.png sprite sheet (9th frame of impact animation)
-      local ninthQuad = baseQuads and baseQuads[9] or nil
+      -- Load impact_1a.png for pierce (yellowish-green impact sprite)
+      local pierceImagePath = "assets/images/fx/impact_1a.png"
+      local pierceImage = nil
+      local ok, img = pcall(love.graphics.newImage, pierceImagePath)
+      if ok then pierceImage = img end
+      
+      -- If impact_1a.png is a sprite sheet (512x512 frames), use 9th quad like impact_1.png
+      -- Otherwise use the whole image
+      local pierceQuad = nil
+      if pierceImage then
+        local imgW, imgH = pierceImage:getWidth(), pierceImage:getHeight()
+        -- Check if it's a sprite sheet (multiple frames)
+        if imgW >= 2048 and imgH >= 2048 then
+          -- It's a sprite sheet, use 9th quad (3rd row, 1st column, 0-indexed: row 2, col 0 = index 8)
+          local frameW, frameH = 512, 512
+          local col = 0 -- 9th frame is in column 0 (0-indexed)
+          local row = 2 -- 9th frame is in row 2 (0-indexed, frames 1-4 row 0, 5-8 row 1, 9-12 row 2)
+          pierceQuad = love.graphics.newQuad(col * frameW, row * frameH, frameW, frameH, imgW, imgH)
+        end
+      end
+      
+      -- Fallback to base image if pierce image failed to load
+      if not pierceImage then
+        pierceImage = baseImage
+        pierceQuad = baseQuads and baseQuads[9] or nil
+      end
       
       -- Random scale variation: base 1.5x with +/- 20% variation
       local baseScale = 2.0
@@ -162,8 +186,8 @@ function ImpactSystem.create(scene, impactData)
       
       table.insert(scene.impactInstances, {
         isPierce = true,
-        image = baseImage, -- Use impact_1.png sprite sheet image (not orb sprite)
-        quad = ninthQuad, -- Use 9th frame quad from impact sprite sheet
+        image = pierceImage, -- Use impact_1a.png for pierce
+        quad = pierceQuad, -- Use quad if sprite sheet, nil if single image
         x = startX,
         y = hitY,
         startX = startX,
@@ -1006,12 +1030,13 @@ function ImpactSystem.draw(scene)
       
       if instance.isPierce then
         -- Draw pierce impact: single image, no rotation, horizontal movement
+        -- Uses impact_1a.png (no color tint needed)
         if instance.image then
-          local frameW = 512 -- Frame width from sprite sheet
-          local frameH = 512 -- Frame height from sprite sheet
           local quad = instance.quad
           if quad then
-            -- Draw using quad (9th frame from sprite sheet) with scale variation
+            -- Draw using quad (from sprite sheet) with scale variation
+            local frameW = 512 -- Frame width from sprite sheet
+            local frameH = 512 -- Frame height from sprite sheet
             love.graphics.draw(
               instance.image,
               quad,
@@ -1024,7 +1049,7 @@ function ImpactSystem.draw(scene)
               frameH * 0.5
             )
           else
-            -- Fallback: draw whole image if no quad available
+            -- Draw whole image if no quad available (single image file)
             local imgW = instance.image:getWidth()
             local imgH = instance.image:getHeight()
             love.graphics.draw(
