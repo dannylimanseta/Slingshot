@@ -3,6 +3,7 @@ local theme = require("theme")
 local relics = require("data.relics")
 local PlayerState = require("core.PlayerState")
 local RelicSystem = require("core.RelicSystem")
+local NotificationTooltip = require("ui.NotificationTooltip")
 
 local RelicSelectScene = {}
 RelicSelectScene.__index = RelicSelectScene
@@ -34,6 +35,7 @@ function RelicSelectScene.new()
       rowSpacing = 4,
       listPadding = 16,
     },
+    notificationTooltip = NotificationTooltip.new(),
   }, RelicSelectScene)
 end
 
@@ -46,6 +48,9 @@ function RelicSelectScene:load()
 end
 
 function RelicSelectScene:update(dt)
+  -- Update notification tooltip
+  self.notificationTooltip:update(dt)
+  
   local diff = self.scroll.target - self.scroll.y
   if math.abs(diff) > 0.25 then
     local smoothing = self.scroll.smoothing or 12
@@ -89,6 +94,9 @@ function RelicSelectScene:draw()
 
   self:_drawRelicList(listX, listY, listW, listH)
   self:_drawScrollBar(listX + listW + 12, listY, listH)
+  
+  -- Draw notification tooltip (on top of everything)
+  self.notificationTooltip:draw(1.0)
 end
 
 function RelicSelectScene:keypressed(key, scancode, isRepeat)
@@ -261,26 +269,73 @@ function RelicSelectScene:_toggleSelectedRelic()
   local player = PlayerState.getInstance()
   if not player then return end
 
-  if player:hasRelic(entry.id) then
+  local relicDef = relics.get(entry.id)
+  local wasEquipped = player:hasRelic(entry.id)
+  
+  if wasEquipped then
     player:removeRelic(entry.id)
+    -- Show notification for removal
+    if relicDef then
+      self.notificationTooltip:setStackIndex(0)
+      self.notificationTooltip:show({
+        name = relicDef.name,
+        description = "Removed",
+        icon = relicDef.icon
+      })
+    end
   else
     player:addRelic(entry.id)
+    -- Show notification for addition
+    if relicDef then
+      self.notificationTooltip:setStackIndex(0)
+      self.notificationTooltip:show({
+        name = relicDef.name,
+        description = relicDef.description,
+        icon = relicDef.icon
+      })
+    end
   end
 end
 
 function RelicSelectScene:_equipAll()
   local player = PlayerState.getInstance()
   if not player then return end
+  local count = 0
   for _, entry in ipairs(self.entries) do
-    player:addRelic(entry.id)
+    if not player:hasRelic(entry.id) then
+      player:addRelic(entry.id)
+      count = count + 1
+    end
+  end
+  -- Show notification for equip all
+  if count > 0 then
+    self.notificationTooltip:setStackIndex(0)
+    self.notificationTooltip:show({
+      name = "All Relics Equipped",
+      description = string.format("Equipped %d relic%s", count, count == 1 and "" or "s"),
+      icon = nil
+    })
   end
 end
 
 function RelicSelectScene:_clearAll()
   local player = PlayerState.getInstance()
   if not player then return end
+  local count = 0
   for _, entry in ipairs(self.entries) do
-    player:removeRelic(entry.id)
+    if player:hasRelic(entry.id) then
+      player:removeRelic(entry.id)
+      count = count + 1
+    end
+  end
+  -- Show notification for clear all
+  if count > 0 then
+    self.notificationTooltip:setStackIndex(0)
+    self.notificationTooltip:show({
+      name = "All Relics Removed",
+      description = string.format("Removed %d relic%s", count, count == 1 and "" or "s"),
+      icon = nil
+    })
   end
 end
 

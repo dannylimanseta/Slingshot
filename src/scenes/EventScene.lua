@@ -355,9 +355,50 @@ function EventScene:_applyChoiceEffects(effects)
           upgradable[i], upgradable[j] = upgradable[j], upgradable[i]
         end
         
-        -- Upgrade selected orbs
+        -- Upgrade selected orbs and show notifications
+        local upgradedOrbs = {}
         for i = 1, numToUpgrade do
-          ProjectileManager.upgradeLevel(upgradable[i])
+          local orbId = upgradable[i]
+          local projectileData = ProjectileManager.getProjectile(orbId)
+          if projectileData then
+            -- Get level before upgrade
+            local oldLevel = (projectileData.level or 1)
+            ProjectileManager.upgradeLevel(orbId)
+            -- Get level after upgrade
+            local newLevel = (projectileData.level or 1)
+            table.insert(upgradedOrbs, {
+              name = projectileData.name,
+              level = newLevel,
+              icon = projectileData.icon
+            })
+          else
+            -- Fallback: upgrade without notification if projectile data not found
+            ProjectileManager.upgradeLevel(orbId)
+          end
+        end
+        
+        -- Show notification(s) for upgraded orbs
+        if #upgradedOrbs > 0 then
+          -- Account for relic tooltip if it's showing
+          local stackIndex = self._relicTooltip:isActive() and 1 or 0
+          self._orbTooltip:setStackIndex(stackIndex)
+          
+          if #upgradedOrbs == 1 then
+            -- Single orb: show detailed notification
+            local orb = upgradedOrbs[1]
+            self._orbTooltip:show({
+              name = orb.name,
+              description = string.format("Upgraded to Level %d", orb.level),
+              icon = orb.icon
+            })
+          else
+            -- Multiple orbs: show summary notification
+            self._orbTooltip:show({
+              name = string.format("%d Orbs Upgraded", #upgradedOrbs),
+              description = "Random orbs have been upgraded",
+              icon = upgradedOrbs[1].icon -- Use first orb's icon
+            })
+          end
         end
       end
     end
@@ -687,7 +728,10 @@ function EventScene:_drawWheelResultBox(fadeAlpha)
   love.graphics.setColor(0, 0, 0, 0.55 * fadeAlpha)
   love.graphics.rectangle("fill", box.x, box.y, box.w, box.h, 18, 18)
   love.graphics.setColor(1, 1, 1, 0.08 * fadeAlpha)
+  local oldLW = love.graphics.getLineWidth()
+  love.graphics.setLineWidth(1)
   love.graphics.rectangle("line", box.x, box.y, box.w, box.h, 18, 18)
+  love.graphics.setLineWidth(oldLW or 1)
   
   local inset = 20
   local iconSize = 72
