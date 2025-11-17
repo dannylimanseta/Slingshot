@@ -61,6 +61,32 @@ function EventScene.new(eventId)
     _orbTooltipHoldDuration = 0.5, -- Hold duration (stays in place)
     _orbTooltipFadeOutDuration = 0.2, -- Fade out duration (also moves up)
     _orbTooltipMoveDistance = 80, -- Distance to move up during animation
+    -- Wheel event state
+    _isWheelEvent = false,
+    _wheelSegments = nil,
+    _wheelAngle = 0,
+    _wheelAnglePerSegment = 0,
+    _wheelBaseStart = -math.pi * 0.5,
+    _wheelPointerAngle = -math.pi * 0.5,
+    _wheelSpinning = false,
+    _wheelSpinStartAngle = 0,
+    _wheelSpinTargetAngle = 0,
+    _wheelSpinTimer = 0,
+    _wheelSpinDuration = 0,
+    _wheelHasSpun = false,
+    _wheelPendingResult = nil,
+    _wheelResult = nil,
+    _wheelResultMeta = nil,
+    _wheelResultBox = nil,
+    _wheelResultBoxHeight = 130,
+    _wheelCenterX = 0,
+    _wheelCenterY = 0,
+    _wheelRadius = 0,
+    _wheelStatusText = nil,
+    _wheelContinueButton = nil,
+    _wheelClickPulse = 0,
+    _wheelHeaderFont = theme.newFont and theme.newFont(28) or theme.fonts.base,
+    _wheelBodyFont = theme.newFont and theme.newFont(18, "assets/fonts/BarlowCondensed-Regular.ttf") or theme.fonts.small,
   }, EventScene)
 end
 
@@ -152,8 +178,18 @@ function EventScene:load()
   local playerState = PlayerState.getInstance()
   local playerGold = playerState:getGold()
   
+  -- Determine if this event uses the wheel UI
+  self._isWheelEvent = self.event and self.event.wheelSegments and #self.event.wheelSegments > 0
+  
   -- Create choice buttons (styled like reward buttons)
   self.choiceButtons = {}
+  if self._isWheelEvent then
+    self:_initializeWheelEvent()
+    if self._isWheelEvent then
+      return
+    end
+  end
+  
   for i, choice in ipairs(self.event.choices or {}) do
     -- Check if choice requires gold and player doesn't have enough
     local requiresGold = choice.effects and choice.effects.gold and choice.effects.gold < 0
@@ -245,11 +281,14 @@ end
 
 function EventScene:_applyChoiceEffects(effects)
   local playerState = PlayerState.getInstance()
+  local metadata = {}
   
   if effects.hp then
     local currentHP = playerState:getHealth()
-    local newHP = math.max(0, math.min(currentHP + effects.hp, playerState:getMaxHealth()))
+    local maxHP = playerState:getMaxHealth()
+    local newHP = math.max(0, math.min(currentHP + effects.hp, maxHP))
     playerState:setHealth(newHP)
+    metadata.hpDelta = (metadata.hpDelta or 0) + (newHP - currentHP)
   end
   
   -- Percentage-based HP damage/healing
@@ -259,6 +298,7 @@ function EventScene:_applyChoiceEffects(effects)
     local currentHP = playerState:getHealth()
     local newHP = math.max(0, math.min(currentHP + hpChange, playerState:getMaxHealth()))
     playerState:setHealth(newHP)
+    metadata.hpDelta = (metadata.hpDelta or 0) + (newHP - currentHP)
   end
   
   -- Increase max HP
@@ -266,14 +306,25 @@ function EventScene:_applyChoiceEffects(effects)
     local currentMaxHP = playerState:getMaxHealth()
     local newMaxHP = currentMaxHP + effects.maxHp
     playerState:setMaxHealth(newMaxHP)
-    -- Also heal by the same amount (common pattern in roguelikes)
     local currentHP = playerState:getHealth()
-    local newHP = currentHP + effects.maxHp
+    local newHP = math.min(newMaxHP, currentHP + effects.maxHp)
     playerState:setHealth(newHP)
+    metadata.maxHpDelta = effects.maxHp
+    metadata.hpDelta = (metadata.hpDelta or 0) + (newHP - currentHP)
+  end
+  
+  if effects.healFull then
+    local currentHP = playerState:getHealth()
+    local maxHP = playerState:getMaxHealth()
+    playerState:setHealth(maxHP)
+    metadata.healToFull = true
+    metadata.healedAmount = math.max(0, maxHP - currentHP)
+    metadata.hpDelta = (metadata.hpDelta or 0) + (maxHP - currentHP)
   end
   
   if effects.gold then
     playerState:addGold(effects.gold)
+    metadata.goldDelta = (metadata.goldDelta or 0) + effects.gold
   end
   
   -- Grant relic
@@ -281,6 +332,7 @@ function EventScene:_applyChoiceEffects(effects)
     local relicDef = pickRelicReward()
     if relicDef then
       playerState:addRelic(relicDef.id)
+      metadata.grantedRelic = relicDef
       -- Show relic notification tooltip
       self._relicTooltip = relicDef
       self._relicTooltipTime = 0
@@ -323,6 +375,7 @@ function EventScene:_applyChoiceEffects(effects)
     if #equipped > 0 then
       local newOrbId = ProjectileManager.transformRandomOrb()
       if newOrbId then
+        metadata.transformedOrbId = newOrbId
         -- Get projectile data for tooltip
         local projectileData = ProjectileManager.getProjectile(newOrbId)
         if projectileData then
@@ -334,12 +387,392 @@ function EventScene:_applyChoiceEffects(effects)
     end
   end
   
+  if effects.removeRandomOrb then
+    local equipped = (config.player and config.player.equippedProjectiles) or {}
+    if equipped and #equipped > 0 then
+      local index = love.math.random(#equipped)
+      local removedId = equipped[index]
+      local removedData = ProjectileManager.getProjectile(removedId)
+      ProjectileManager.removeFromEquipped(removedId)
+      metadata.removedOrbId = removedId
+      metadata.removedOrbName = removedData and removedData.name or removedId
+    else
+      metadata.removeFailed = true
+    end
+  end
+  
   -- Set next encounter enemies to 1 HP
   if effects.nextEncounterEnemies1HP == true then
     playerState:setNextEncounterEnemies1HP(true)
   end
   
-  -- Add more effect types here as needed
+  return metadata
+end
+
+function EventScene:_initializeWheelEvent()
+  self._wheelSegments = {}
+  local segments = (self.event and self.event.wheelSegments) or {}
+  if #segments == 0 then
+    self._isWheelEvent = false
+    return
+  end
+  
+  local tau = math.pi * 2
+  self._wheelAngle = love.math.random() * tau
+  self._wheelSpinTimer = 0
+  self._wheelSpinDuration = 0
+  self._wheelAnglePerSegment = (math.pi * 2) / #segments
+  self._wheelBaseStart = -math.pi * 0.5 - self._wheelAnglePerSegment * 0.5
+  self._wheelPointerAngle = -math.pi * 0.5
+  self._wheelHasSpun = false
+  self._wheelSpinning = false
+  self._wheelPendingResult = nil
+  self._wheelResult = nil
+  self._wheelResultMeta = nil
+  self._wheelStatusText = "Select the button to spin."
+  
+  for _, def in ipairs(segments) do
+    local seg = {
+      id = def.id or ("segment_" .. tostring(#self._wheelSegments + 1)),
+      label = def.label or "Mystery",
+      description = def.description or "",
+      effects = def.effects or {},
+      color = def.color or { 0.6, 0.6, 0.6, 1.0 },
+      iconImage = nil,
+    }
+    if def.icon then
+      local ok, img = pcall(love.graphics.newImage, def.icon)
+      if ok then
+        seg.iconImage = img
+      end
+    end
+    table.insert(self._wheelSegments, seg)
+  end
+  
+  -- Replace default choices with a single button (spin/continue)
+  local continueButton = Button.new({
+    label = "Spin the wheel",
+    font = self.textFont,
+    bgColor = { 0, 0, 0, 0.7 },
+    align = "left",
+    onClick = function()
+      if self._choiceMade then return end
+      if self._wheelSpinning then return end
+      if not self._wheelResult then
+        if not self._wheelHasSpun then
+          self:_startWheelSpin()
+        end
+        return
+      end
+      self._choiceMade = true
+      self._exitRequested = true
+    end,
+  })
+  continueButton._scale = 1.0
+  continueButton._disabled = false
+  table.insert(self.choiceButtons, continueButton)
+  self._wheelContinueButton = continueButton
+end
+
+function EventScene:_updateWheelLayout(leftPanelWidth, contentY, contentHeight)
+  if not self._isWheelEvent then return end
+  local centerX = leftPanelWidth * 0.5 + 50
+  local centerY = contentY + contentHeight * 0.5
+  local radius = math.min(leftPanelWidth * 0.45, contentHeight * 0.45)
+  self._wheelCenterX = centerX
+  self._wheelCenterY = centerY
+  self._wheelRadius = radius
+end
+
+function EventScene:_ensureWheelLayout()
+  local vw = config.video.virtualWidth
+  local vh = config.video.virtualHeight
+  local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
+  local leftPanelWidth = vw * 0.35
+  local contentY = topBarHeight
+  local contentHeight = vh - topBarHeight
+  self:_updateWheelLayout(leftPanelWidth, contentY, contentHeight)
+end
+
+function EventScene:_updateWheel(dt)
+  self._wheelClickPulse = (self._wheelClickPulse or 0) + dt
+  if not self._wheelSpinning then
+    return
+  end
+  local duration = (self._wheelSpinDuration and self._wheelSpinDuration > 0) and self._wheelSpinDuration or 1
+  self._wheelSpinTimer = self._wheelSpinTimer + dt
+  local progress = math.min(1, self._wheelSpinTimer / duration)
+  local eased = 1 - math.pow(1 - progress, 3)
+  self._wheelAngle = self._wheelSpinStartAngle + (self._wheelSpinTargetAngle - self._wheelSpinStartAngle) * eased
+  if progress >= 1 then
+    self._wheelSpinning = false
+    local tau = math.pi * 2
+    self._wheelAngle = (self._wheelAngle % tau + tau) % tau
+    self:_completeWheelSpin()
+  end
+end
+
+function EventScene:_startWheelSpin()
+  if not self._isWheelEvent then return end
+  if self._wheelSpinning or self._wheelHasSpun then return end
+  if not self._wheelSegments or #self._wheelSegments == 0 then return end
+  
+  self._wheelSpinning = true
+  self._wheelHasSpun = true
+  self._wheelSpinTimer = 0
+  self._wheelSpinDuration = 4 + love.math.random() * 0.8
+  self._wheelSpinStartAngle = self._wheelAngle
+  
+  local targetIndex = love.math.random(#self._wheelSegments)
+  self._wheelPendingResult = self._wheelSegments[targetIndex]
+  
+  local tau = math.pi * 2
+  local rotations = 3 + love.math.random(0, 2)
+  local afterSpins = self._wheelSpinStartAngle + rotations * tau
+  local baseAlignment = self._wheelPointerAngle - (self._wheelBaseStart + (targetIndex - 0.5) * self._wheelAnglePerSegment)
+  local delta = (baseAlignment - afterSpins) % tau
+  self._wheelSpinTargetAngle = afterSpins + delta
+  
+  self._wheelStatusText = "Spinning..."
+  if self._wheelContinueButton then
+    self._wheelContinueButton.label = "Spinning..."
+    self._wheelContinueButton._disabled = true
+  end
+end
+
+function EventScene:_completeWheelSpin()
+  local result = self._wheelPendingResult or self:_determineWheelResultFromAngle()
+  self._wheelPendingResult = nil
+  if not result then
+    self._wheelStatusText = "The wheel jammed. Try again."
+    self._wheelHasSpun = false
+    return
+  end
+  
+  self._wheelResult = result
+  self._wheelStatusText = "The masks have chosen."
+  local effects = result.effects or {}
+  local metadata = {}
+  
+  if effects.gold and effects.gold > 0 then
+    local ps = PlayerState.getInstance()
+    self._goldDisplayStart = ps:getGold()
+    self._goldAmount = effects.gold
+    self._goldDisplayTarget = self._goldDisplayStart + self._goldAmount
+    self._goldAnimationStarted = true
+    if self.topBar then
+      self.topBar.overrideGold = self._goldDisplayStart
+    end
+    local otherEffects = {}
+    for k, v in pairs(effects) do
+      if k ~= "gold" then
+        otherEffects[k] = v
+      end
+    end
+    if next(otherEffects) then
+      metadata = self:_applyChoiceEffects(otherEffects) or {}
+    end
+  else
+    metadata = self:_applyChoiceEffects(effects) or {}
+  end
+  
+  self._wheelResultMeta = metadata
+  if self._wheelContinueButton then
+    self._wheelContinueButton.label = "Continue"
+    self._wheelContinueButton._disabled = false
+  end
+end
+
+function EventScene:_determineWheelResultFromAngle()
+  if not self._wheelSegments or #self._wheelSegments == 0 then
+    return nil
+  end
+  local tau = math.pi * 2
+  local relative = (self._wheelPointerAngle - (self._wheelBaseStart + self._wheelAngle)) % tau
+  local index = math.floor(relative / self._wheelAnglePerSegment) + 1
+  index = math.max(1, math.min(#self._wheelSegments, index))
+  return self._wheelSegments[index]
+end
+
+function EventScene:_isPointInsideWheel(x, y)
+  if not self._wheelRadius or self._wheelRadius <= 0 then
+    self:_ensureWheelLayout()
+  end
+  if not self._wheelRadius or self._wheelRadius <= 0 then
+    return false
+  end
+  local dx = x - (self._wheelCenterX or 0)
+  local dy = y - (self._wheelCenterY or 0)
+  return (dx * dx + dy * dy) <= (self._wheelRadius * self._wheelRadius)
+end
+
+function EventScene:_isPointInsideWheelResultBox(x, y)
+  local box = self._wheelResultBox
+  if not box then return false end
+  return x >= box.x and x <= box.x + box.w and y >= box.y and y <= box.y + box.h
+end
+
+function EventScene:_drawWheel(contentY, contentHeight, leftPanelWidth, fadeAlpha)
+  if not self._isWheelEvent then return end
+  self:_updateWheelLayout(leftPanelWidth, contentY, contentHeight)
+  if not self._wheelRadius or self._wheelRadius <= 0 then return end
+  
+  local cx = self._wheelCenterX
+  local cy = self._wheelCenterY
+  local radius = self._wheelRadius
+  local tau = math.pi * 2
+  local drawAngle = (self._wheelAngle % tau + tau) % tau
+  local anglePer = self._wheelAnglePerSegment
+  local baseStart = self._wheelBaseStart + drawAngle
+  
+  -- Backing plate
+  love.graphics.setColor(0.05, 0.05, 0.08, 0.95 * fadeAlpha)
+  love.graphics.circle("fill", cx, cy, radius + 42)
+  
+  if self._wheelSegments then
+    for i, segment in ipairs(self._wheelSegments) do
+      local startAngle = baseStart + (i - 1) * anglePer
+      local endAngle = startAngle + anglePer
+      local color = segment.color or { 0.6, 0.6, 0.6, 1.0 }
+      local alpha = fadeAlpha
+      if self._wheelResult == segment and not self._wheelSpinning then
+        alpha = alpha * 1.2
+      end
+      love.graphics.setColor(color[1] or 1, color[2] or 1, color[3] or 1, (color[4] or 1) * alpha)
+      love.graphics.arc("fill", cx, cy, radius, startAngle, endAngle, 40)
+      love.graphics.setColor(0, 0, 0, 0.3 * fadeAlpha)
+      love.graphics.arc("line", cx, cy, radius, startAngle, endAngle, 40)
+      
+      if segment.iconImage then
+        local midAngle = (startAngle + endAngle) * 0.5
+        local iconDistance = radius * 0.58
+        local iconX = cx + math.cos(midAngle) * iconDistance
+        local iconY = cy + math.sin(midAngle) * iconDistance
+        local imgW, imgH = segment.iconImage:getWidth(), segment.iconImage:getHeight()
+        local targetSize = radius * 0.28
+        local scale = targetSize / math.max(imgW, imgH)
+        love.graphics.setColor(1, 1, 1, fadeAlpha)
+        love.graphics.draw(segment.iconImage, iconX - (imgW * scale * 0.5), iconY - (imgH * scale * 0.5), 0, scale, scale)
+      end
+    end
+  end
+  
+  -- Center hub
+  love.graphics.setColor(0.1, 0.1, 0.16, fadeAlpha)
+  love.graphics.circle("fill", cx, cy, radius * 0.28)
+  love.graphics.setColor(1, 1, 1, 0.25 * fadeAlpha)
+  love.graphics.circle("line", cx, cy, radius)
+  
+  -- Pointer
+  local pointerWidth = 30
+  local pointerHeight = 38
+  local pointerY = cy - radius - 6
+  love.graphics.setColor(1, 1, 1, fadeAlpha)
+  love.graphics.polygon("fill",
+    cx, pointerY - pointerHeight,
+    cx - pointerWidth * 0.5, pointerY,
+    cx + pointerWidth * 0.5, pointerY
+  )
+  love.graphics.setColor(0, 0, 0, 0.4 * fadeAlpha)
+  love.graphics.polygon("line",
+    cx, pointerY - pointerHeight,
+    cx - pointerWidth * 0.5, pointerY,
+    cx + pointerWidth * 0.5, pointerY
+  )
+  
+  -- Instruction text
+  local instruction = self._wheelStatusText or (self._wheelSpinning and "Spinning..." or "Click to spin")
+  love.graphics.setFont(self.textFont)
+  local pulse = 0.6 + 0.4 * math.sin((self._wheelClickPulse or 0) * 3.0)
+  love.graphics.setColor(1, 1, 1, fadeAlpha * pulse)
+  love.graphics.printf(instruction, cx - radius, cy + radius + 20, radius * 2, "center")
+end
+
+function EventScene:_drawWheelResultBox(fadeAlpha)
+  if not self._wheelResultBox then return end
+  local box = self._wheelResultBox
+  love.graphics.setColor(0, 0, 0, 0.55 * fadeAlpha)
+  love.graphics.rectangle("fill", box.x, box.y, box.w, box.h, 18, 18)
+  love.graphics.setColor(1, 1, 1, 0.08 * fadeAlpha)
+  love.graphics.rectangle("line", box.x, box.y, box.w, box.h, 18, 18)
+  
+  local inset = 20
+  local iconSize = 72
+  local iconX = box.x + inset + iconSize * 0.5
+  local iconY = box.y + box.h * 0.5
+  
+  local header
+  local bodyLines = {}
+  
+  if self._wheelSpinning then
+    header = "Wheel spinning..."
+    table.insert(bodyLines, "Hold steady while the masks decide your fate.")
+  elseif self._wheelResult then
+    header = self._wheelResult.label or "Outcome"
+    if self._wheelResult.description and self._wheelResult.description ~= "" then
+      table.insert(bodyLines, self._wheelResult.description)
+    end
+    local effects = self._wheelResult.effects or {}
+    -- No extra stat line; rely on description for details
+    if self._wheelResultMeta then
+      if self._wheelResultMeta.removedOrbName then
+        table.insert(bodyLines, "Lost orb: " .. self._wheelResultMeta.removedOrbName)
+      elseif self._wheelResultMeta.removeFailed then
+        table.insert(bodyLines, "No orb was removed.")
+      end
+      if self._wheelResultMeta.healedAmount and self._wheelResultMeta.healedAmount > 0 then
+        table.insert(bodyLines, "Recovered " .. self._wheelResultMeta.healedAmount .. " HP.")
+      end
+      if self._wheelResultMeta.grantedRelic and self._wheelResultMeta.grantedRelic.name then
+        table.insert(bodyLines, "Gained relic: " .. self._wheelResultMeta.grantedRelic.name)
+      end
+    end
+  else
+    header = "Awaiting spin"
+    local labels = {}
+    for _, seg in ipairs(self._wheelSegments or {}) do
+      table.insert(labels, seg.label)
+    end
+    table.insert(bodyLines, "Possible results: " .. table.concat(labels, " • "))
+  end
+  
+  local iconImage = (self._wheelResult and self._wheelResult.iconImage) or nil
+  if iconImage then
+    local imgW, imgH = iconImage:getWidth(), iconImage:getHeight()
+    local scale = iconSize / math.max(imgW, imgH)
+    love.graphics.setColor(1, 1, 1, fadeAlpha)
+    love.graphics.draw(iconImage, iconX - (imgW * scale * 0.5), iconY - (imgH * scale * 0.5), 0, scale, scale)
+  else
+    local questionFont = self.titleFont or theme.fonts.base
+    love.graphics.setColor(1, 1, 1, 0.15 * fadeAlpha)
+    love.graphics.circle("fill", iconX, iconY, iconSize * 0.4)
+    love.graphics.setColor(1, 1, 1, fadeAlpha)
+    love.graphics.setFont(questionFont)
+    love.graphics.printf("?", iconX - iconSize * 0.4, iconY - (questionFont:getHeight() * 0.5), iconSize * 0.8, "center")
+  end
+  
+  local headerFont = self._wheelHeaderFont or theme.fonts.base or self.titleFont or theme.fonts.base
+  local bodyFont = self._wheelBodyFont or theme.fonts.small or self.textFont or theme.fonts.base
+  love.graphics.setFont(headerFont)
+  love.graphics.setColor(1, 1, 1, fadeAlpha)
+  local textStartX = box.x + inset + iconSize + 16
+  local headerHeight = headerFont:getHeight()
+  
+  love.graphics.setFont(bodyFont)
+  local bodyText = table.concat(bodyLines, "\n")
+  local textWidth = box.w - (textStartX - box.x) - inset
+  local _, wrappedLines = bodyFont:getWrap(bodyText, textWidth)
+  local bodyHeight = #wrappedLines * bodyFont:getHeight()
+  local totalHeight = headerHeight + 8 + bodyHeight
+  local textTop = box.y + (box.h - totalHeight) * 0.5
+  
+  love.graphics.setFont(headerFont)
+  love.graphics.printf(header, textStartX, textTop, textWidth, "left")
+  
+  love.graphics.setFont(bodyFont)
+  love.graphics.setColor(0.9, 0.9, 0.9, fadeAlpha)
+  local bodyY = textTop + headerHeight + 8
+  love.graphics.printf(bodyText, textStartX, bodyY, textWidth, "left")
 end
 
 function EventScene:update(dt, mouseX, mouseY)
@@ -366,6 +799,10 @@ function EventScene:update(dt, mouseX, mouseY)
   -- Update fade timer
   self._fadeTimer = self._fadeTimer + dt
   self._glowTime = (self._glowTime or 0) + dt
+  
+  if self._isWheelEvent then
+    self:_updateWheel(dt)
+  end
   
   -- Update relic tooltip animation
   if self._relicTooltip then
@@ -407,12 +844,17 @@ function EventScene:update(dt, mouseX, mouseY)
   local leftPanelWidth = vw * 0.35
   local rightPanelWidth = vw * 0.65 - padding * 2
   local rightPanelX = leftPanelWidth + padding + 50
+  local contentY = topBarHeight
+  local contentHeight = vh - topBarHeight
   local buttonWidth = (rightPanelWidth - padding) * 0.9
   local buttonHeight = 50
   local buttonSpacing = 15
   
+  if self._isWheelEvent then
+    self:_updateWheelLayout(leftPanelWidth, contentY, contentHeight)
+  end
+  
   -- Calculate starting Y position for buttons
-  local contentY = topBarHeight
   local currentY = contentY + 15  -- Account for title shift
   if self.titleFont and self.event.title then
     currentY = currentY + self.titleFont:getHeight() + 30
@@ -428,6 +870,20 @@ function EventScene:update(dt, mouseX, mouseY)
       end
     end
     currentY = currentY + 30
+  end
+  
+  if self._isWheelEvent then
+    local boxWidth = (rightPanelWidth - padding) * 0.9
+    local boxHeight = self._wheelResultBoxHeight or 160
+    self._wheelResultBox = {
+      x = rightPanelX,
+      y = currentY,
+      w = boxWidth,
+      h = boxHeight,
+    }
+    currentY = currentY + boxHeight + 40
+  else
+    self._wheelResultBox = nil
   end
   
   -- Set button layouts (needed for coin animation)
@@ -486,8 +942,10 @@ function EventScene:update(dt, mouseX, mouseY)
       self._goldAmount = 0
       self.topBar.overrideGold = nil
       self._goldCounting = false
-      -- Exit after counting animation
+      -- Exit after counting animation unless this is a wheel event (wheel events wait for user input)
+      if not self._isWheelEvent then
       self._exitRequested = true
+      end
     end
   end
   
@@ -512,6 +970,19 @@ function EventScene:update(dt, mouseX, mouseY)
     -- Tween previous glow fade alpha toward 0.0 (fade out)
     local prevDiff = 0.0 - self._prevGlowFadeAlpha
     self._prevGlowFadeAlpha = self._prevGlowFadeAlpha + prevDiff * math.min(1, self._glowFadeSpeed * dt)
+  end
+  
+  if self._wheelContinueButton then
+    if self._wheelSpinning then
+      self._wheelContinueButton.label = "Spinning..."
+      self._wheelContinueButton._disabled = true
+    elseif self._wheelResult then
+      self._wheelContinueButton.label = "Continue"
+      self._wheelContinueButton._disabled = self._choiceMade
+    else
+      self._wheelContinueButton.label = "Spin the wheel"
+      self._wheelContinueButton._disabled = self._choiceMade
+    end
   end
   
   -- Detect if any button is mouse hovered (for suppressing default selected highlight)
@@ -665,17 +1136,15 @@ function EventScene:draw()
   local contentY = topBarHeight
   local contentHeight = vh - topBarHeight  -- Full height from top bar to bottom
   
-  -- Draw left panel (event image) - aligned left, fills height
+  -- Draw left panel (event image or wheel)
   love.graphics.setColor(1, 1, 1, fadeAlpha)
-  if self.eventImage then
+  if self._isWheelEvent then
+    self:_drawWheel(contentY, contentHeight, leftPanelWidth, fadeAlpha)
+  elseif self.eventImage then
     local imgW, imgH = self.eventImage:getDimensions()
-    -- Scale to fill height (touching top and bottom edges)
     local scale = contentHeight / imgH
-    local scaledW = imgW * scale
-    local scaledH = imgH * scale
-    local imgX = 0  -- Aligned to left edge
-    local imgY = contentY  -- Aligned to top (below top bar)
-    
+    local imgX = 0
+    local imgY = contentY
     love.graphics.draw(self.eventImage, imgX, imgY, 0, scale, scale)
   end
   
@@ -714,6 +1183,10 @@ function EventScene:draw()
     end
     
     currentY = currentY + 30
+  end
+  
+  if self._isWheelEvent then
+    self:_drawWheelResultBox(fadeAlpha)
   end
   
   -- Draw choice buttons
@@ -1074,6 +1547,13 @@ end
 function EventScene:mousepressed(x, y, button)
   if button ~= 1 then return nil end  -- Only handle left mouse button
   
+  if self._isWheelEvent and not self._wheelSpinning and not self._wheelHasSpun then
+    if self:_isPointInsideWheelResultBox(x, y) then
+      self:_startWheelSpin()
+      return nil
+    end
+  end
+  
   -- Prevent clicking if a choice has already been made
   if self._choiceMade then
     return nil
@@ -1083,6 +1563,14 @@ function EventScene:mousepressed(x, y, button)
   for _, buttonWidget in ipairs(self.choiceButtons) do
     if buttonWidget:mousepressed(x, y, button) then
       return nil  -- Button handles its own onClick
+    end
+  end
+  
+  if self._isWheelEvent and not self._wheelSpinning and not self._wheelHasSpun and not self._choiceMade then
+    self:_ensureWheelLayout()
+    if self:_isPointInsideWheel(x, y) then
+      self:_startWheelSpin()
+      return nil
     end
   end
   

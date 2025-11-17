@@ -106,6 +106,54 @@ local EVENTS = {
       }
     }
   },
+  wheel_of_masks = {
+    id = "wheel_of_masks",
+    title = "Wheel of Masks",
+    image = "event_placeholder.png",
+    text = "You uncover a sunken amphitheater of calcified stone. In its center spins a wheel studded with the same smiling masks that stalk your dreams. Each wedge hums with a different promise. The faces insist you spin it once.\n\nClick the carved wheel on the left to spin it and accept whatever fate the masks decree.",
+    wheelSegments = {
+      {
+        id = "gold_40",
+        label = "40 Gold",
+        description = "Gain 40 shimmering gold pieces.",
+        icon = "assets/images/icon_gold.png",
+        color = { 1.0, 0.78, 0.24, 1.0 },
+        effects = { gold = 40 },
+      },
+      {
+        id = "random_relic",
+        label = "Relic",
+        description = "Gain a random relic from the wandering masks.",
+        icon = "assets/images/relics/power_core.png",
+        color = { 0.72, 0.58, 1.0, 1.0 },
+        effects = { relic = true },
+      },
+      {
+        id = "full_heal",
+        label = "Full Heal",
+        description = "Restore all missing health.",
+        icon = "assets/images/icon_heal.png",
+        color = { 0.48, 0.86, 0.78, 1.0 },
+        effects = { healFull = true },
+      },
+      {
+        id = "lose_orb",
+        label = "Lose an Orb",
+        description = "A random equipped orb vanishes into the wheel.",
+        icon = "assets/images/icon_orbs.png",
+        color = { 0.94, 0.44, 0.61, 1.0 },
+        effects = { removeRandomOrb = true },
+      },
+      {
+        id = "blood_tax",
+        label = "Blood Tax",
+        description = "Lose 10% of your max HP.",
+        icon = "assets/images/icon_health.png",
+        color = { 0.91, 0.34, 0.26, 1.0 },
+        effects = { hpPercent = -10 },
+      },
+    },
+  },
   -- Add more events here as needed
   -- Example template:
   -- [event_id] = {
