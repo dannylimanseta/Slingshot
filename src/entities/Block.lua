@@ -2,6 +2,7 @@ local theme = require("theme")
 local config = require("config")
 local IridescentShader = require("utils.IridescentShader")
 local MultiplierFlameShader = require("utils.MultiplierFlameShader")
+local SheenShader = require("utils.SheenShader")
 local RelicSystem = require("core.RelicSystem")
 
 -- Shared sprites for blocks (loaded once)
@@ -431,10 +432,12 @@ function Block:draw()
       love.graphics.setShader(prevCalcifyShader)
       love.graphics.setBlendMode(prevBlendMode)
     else
-      -- Normal blocks: draw with color and optional iridescent shader
+      -- Normal blocks: draw with color and optional shaders
     love.graphics.setColor(brightnessMultiplier, brightnessMultiplier, brightnessMultiplier, alpha)
     -- Apply iridescent shader for 2x (crit) and 4x (multiplier) blocks
     local isIridescent = (self.kind == "crit" or self.kind == "multiplier")
+    -- Apply sheen shader for AOE/cleave blocks
+    local isAOE = (self.kind == "aoe")
     local prevShader = nil
     if isIridescent then
       local S = IridescentShader and IridescentShader.getShader and IridescentShader.getShader()
@@ -463,6 +466,19 @@ function Block:draw()
         S:send("u_patchiness", patchiness)
         love.graphics.setShader(S)
       end
+    elseif isAOE then
+      -- Apply sheen shader for AOE blocks
+      local S = SheenShader and SheenShader.getShader and SheenShader.getShader()
+      if S then
+        prevShader = love.graphics.getShader()
+        S:send("u_time", love.timer.getTime())
+        S:send("u_timeOffset", self.shaderTimeOffset or 0.0)
+        S:send("u_speed", 0.1) -- Sweep speed (reduced from 0.8 for slower frequency)
+        S:send("u_width", 0.6) -- Width of sheen highlight (increased by 60% from 0.25 to 0.4)
+        S:send("u_intensity", 0.2) -- Brightness of sheen (reduced from 0.5 for lower opacity)
+        S:send("u_angle", 0.785) -- ~45 degree angle for diagonal sweep
+        love.graphics.setShader(S)
+      end
     end
     if rotation ~= 0 then
       love.graphics.push()
@@ -474,7 +490,7 @@ function Block:draw()
     else
       love.graphics.draw(sprite, dx, dy, 0, s, s)
     end
-    if isIridescent then
+    if isIridescent or isAOE then
       love.graphics.setShader(prevShader)
       end
     end
