@@ -368,7 +368,7 @@ config.battle = {
     brightnessVariation = 0.08, -- +/- 8% brightness variation
   },
   -- Impact animation
-  impactFps = 70, -- frames per second for impact sprite animation
+  impactFps = 35, -- frames per second for impact sprite animation (reduced by 30% from 70)
   impactScale = 1.3, -- scale multiplier for impact sprite (reduced by 40% from 1.6)
   impactStaggerDelay = 0.15, -- delay between each impact sprite for staggered slashes (seconds)
   -- Jackpot damage number display (above enemy)
