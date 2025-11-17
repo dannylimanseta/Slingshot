@@ -183,6 +183,9 @@ function BallManager:shoot(dirX, dirY, projectileId)
   elseif projectileId == "flurry_strikes" then
     spawnedBalls = self:_spawnFlurryStrikes(startX, startY, ndx, ndy, effective, spritePath, baseDamage)
     totalDamage = baseDamage * ((effective and effective.count) or 3)
+  elseif projectileId == "splinter" then
+    spawnedBalls = self:_spawnStandard(startX, startY, ndx, ndy, effective, spritePath, baseDamage, projectileId)
+    totalDamage = baseDamage
   else
     -- Standard single projectile
     spawnedBalls = self:_spawnStandard(startX, startY, ndx, ndy, effective, spritePath, baseDamage, projectileId)

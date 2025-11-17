@@ -16,6 +16,7 @@ local PhysicsManager = require("battle.PhysicsManager")
 local BallManager = require("battle.BallManager")
 local ProjectileEffects = require("battle.ProjectileEffects")
 local VisualEffects = require("battle.VisualEffects")
+local ProjectileManager = require("managers.ProjectileManager")
 
 local GameplayScene = {}
 GameplayScene.__index = GameplayScene
@@ -63,6 +64,9 @@ function GameplayScene.new()
     
     -- Collision tracking
     _blocksHitThisFrame = {},
+    
+    -- Splinter split queue (deferred until after physics step)
+    splinterSplitQueue = {},
     
     -- Projectile ID
     projectileId = "strike",
@@ -191,6 +195,15 @@ function GameplayScene:update(dt, bounds)
   
   -- Update physics
   self.physics:update(dt)
+  
+  -- Process splinter split queue (after physics step, world is unlocked)
+  if self.splinterSplitQueue and #self.splinterSplitQueue > 0 then
+    for i = #self.splinterSplitQueue, 1, -1 do
+      local splitData = self.splinterSplitQueue[i]
+      self:_processSplinterSplit(splitData)
+      table.remove(self.splinterSplitQueue, i)
+    end
+  end
   
   -- Update ball manager
   self.ballManager:update(dt, bounds)
@@ -822,6 +835,39 @@ function GameplayScene:handleBallBlockCollision(ball, block, contact)
   elseif ball.pierce then
     -- Pierce: pass through
     ball:onPierce()
+  elseif ball.projectileId == "splinter" and not ball._splinterSplit then
+    -- Splinter: queue split to happen after physics step (world is locked during collision)
+    ball._splinterSplit = true
+    local hx = x or (ball.body and select(1, ball.body:getPosition())) or block.cx
+    local hy = y or (ball.body and select(2, ball.body:getPosition())) or block.cy
+    
+    -- Get current velocity direction
+    local vx, vy = ball.body:getLinearVelocity()
+    local speed = math.sqrt(vx * vx + vy * vy)
+    if speed == 0 then
+      -- Fallback: use direction from ball to block
+      local dx = (block.cx or hx) - hx
+      local dy = (block.cy or hy) - hy
+      local dist = math.sqrt(dx * dx + dy * dy)
+      if dist > 0 then
+        vx = (dx / dist) * (config.ball.speed or 400)
+        vy = (dy / dist) * (config.ball.speed or 400)
+      else
+        vx, vy = 1, 0
+      end
+    end
+    
+    -- Queue the split to process after physics step
+    table.insert(self.splinterSplitQueue, {
+      ball = ball,
+      x = hx,
+      y = hy,
+      vx = vx,
+      vy = vy
+    })
+    
+    -- Destroy the original ball after split
+    destroyBallAfter = true
   elseif not ball.lightning then
     -- Regular: bounce
     ball:onBounce()
@@ -836,6 +882,68 @@ function GameplayScene:handleBallBlockCollision(ball, block, contact)
   
   if destroyBallAfter and ball and ball.alive then
     ball:destroy()
+  end
+end
+
+-- Process splinter split (called after physics step when world is unlocked)
+function GameplayScene:_processSplinterSplit(splitData)
+  if not splitData or not splitData.ball then return end
+  
+  local ball = splitData.ball
+  local hx = splitData.x
+  local hy = splitData.y
+  local vx = splitData.vx
+  local vy = splitData.vy
+  
+  -- Calculate split angles (60 degrees spread for more divergent paths)
+  local baseAngle = math.atan2(vy, vx)
+  local spreadAngle = math.rad(90)
+  local angle1 = baseAngle - spreadAngle * 0.5
+  local angle2 = baseAngle + spreadAngle * 0.5
+  
+  local dirX1 = math.cos(angle1)
+  local dirY1 = math.sin(angle1)
+  local dirX2 = math.cos(angle2)
+  local dirY2 = math.sin(angle2)
+  
+  -- Get projectile data for the split orbs
+  local projectileData = ProjectileManager.getProjectile("splinter")
+  local effective = projectileData and ProjectileManager.getEffective(projectileData) or {}
+  local spritePath = projectileData and projectileData.icon or nil
+  local maxBounces = (effective and effective.maxBounces) or 5
+  local splitDamage = (effective and effective.baseDamage) or (ball.score or 3)
+  
+  -- Spawn two new balls
+  local Ball = require("entities.Ball")
+  if not self.ballManager.balls then
+    self.ballManager.balls = {}
+  end
+  
+  local world = self.physics:getWorld()
+  local ball1 = Ball.new(world, hx, hy, dirX1, dirY1, {
+    radius = config.ball.radius,
+    maxBounces = maxBounces,
+    spritePath = spritePath,
+    onLastBounce = function(ball) ball:destroy() end
+  })
+  if ball1 then
+    ball1.projectileId = "splinter"
+    ball1.score = splitDamage
+    ball1._splinterSplit = true -- Mark as already split so they don't split again
+    table.insert(self.ballManager.balls, ball1)
+  end
+  
+  local ball2 = Ball.new(world, hx, hy, dirX2, dirY2, {
+    radius = config.ball.radius,
+    maxBounces = maxBounces,
+    spritePath = spritePath,
+    onLastBounce = function(ball) ball:destroy() end
+  })
+  if ball2 then
+    ball2.projectileId = "splinter"
+    ball2.score = splitDamage
+    ball2._splinterSplit = true -- Mark as already split so they don't split again
+    table.insert(self.ballManager.balls, ball2)
   end
 end
 

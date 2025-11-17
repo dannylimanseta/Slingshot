@@ -61,6 +61,17 @@ impactConfigs.behaviors = {
     popupDelay = 0,
   },
   
+  -- Splinter projectile (standard behavior)
+  splinter = {
+    impactType = "standard",
+    attackDelay = 0.5,
+    suppressInitialFlash = false,
+    suppressInitialKnockback = false,
+    suppressInitialSplatter = false,
+    suppressInitialParticles = false,
+    popupDelay = 0,
+  },
+  
   -- Pierce projectile (standard behavior)
   pierce = {
     impactType = "standard",

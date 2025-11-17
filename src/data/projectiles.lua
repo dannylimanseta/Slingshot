@@ -135,6 +135,22 @@ projectiles.data = {
     icon = "assets/images/orb_flurry.png",
     description = "Fires multiple projectiles in quick succession."
   },
+  {
+    id = "splinter",
+    name = "Splinter",
+    rarity = projectiles.Rarity.UNCOMMON,
+    level = 1,
+    baseDamage = 3,
+    levels = {
+      [1] = { baseDamage = 3, maxBounces = 5 },
+      [2] = { baseDamage = 4, maxBounces = 6 },
+      [3] = { baseDamage = 6, maxBounces = 7 },
+      [4] = { baseDamage = 8, maxBounces = 8 },
+      [5] = { baseDamage = 12, maxBounces = 10 },
+    },
+    icon = "assets/images/orb_splinter.png",
+    description = "Fires an orb that splits into 2 orbs on first hit."
+  },
 }
 
 -- Helper function to get projectile by ID

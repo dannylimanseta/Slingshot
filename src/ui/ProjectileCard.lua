@@ -92,6 +92,11 @@ local function buildDynamicStats(projectile, effective, maxWidth, font)
     if effective and effective.maxPierce then
       table.insert(lines, string.format("Pierces %d blocks", effective.maxPierce))
     end
+  elseif id == "splinter" then
+    table.insert(lines, "Splits into 2 orbs on first hit")
+    if effective and effective.maxBounces then
+      table.insert(lines, string.format("Bounces %d times", effective.maxBounces))
+    end
   else
     -- Default (strike)
     table.insert(lines, "Fires 1 projectile")
