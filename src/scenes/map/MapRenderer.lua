@@ -2,6 +2,7 @@ local config = require("config")
 local theme = require("theme")
 local MapManager = require("managers.MapManager")
 local moonshine = require("external.moonshine")
+local ShaderCache = require("utils.ShaderCache")
 
 local TILT_SHIFT_SHADER_SOURCE = [[
 extern Image blurred;
@@ -96,8 +97,11 @@ function MapRenderer:_initializeTiltShift()
     return
   end
 
-  local shaderOk, shader = pcall(love.graphics.newShader, TILT_SHIFT_SHADER_SOURCE)
-  if not shaderOk then
+  local shader, shaderErr = ShaderCache.get("map_tilt_shift", TILT_SHIFT_SHADER_SOURCE)
+  if not shader then
+    if shaderErr then
+      print("[MapRenderer] Failed to compile tilt shift shader:", shaderErr)
+    end
     self._tiltShiftEnabled = false
     return
   end
@@ -148,8 +152,11 @@ function MapRenderer:_initializeLensDistortion()
     return
   end
 
-  local shaderOk, shader = pcall(love.graphics.newShader, LENS_DISTORTION_SHADER_SOURCE)
-  if not shaderOk then
+  local shader, shaderErr = ShaderCache.get("map_lens_distortion", LENS_DISTORTION_SHADER_SOURCE)
+  if not shader then
+    if shaderErr then
+      print("[MapRenderer] Failed to compile lens distortion shader:", shaderErr)
+    end
     self._lensDistortionEnabled = false
     return
   end
