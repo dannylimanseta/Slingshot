@@ -6,6 +6,7 @@ local PlayerState = require("core.PlayerState")
 local events = require("data.events")
 local ProjectileManager = require("managers.ProjectileManager")
 local relics = require("data.relics")
+local NotificationTooltip = require("ui.NotificationTooltip")
 
 local EventScene = {}
 EventScene.__index = EventScene
@@ -47,20 +48,9 @@ function EventScene.new(eventId)
     _glowFadeAlpha = 1.0, -- Fade alpha for currently selected glow (0 to 1)
     _prevGlowFadeAlpha = 0.0, -- Fade alpha for previously selected glow (fades out)
     _glowFadeSpeed = 8.0, -- Speed of fade in/out
-    -- Relic notification tooltip
-    _relicTooltip = nil, -- Relic definition for tooltip
-    _relicTooltipTime = 0, -- Time since tooltip appeared
-    _relicTooltipFadeInDuration = 0.2, -- Fade in duration (also moves up)
-    _relicTooltipHoldDuration = 0.5, -- Hold duration (stays in place)
-    _relicTooltipFadeOutDuration = 0.2, -- Fade out duration (also moves up)
-    _relicTooltipMoveDistance = 80, -- Distance to move up during animation
-    -- Orb notification tooltip
-    _orbTooltip = nil, -- Orb projectile data for tooltip
-    _orbTooltipTime = 0, -- Time since tooltip appeared
-    _orbTooltipFadeInDuration = 0.2, -- Fade in duration (also moves up)
-    _orbTooltipHoldDuration = 0.5, -- Hold duration (stays in place)
-    _orbTooltipFadeOutDuration = 0.2, -- Fade out duration (also moves up)
-    _orbTooltipMoveDistance = 80, -- Distance to move up during animation
+    -- Notification tooltips (reusable component)
+    _relicTooltip = NotificationTooltip.new(),
+    _orbTooltip = NotificationTooltip.new(),
     -- Wheel event state
     _isWheelEvent = false,
     _wheelSegments = nil,
@@ -334,8 +324,12 @@ function EventScene:_applyChoiceEffects(effects)
       playerState:addRelic(relicDef.id)
       metadata.grantedRelic = relicDef
       -- Show relic notification tooltip
-      self._relicTooltip = relicDef
-      self._relicTooltipTime = 0
+      self._relicTooltip:setStackIndex(0)
+      self._relicTooltip:show({
+        name = relicDef.name,
+        description = relicDef.description,
+        icon = relicDef.icon
+      })
     end
   end
   
@@ -379,9 +373,14 @@ function EventScene:_applyChoiceEffects(effects)
         -- Get projectile data for tooltip
         local projectileData = ProjectileManager.getProjectile(newOrbId)
         if projectileData then
-          -- Show orb notification tooltip
-          self._orbTooltip = projectileData
-          self._orbTooltipTime = 0
+          -- Show orb notification tooltip (stack below relic if it's showing)
+          local stackIndex = self._relicTooltip:isActive() and 1 or 0
+          self._orbTooltip:setStackIndex(stackIndex)
+          self._orbTooltip:show({
+            name = projectileData.name,
+            description = projectileData.description,
+            icon = projectileData.icon
+          })
         end
       end
     end
@@ -798,37 +797,9 @@ function EventScene:update(dt, mouseX, mouseY)
     self:_updateWheel(dt)
   end
   
-  -- Update relic tooltip animation
-  if self._relicTooltip then
-    self._relicTooltipTime = self._relicTooltipTime + dt
-    -- Calculate total duration
-    local totalDuration = self._relicTooltipFadeInDuration + self._relicTooltipHoldDuration + self._relicTooltipFadeOutDuration
-    -- Remove tooltip after animation completes
-    if self._relicTooltipTime >= totalDuration then
-      self._relicTooltip = nil
-      self._relicTooltipTime = 0
-      -- Exit scene after tooltip finishes if exit was requested
-      if self._exitRequested then
-        -- Exit will be handled in the check below
-      end
-    end
-  end
-  
-  -- Update orb tooltip animation
-  if self._orbTooltip then
-    self._orbTooltipTime = self._orbTooltipTime + dt
-    -- Calculate total duration
-    local totalDuration = self._orbTooltipFadeInDuration + self._orbTooltipHoldDuration + self._orbTooltipFadeOutDuration
-    -- Remove tooltip after animation completes
-    if self._orbTooltipTime >= totalDuration then
-      self._orbTooltip = nil
-      self._orbTooltipTime = 0
-      -- Exit scene after tooltip finishes if exit was requested
-      if self._exitRequested then
-        -- Exit will be handled in the check below
-      end
-    end
-  end
+  -- Update notification tooltips
+  self._relicTooltip:update(dt)
+  self._orbTooltip:update(dt)
   
   -- Calculate button layout first (needed for coin animation source position)
   local vw = config.video.virtualWidth
@@ -1028,12 +999,12 @@ function EventScene:update(dt, mouseX, mouseY)
       return nil
     end
     -- If relic tooltip is showing, wait for it to complete
-    if self._relicTooltip then
+    if self._relicTooltip:isActive() then
       -- Still showing tooltip, don't exit yet
       return nil
     end
     -- If orb tooltip is showing, wait for it to complete
-    if self._orbTooltip then
+    if self._orbTooltip:isActive() then
       -- Still showing tooltip, don't exit yet
       return nil
     end
@@ -1273,11 +1244,9 @@ function EventScene:draw()
   -- Draw coin animations above everything (z-order)
   self:_drawCoinAnimations()
   
-  -- Draw relic notification tooltip (on top of everything)
-  self:_drawRelicTooltip(fadeAlpha)
-  
-  -- Draw orb notification tooltip (on top of everything)
-  self:_drawOrbTooltip(fadeAlpha)
+  -- Draw notification tooltips (on top of everything)
+  self._relicTooltip:draw(fadeAlpha)
+  self._orbTooltip:draw(fadeAlpha)
 end
 
 function EventScene:_wordWrap(text, maxWidth, font)
@@ -1564,402 +1533,6 @@ function EventScene:mousepressed(x, y, button)
   return nil
 end
 
-function EventScene:_drawRelicTooltip(fadeAlpha)
-  if not self._relicTooltip then return end
-  
-  local relicDef = self._relicTooltip
-  local vw = config.video.virtualWidth
-  local vh = config.video.virtualHeight
-  
-  local font = theme.fonts.base
-  love.graphics.setFont(font)
-  
-  -- Icon size and padding
-  local iconSize = 48
-  local iconPadding = 8
-  local padding = 8
-  
-  -- Load icon
-  local iconImg = nil
-  if relicDef.icon then
-    local ok, img = pcall(love.graphics.newImage, relicDef.icon)
-    if ok then iconImg = img end
-  end
-  
-  -- Build tooltip text (name + description)
-  local tooltipText = ""
-  if relicDef.name then
-    tooltipText = tooltipText .. relicDef.name
-  end
-  if relicDef.description then
-    if tooltipText ~= "" then
-      tooltipText = tooltipText .. "\n" .. relicDef.description
-    else
-      tooltipText = relicDef.description
-    end
-  end
-  
-  if tooltipText == "" then return end
-  
-  -- Calculate size
-  local textLines = {}
-  for line in tooltipText:gmatch("[^\n]+") do
-    table.insert(textLines, line)
-  end
-  
-  local textScale = 0.75
-  local maxTextW = 0
-  for _, line in ipairs(textLines) do
-    local w = font:getWidth(line) * textScale
-    if w > maxTextW then maxTextW = w end
-  end
-  
-  local baseTextH = font:getHeight() * #textLines
-  local textW = maxTextW
-  local textH = baseTextH * textScale
-  
-  -- Limit text width
-  local maxTextWidth = 200
-  if textW > maxTextWidth then
-    textW = maxTextWidth
-  end
-  
-  -- Calculate tooltip dimensions
-  local tooltipW = padding * 2
-  if iconImg then
-    tooltipW = tooltipW + iconSize + iconPadding
-  end
-  tooltipW = tooltipW + textW
-  
-  -- Calculate text wrap width
-  local availableTextWidth = tooltipW - padding * 2
-  if iconImg then
-    availableTextWidth = availableTextWidth - iconSize - iconPadding
-  end
-  local textWrapWidth = availableTextWidth / textScale
-  
-  -- Word wrap text
-  local wrappedLines = {}
-  for _, line in ipairs(textLines) do
-    local words = {}
-    for word in line:gmatch("%S+") do
-      table.insert(words, word)
-    end
-    
-    local currentLine = ""
-    for _, word in ipairs(words) do
-      local testLine = currentLine == "" and word or currentLine .. " " .. word
-      local testW = font:getWidth(testLine)
-      if testW > textWrapWidth and currentLine ~= "" then
-        table.insert(wrappedLines, currentLine)
-        currentLine = word
-      else
-        currentLine = testLine
-      end
-    end
-    if currentLine ~= "" then
-      table.insert(wrappedLines, currentLine)
-    end
-  end
-  
-  local actualTextH = font:getHeight() * #wrappedLines * textScale
-  local tooltipH = padding * 2 + math.max(iconSize, actualTextH)
-  
-  -- Calculate position (top right)
-  local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
-  local startY = topBarHeight + 20 -- Below top bar
-  
-  -- Calculate total duration and phases
-  local totalDuration = self._relicTooltipFadeInDuration + self._relicTooltipHoldDuration + self._relicTooltipFadeOutDuration
-  
-  -- Phase 1: Fade in + move up (0.2s)
-  local fadeInProgress = 1.0
-  local moveProgress = 0.0
-  if self._relicTooltipTime < self._relicTooltipFadeInDuration then
-    local phaseT = self._relicTooltipTime / self._relicTooltipFadeInDuration
-    fadeInProgress = phaseT
-    -- Ease-in-out for movement during fade in
-    -- Ease-in-out cubic: t < 0.5 ? 4t³ : 1 - pow(-2t + 2, 3) / 2
-    if phaseT < 0.5 then
-      moveProgress = 4 * phaseT * phaseT * phaseT
-    else
-      moveProgress = 1 - math.pow(-2 * phaseT + 2, 3) / 2
-    end
-    -- Scale to 50% of total movement during fade in
-    moveProgress = moveProgress * 0.5
-  end
-  
-  -- Phase 2: Hold (0.5s) - movement stays at 50%
-  local holdStart = self._relicTooltipFadeInDuration
-  local holdEnd = holdStart + self._relicTooltipHoldDuration
-  if self._relicTooltipTime >= holdStart and self._relicTooltipTime <= holdEnd then
-    moveProgress = 0.5
-  end
-  
-  -- Phase 3: Fade out + move up more (0.2s)
-  local fadeOutStart = self._relicTooltipFadeInDuration + self._relicTooltipHoldDuration
-  local fadeOutProgress = 1.0
-  if self._relicTooltipTime > fadeOutStart then
-    local phaseT = (self._relicTooltipTime - fadeOutStart) / self._relicTooltipFadeOutDuration
-    fadeOutProgress = 1.0 - phaseT
-    -- Ease-in-out for movement during fade out (from 50% to 100%)
-    local moveOutT = phaseT
-    local moveOutEased = 0.0
-    if moveOutT < 0.5 then
-      moveOutEased = 4 * moveOutT * moveOutT * moveOutT
-    else
-      moveOutEased = 1 - math.pow(-2 * moveOutT + 2, 3) / 2
-    end
-    -- Scale from 0.5 to 1.0
-    moveProgress = 0.5 + (moveOutEased * 0.5)
-  end
-  
-  -- Apply movement
-  local tooltipY = startY - (moveProgress * self._relicTooltipMoveDistance)
-  
-  -- Position at top right
-  local tooltipX = vw - tooltipW - 20 -- 20px from right edge
-  
-  -- Calculate alpha (combine fade in, fade out, and scene fade)
-  local alpha = fadeInProgress * fadeOutProgress * fadeAlpha
-  
-  -- Draw background
-  love.graphics.setColor(0, 0, 0, 0.85 * alpha)
-  love.graphics.rectangle("fill", tooltipX, tooltipY, tooltipW, tooltipH, 4, 4)
-  
-  -- Draw border
-  love.graphics.setColor(1, 1, 1, 0.3 * alpha)
-  love.graphics.setLineWidth(1)
-  love.graphics.rectangle("line", tooltipX, tooltipY, tooltipW, tooltipH, 4, 4)
-  
-  -- Draw icon (top left)
-  if iconImg then
-    local iconX = tooltipX + padding
-    local iconY = tooltipY + padding
-    local iconScale = iconSize / math.max(iconImg:getWidth(), iconImg:getHeight())
-    love.graphics.setColor(1, 1, 1, alpha)
-    love.graphics.draw(iconImg, iconX, iconY, 0, iconScale, iconScale)
-  end
-  
-  -- Draw text (to the right of icon, or left if no icon)
-  local textX = tooltipX + padding
-  if iconImg then
-    textX = textX + iconSize + iconPadding
-  end
-  local textY = tooltipY + padding
-  
-  love.graphics.push()
-  love.graphics.translate(textX, textY)
-  love.graphics.scale(textScale, textScale)
-  local currentY = 0
-  for i, line in ipairs(wrappedLines) do
-    love.graphics.setColor(1, 1, 1, alpha)
-    love.graphics.print(line, 0, currentY)
-    currentY = currentY + font:getHeight()
-  end
-  love.graphics.pop()
-end
-
-function EventScene:_drawOrbTooltip(fadeAlpha)
-  if not self._orbTooltip then return end
-  
-  local orbDef = self._orbTooltip
-  local vw = config.video.virtualWidth
-  local vh = config.video.virtualHeight
-  
-  local font = theme.fonts.base
-  love.graphics.setFont(font)
-  
-  -- Icon size and padding
-  local iconSize = 48
-  local iconPadding = 8
-  local padding = 8
-  
-  -- Load icon
-  local iconImg = nil
-  if orbDef.icon then
-    local ok, img = pcall(love.graphics.newImage, orbDef.icon)
-    if ok then iconImg = img end
-  end
-  
-  -- Build tooltip text (name + description)
-  local tooltipText = ""
-  if orbDef.name then
-    tooltipText = tooltipText .. orbDef.name
-  end
-  if orbDef.description then
-    if tooltipText ~= "" then
-      tooltipText = tooltipText .. "\n" .. orbDef.description
-    else
-      tooltipText = orbDef.description
-    end
-  end
-  
-  if tooltipText == "" then return end
-  
-  -- Calculate size
-  local textLines = {}
-  for line in tooltipText:gmatch("[^\n]+") do
-    table.insert(textLines, line)
-  end
-  
-  local textScale = 0.75
-  local maxTextW = 0
-  for _, line in ipairs(textLines) do
-    local w = font:getWidth(line) * textScale
-    if w > maxTextW then maxTextW = w end
-  end
-  
-  local baseTextH = font:getHeight() * #textLines
-  local textW = maxTextW
-  local textH = baseTextH * textScale
-  
-  -- Limit text width
-  local maxTextWidth = 200
-  if textW > maxTextWidth then
-    textW = maxTextWidth
-  end
-  
-  -- Calculate tooltip dimensions
-  local tooltipW = padding * 2
-  if iconImg then
-    tooltipW = tooltipW + iconSize + iconPadding
-  end
-  tooltipW = tooltipW + textW
-  
-  -- Calculate text wrap width
-  local availableTextWidth = tooltipW - padding * 2
-  if iconImg then
-    availableTextWidth = availableTextWidth - iconSize - iconPadding
-  end
-  local textWrapWidth = availableTextWidth / textScale
-  
-  -- Word wrap text
-  local wrappedLines = {}
-  for _, line in ipairs(textLines) do
-    local words = {}
-    for word in line:gmatch("%S+") do
-      table.insert(words, word)
-    end
-    
-    local currentLine = ""
-    for _, word in ipairs(words) do
-      local testLine = currentLine == "" and word or currentLine .. " " .. word
-      local testW = font:getWidth(testLine)
-      if testW > textWrapWidth and currentLine ~= "" then
-        table.insert(wrappedLines, currentLine)
-        currentLine = word
-      else
-        currentLine = testLine
-      end
-    end
-    if currentLine ~= "" then
-      table.insert(wrappedLines, currentLine)
-    end
-  end
-  
-  local actualTextH = font:getHeight() * #wrappedLines * textScale
-  local tooltipH = padding * 2 + math.max(iconSize, actualTextH)
-  
-  -- Calculate position (top right, offset below relic tooltip if both are showing)
-  local topBarHeight = (config.playfield and config.playfield.topBarHeight) or 60
-  local startY = topBarHeight + 20 -- Below top bar
-  
-  -- Offset down if relic tooltip is also showing
-  if self._relicTooltip then
-    startY = startY + 100 -- Add offset for relic tooltip
-  end
-  
-  -- Calculate total duration and phases
-  local totalDuration = self._orbTooltipFadeInDuration + self._orbTooltipHoldDuration + self._orbTooltipFadeOutDuration
-  
-  -- Phase 1: Fade in + move up (0.2s)
-  local fadeInProgress = 1.0
-  local moveProgress = 0.0
-  if self._orbTooltipTime < self._orbTooltipFadeInDuration then
-    local phaseT = self._orbTooltipTime / self._orbTooltipFadeInDuration
-    fadeInProgress = phaseT
-    -- Ease-in-out for movement during fade in
-    -- Ease-in-out cubic: t < 0.5 ? 4t³ : 1 - pow(-2t + 2, 3) / 2
-    if phaseT < 0.5 then
-      moveProgress = 4 * phaseT * phaseT * phaseT
-    else
-      moveProgress = 1 - math.pow(-2 * phaseT + 2, 3) / 2
-    end
-    -- Scale to 50% of total movement during fade in
-    moveProgress = moveProgress * 0.5
-  end
-  
-  -- Phase 2: Hold (0.5s) - movement stays at 50%
-  local holdStart = self._orbTooltipFadeInDuration
-  local holdEnd = holdStart + self._orbTooltipHoldDuration
-  if self._orbTooltipTime >= holdStart and self._orbTooltipTime <= holdEnd then
-    moveProgress = 0.5
-  end
-  
-  -- Phase 3: Fade out + move up more (0.2s)
-  local fadeOutStart = self._orbTooltipFadeInDuration + self._orbTooltipHoldDuration
-  local fadeOutProgress = 1.0
-  if self._orbTooltipTime > fadeOutStart then
-    local phaseT = (self._orbTooltipTime - fadeOutStart) / self._orbTooltipFadeOutDuration
-    fadeOutProgress = 1.0 - phaseT
-    -- Ease-in-out for movement during fade out (from 50% to 100%)
-    local moveOutT = phaseT
-    local moveOutEased = 0.0
-    if moveOutT < 0.5 then
-      moveOutEased = 4 * moveOutT * moveOutT * moveOutT
-    else
-      moveOutEased = 1 - math.pow(-2 * moveOutT + 2, 3) / 2
-    end
-    -- Scale from 0.5 to 1.0
-    moveProgress = 0.5 + (moveOutEased * 0.5)
-  end
-  
-  -- Apply movement
-  local tooltipY = startY - (moveProgress * self._orbTooltipMoveDistance)
-  
-  -- Position at top right
-  local tooltipX = vw - tooltipW - 20 -- 20px from right edge
-  
-  -- Calculate alpha (combine fade in, fade out, and scene fade)
-  local alpha = fadeInProgress * fadeOutProgress * fadeAlpha
-  
-  -- Draw background
-  love.graphics.setColor(0, 0, 0, 0.85 * alpha)
-  love.graphics.rectangle("fill", tooltipX, tooltipY, tooltipW, tooltipH, 4, 4)
-  
-  -- Draw border
-  love.graphics.setColor(1, 1, 1, 0.3 * alpha)
-  love.graphics.setLineWidth(1)
-  love.graphics.rectangle("line", tooltipX, tooltipY, tooltipW, tooltipH, 4, 4)
-  
-  -- Draw icon (top left)
-  if iconImg then
-    local iconX = tooltipX + padding
-    local iconY = tooltipY + padding
-    local iconScale = iconSize / math.max(iconImg:getWidth(), iconImg:getHeight())
-    love.graphics.setColor(1, 1, 1, alpha)
-    love.graphics.draw(iconImg, iconX, iconY, 0, iconScale, iconScale)
-  end
-  
-  -- Draw text (to the right of icon, or left if no icon)
-  local textX = tooltipX + padding
-  if iconImg then
-    textX = textX + iconSize + iconPadding
-  end
-  local textY = tooltipY + padding
-  
-  love.graphics.push()
-  love.graphics.translate(textX, textY)
-  love.graphics.scale(textScale, textScale)
-  local currentY = 0
-  for i, line in ipairs(wrappedLines) do
-    love.graphics.setColor(1, 1, 1, alpha)
-    love.graphics.print(line, 0, currentY)
-    currentY = currentY + font:getHeight()
-  end
-  love.graphics.pop()
-end
 
 function EventScene:unload()
   -- Cleanup if needed

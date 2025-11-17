@@ -5,6 +5,7 @@ local Button = require("ui.Button")
 local RewardsBackdropShader = require("utils.RewardsBackdropShader")
 local ProjectileCard = require("ui.ProjectileCard")
 local TopBar = require("ui.TopBar")
+local NotificationTooltip = require("ui.NotificationTooltip")
 
 local OrbRewardScene = {}
 OrbRewardScene.__index = OrbRewardScene
@@ -41,6 +42,7 @@ function OrbRewardScene.new(params)
 		selectionTimer = 0,          -- elapsed time for selection anim
 		selectionDuration = 0.4,     -- how long the bounce/fade takes
 		pendingChoice = nil,         -- store choice to apply after anim
+		_choiceApplied = false,      -- track if choice has been applied (to prevent duplicate notifications)
     shader = nil,
     decorImage = nil,
     arrowIcon = nil,
@@ -57,6 +59,7 @@ function OrbRewardScene.new(params)
     skipButton = nil,
     topBar = TopBar.new(),
     returnToPreviousOnExit = not not params.returnToPreviousOnExit,
+    notificationTooltip = NotificationTooltip.new(),
   }, OrbRewardScene)
 end
 
@@ -148,8 +151,28 @@ function OrbRewardScene:applyChoice(opt)
   if not opt then return end
   if opt.kind == "upgrade" then
     ProjectileManager.upgradeLevel(opt.id)
+    -- Show notification for upgrade
+    local projectileData = ProjectileManager.getProjectile(opt.id)
+    if projectileData then
+      self.notificationTooltip:setStackIndex(0)
+      self.notificationTooltip:show({
+        name = projectileData.name,
+        description = string.format("Upgraded to Level %d", opt.targetLevel),
+        icon = projectileData.icon
+      })
+    end
   elseif opt.kind == "new" then
     ProjectileManager.addToEquipped(opt.id)
+    -- Show notification for new orb
+    local projectileData = ProjectileManager.getProjectile(opt.id)
+    if projectileData then
+      self.notificationTooltip:setStackIndex(0)
+      self.notificationTooltip:show({
+        name = projectileData.name,
+        description = projectileData.description,
+        icon = projectileData.icon
+      })
+    end
   end
 end
 
@@ -164,6 +187,9 @@ local function drawCardWithLevel(card, projectileId, level, x, y, alpha)
 end
 
 function OrbRewardScene:update(dt)
+  -- Update notification tooltip
+  self.notificationTooltip:update(dt)
+  
   -- Advance glow timer
   self._glowTime = (self._glowTime or 0) + dt
 
@@ -183,7 +209,15 @@ function OrbRewardScene:update(dt)
 		end
 	end
 	if self.choice then
-    self:applyChoice(self.choice)
+    -- Only apply choice once
+    if not self._choiceApplied then
+      self:applyChoice(self.choice)
+      self._choiceApplied = true
+    end
+    -- Wait for notification to complete before exiting
+    if self.notificationTooltip:isActive() then
+      return nil -- Don't exit yet, wait for notification
+    end
     if self.returnToPreviousOnExit then
       return "return_to_previous"
     else
@@ -576,6 +610,9 @@ function OrbRewardScene:draw()
   if self.topBar then
     self.topBar:draw()
   end
+  
+  -- Draw notification tooltip (on top of everything)
+  self.notificationTooltip:draw(1.0)
 end
 
 function OrbRewardScene:mousemoved(x, y)
