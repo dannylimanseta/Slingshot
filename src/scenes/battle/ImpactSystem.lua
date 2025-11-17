@@ -1031,8 +1031,10 @@ function ImpactSystem.draw(scene)
       if instance.isPierce then
         -- Draw pierce impact: single image, no rotation, horizontal movement
         -- Uses impact_1a.png (no color tint needed)
+        -- Height reduced by 50% for flatter appearance
         if instance.image then
           local quad = instance.quad
+          local heightScale = finalScale * 0.5 -- Reduce height by 50%
           if quad then
             -- Draw using quad (from sprite sheet) with scale variation
             local frameW = 512 -- Frame width from sprite sheet
@@ -1043,8 +1045,8 @@ function ImpactSystem.draw(scene)
               instance.x,
               instance.y,
               0, -- No rotation
-              finalScale,
-              finalScale,
+              finalScale, -- Full width scale
+              heightScale, -- 50% height scale
               frameW * 0.5, -- Center origin
               frameH * 0.5
             )
@@ -1057,8 +1059,8 @@ function ImpactSystem.draw(scene)
               instance.x,
               instance.y,
               0, -- No rotation
-              finalScale,
-              finalScale,
+              finalScale, -- Full width scale
+              heightScale, -- 50% height scale
               imgW * 0.5, -- Center origin
               imgH * 0.5
             )
