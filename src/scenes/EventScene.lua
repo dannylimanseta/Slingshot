@@ -606,12 +606,6 @@ function EventScene:_isPointInsideWheel(x, y)
   return (dx * dx + dy * dy) <= (self._wheelRadius * self._wheelRadius)
 end
 
-function EventScene:_isPointInsideWheelResultBox(x, y)
-  local box = self._wheelResultBox
-  if not box then return false end
-  return x >= box.x and x <= box.x + box.w and y >= box.y and y <= box.y + box.h
-end
-
 function EventScene:_drawWheel(contentY, contentHeight, leftPanelWidth, fadeAlpha)
   if not self._isWheelEvent then return end
   self:_updateWheelLayout(leftPanelWidth, contentY, contentHeight)
@@ -1546,13 +1540,6 @@ end
 
 function EventScene:mousepressed(x, y, button)
   if button ~= 1 then return nil end  -- Only handle left mouse button
-  
-  if self._isWheelEvent and not self._wheelSpinning and not self._wheelHasSpun then
-    if self:_isPointInsideWheelResultBox(x, y) then
-      self:_startWheelSpin()
-      return nil
-    end
-  end
   
   -- Prevent clicking if a choice has already been made
   if self._choiceMade then
