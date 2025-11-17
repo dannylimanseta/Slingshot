@@ -156,7 +156,7 @@ do
     local ok1, f1 = pcall(love.graphics.newFont, fontPath, baseSize * supersamplingFactor)
     local ok2, f2 = pcall(love.graphics.newFont, fontPath, 67 * supersamplingFactor)
     local ok3, f3 = pcall(love.graphics.newFont, fontPath, 40 * supersamplingFactor)
-    local ok4, f4 = pcall(love.graphics.newFont, fontPath, 80 * supersamplingFactor)
+    local ok4, f4 = pcall(love.graphics.newFont, fontPath, 60 * supersamplingFactor)
     if ok00 then tiny = wrapFont(f00, supersamplingFactor) end
     if ok0 then small = wrapFont(f0, supersamplingFactor) end
     if ok1 then base = wrapFont(f1, supersamplingFactor) end
@@ -169,7 +169,7 @@ do
   if not base then base = wrapFont(love.graphics.newFont(baseSize * supersamplingFactor), supersamplingFactor) end
   if not large then large = wrapFont(love.graphics.newFont(67 * supersamplingFactor), supersamplingFactor) end
   if not popup then popup = wrapFont(love.graphics.newFont(40 * supersamplingFactor), supersamplingFactor) end
-  if not jackpot then jackpot = wrapFont(love.graphics.newFont(100 * supersamplingFactor), supersamplingFactor) end
+  if not jackpot then jackpot = wrapFont(love.graphics.newFont(75 * supersamplingFactor), supersamplingFactor) end
   
   theme.fonts = {
     tiny = tiny,
