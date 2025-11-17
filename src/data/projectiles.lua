@@ -94,11 +94,11 @@ projectiles.data = {
     level = 1,
     baseDamage = 4,
     levels = {
-      [1] = { baseDamage = 4, maxPierce = 6 },
-      [2] = { baseDamage = 5, maxPierce = 7 },
-      [3] = { baseDamage = 6, maxPierce = 8 },
-      [4] = { baseDamage = 8, maxPierce = 9 },
-      [5] = { baseDamage = 10, maxPierce = 10 },
+      [1] = { baseDamage = 4, maxPierce = 4 },
+      [2] = { baseDamage = 5, maxPierce = 5 },
+      [3] = { baseDamage = 6, maxPierce = 6 },
+      [4] = { baseDamage = 8, maxPierce = 7 },
+      [5] = { baseDamage = 10, maxPierce = 8 },
     },
     icon = "assets/images/orb_pierce.png",
     description = "Pierces through multiple blocks in a straight line."
