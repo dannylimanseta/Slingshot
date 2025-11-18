@@ -414,54 +414,46 @@ function SplitScene:endPlayerTurnWithTurnManager()
   local state = self.turnManager:getState()
   if state ~= TurnManager.States.PLAYER_TURN_ACTIVE then return false end
   
-  -- Read data directly from BattleState to avoid timing/sync issues
+  -- Read data directly from BattleState
   local BattleState = require("core.BattleState")
   local battleState = BattleState.get()
   local rewards = battleState and battleState.rewards or {}
   
-  -- Collect turn data - prioritize BattleState as source of truth
-  local blockHitSequence = rewards.blockHitSequence or (self.left and self.left.blockHitSequence) or {} -- Array of {damage, kind} for animated damage display
-  local orbBaseDamage = rewards.baseDamage or (self.left and self.left.baseDamageThisTurn) or 0 -- Base damage from orb/projectile
+  -- Collect turn data - BattleState is now the single source of truth
+  local blockHitSequence = rewards.blockHitSequence or {}
+  local orbBaseDamage = rewards.baseDamage or 0
   
   -- Calculate base damage by summing only non-crit, non-multiplier blocks
-  -- Crit and multiplier blocks should NOT contribute to base damage - they only trigger multipliers
   local baseDamage = orbBaseDamage
   for _, hit in ipairs(blockHitSequence) do
     local kind = (type(hit) == "table" and hit.kind) or "damage"
     local amount = (type(hit) == "table" and (hit.damage or hit.amount)) or 0
-    -- Only add damage from blocks that actually deal damage
-    -- Exclude crit/multiplier (they are multipliers) and armor/heal/potion (non-damage effects)
     if kind ~= "crit" and kind ~= "multiplier" and kind ~= "armor" and kind ~= "heal" and kind ~= "potion" then
       baseDamage = baseDamage + amount
     end
   end
   
   local mult = (config.score and config.score.critMultiplier) or 2
-  local critCount = rewards.critCount or (self.left and self.left.critThisTurn) or 0
-  local multiplierCount = rewards.multiplierCount or (self.left and self.left.multiplierThisTurn) or 0
+  local critCount = rewards.critCount or 0
+  local multiplierCount = rewards.multiplierCount or 0
   
-  -- Apply crit multiplier (2x per crit)
+  -- Apply crit multiplier
   local turnScore = baseDamage
   if critCount > 0 then
     turnScore = turnScore * (mult ^ critCount)
   end
   
-  -- Apply simple damage multiplier once if any multiplier block was hit
+  -- Apply simple damage multiplier
   if multiplierCount > 0 then
     local dmgMult = (config.score and config.score.powerCritMultiplier) or 4
     turnScore = turnScore * dmgMult
   end
   
-  local armor = self.left and self.left.armorThisTurn or 0
-  local heal = self.left and self.left.healThisTurn or 0
-  local blocksDestroyed = self.left and self.left.destroyedThisTurn or 0
-  local isAOE = (self.left and self.left.aoeThisTurn) or false
-  
-  -- Get current projectile ID from shooter
-  local projectileId = "strike" -- default
-  if self.left and self.left.shooter and self.left.shooter.getCurrentProjectileId then
-    projectileId = self.left.shooter:getCurrentProjectileId()
-  end
+  local armor = rewards.armorThisTurn or 0
+  local heal = rewards.healThisTurn or 0
+  local blocksDestroyed = (battleState and battleState.blocks and battleState.blocks.destroyedThisTurn) or 0
+  local isAOE = rewards.aoeFlag or false
+  local projectileId = rewards.projectileId or "strike"
   
   -- End the turn using TurnManager
   self.turnManager:endPlayerTurn({
@@ -471,10 +463,10 @@ function SplitScene:endPlayerTurnWithTurnManager()
     crits = critCount,
     blocksDestroyed = blocksDestroyed,
     isAOE = isAOE,
-    projectileId = projectileId, -- Pass projectile ID instead of multiple booleans
-    blockHitSequence = blockHitSequence, -- Pass block hit sequence for animated damage display
-    baseDamage = baseDamage, -- Store base damage before multipliers for animation
-    orbBaseDamage = orbBaseDamage, -- Base damage from orb/projectile
+    projectileId = projectileId,
+    blockHitSequence = blockHitSequence,
+    baseDamage = baseDamage,
+    orbBaseDamage = orbBaseDamage,
     critCount = critCount,
     multiplierCount = multiplierCount,
   })

@@ -41,21 +41,6 @@ function GameplayScene.new()
     -- Turn state
     turnManager = nil,
     turnsTaken = 0,
-    canShoot = true,
-    _prevCanShoot = true,
-    
-    -- Score tracking
-    score = 0,
-    displayScore = 0,
-    armorThisTurn = 0,
-    healThisTurn = 0,
-    destroyedThisTurn = 0,
-    blocksHitThisTurn = 0,
-    critThisTurn = 0,
-    multiplierThisTurn = 0,
-    aoeThisTurn = false,
-    blockHitSequence = {},
-    baseDamageThisTurn = 0,
     
     -- Combo tracking
     comboCount = 0,
@@ -118,17 +103,34 @@ function GameplayScene:load(bounds, projectileId, battleProfile)
   BattleState.resetBlocksDestroyedThisTurn()
   self.blackHoles = self.projectileEffects.blackHoles or {}
   self.canShoot = self.state.flags.canShoot
-  self.score = self.state.rewards.score
-  self.displayScore = self.state.rewards.score
-  self.armorThisTurn = self.state.rewards.armorThisTurn
-  self.healThisTurn = self.state.rewards.healThisTurn
-  self.blocksHitThisTurn = #self.state.rewards.blockHitSequence
-  self.critThisTurn = self.state.rewards.critCount
-  self.multiplierThisTurn = self.state.rewards.multiplierCount
-  self.aoeThisTurn = self.state.rewards.aoeFlag
-  self.blockHitSequence = self.state.rewards.blockHitSequence
-  self.baseDamageThisTurn = self.state.rewards.baseDamage
-  self.destroyedThisTurn = self.state.blocks.destroyedThisTurn or 0
+
+  -- Subscribe to BattleState events
+  BattleState.on("can_shoot_changed", function(val) self.canShoot = val; if self.ballManager then self.ballManager:setCanShoot(val) end end)
+  BattleState.on("rewards_updated", function(rewards) 
+    self.score = rewards.score
+    self.displayScore = rewards.score
+    self.armorThisTurn = rewards.armorThisTurn
+    self.healThisTurn = rewards.healThisTurn
+    self.critThisTurn = rewards.critCount
+    self.multiplierThisTurn = rewards.multiplierCount
+    self.aoeThisTurn = rewards.aoeFlag
+    self.blockHitSequence = rewards.blockHitSequence
+    self.blocksHitThisTurn = #rewards.blockHitSequence
+  end)
+  BattleState.on("base_damage_changed", function(val) self.baseDamageThisTurn = val end)
+  BattleState.on("blocks_destroyed_reset", function() self.destroyedThisTurn = 0 end)
+  BattleState.on("turn_rewards_reset", function()
+    self.score = 0
+    self.displayScore = 0
+    self.armorThisTurn = 0
+    self.healThisTurn = 0
+    self.critThisTurn = 0
+    self.multiplierThisTurn = 0
+    self.aoeThisTurn = false
+    self.blockHitSequence = {}
+    self.blocksHitThisTurn = 0
+    self.baseDamageThisTurn = 0
+  end)
 
   -- Apply start-of-battle relic effects (e.g., Rally Banner +6 armor)
   do
