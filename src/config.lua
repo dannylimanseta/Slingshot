@@ -470,7 +470,7 @@ config.map = {
     blurSigma = 8.0, -- gaussian sigma used by Moonshine (increased significantly for testing)
     focusCenter = 0.5, -- normalized vertical center of the sharp band
     focusRange = 0.12, -- half-height of the in-focus band (0-0.5, reduced for narrower focus band)
-    focusFeather = 0.14, -- how soft the falloff is between sharp/blurred
+    focusFeather = 0.17, -- how soft the falloff is between sharp/blurred
     maxBlurAmount = 1.0, -- blend multiplier (1 = full blur, 0 = none)
     falloffExponent = 1.0, -- power curve to accentuate blur falloff
   },
