@@ -13,6 +13,17 @@ config.video = {
     -- factor = 2 gives 2x supersampling (recommended for most games)
     -- factor = 4 gives 4x supersampling (higher quality but more GPU intensive)
   },
+  -- Window behavior (runtime window mode set in main.lua)
+  window = {
+    startFullscreen = true, -- detect desktop resolution and enter fullscreen on boot
+    fullscreenType = "desktop", -- "desktop" preserves current desktop resolution
+    display = 1, -- monitor index (1 = primary)
+    vsync = 1,
+    resizable = true,
+    highdpi = true,
+    usedpiscale = false,
+    msaa = 0,
+  },
 }
 
 -- Scene transition settings (used by SceneManager)

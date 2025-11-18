@@ -89,7 +89,52 @@ local function updateScreenScale()
   offsetY = math.floor((winH - virtualH * scaleFactor) * 0.5)
 end
 
+local function applyInitialWindowMode()
+  if not (love and love.window and love.window.setMode) then
+    return
+  end
+
+  local videoConfig = config.video or {}
+  local windowConfig = videoConfig.window or {}
+  local wantsFullscreen = windowConfig.startFullscreen ~= false
+
+  local displayIndex = math.floor(windowConfig.display or 1)
+  if displayIndex < 1 then displayIndex = 1 end
+  local displayCount = love.window.getDisplayCount and love.window.getDisplayCount() or 1
+  if displayCount > 0 and displayIndex > displayCount then
+    displayIndex = displayCount
+  end
+
+  local options = {
+    fullscreen = wantsFullscreen,
+    fullscreentype = windowConfig.fullscreenType or "desktop",
+    display = displayIndex,
+    vsync = windowConfig.vsync ~= nil and windowConfig.vsync or 1,
+    resizable = windowConfig.resizable ~= nil and windowConfig.resizable or true,
+    highdpi = windowConfig.highdpi ~= nil and windowConfig.highdpi or true,
+    usedpiscale = windowConfig.usedpiscale ~= nil and windowConfig.usedpiscale or false,
+    msaa = windowConfig.msaa or 0,
+  }
+
+  local applied = false
+  if wantsFullscreen and love.window.getDesktopDimensions then
+    local desktopW, desktopH = love.window.getDesktopDimensions(displayIndex)
+    if desktopW and desktopH then
+      applied = love.window.setMode(desktopW, desktopH, options)
+    end
+  end
+
+  if not applied then
+    options.fullscreen = false
+    options.fullscreentype = nil
+    local fallbackW = videoConfig.virtualWidth or 1280
+    local fallbackH = videoConfig.virtualHeight or 720
+    love.window.setMode(fallbackW, fallbackH, options)
+  end
+end
+
 function love.load()
+  applyInitialWindowMode()
   math.randomseed(os.time())
 
   virtualW = (config.video and config.video.virtualWidth) or 1280
