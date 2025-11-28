@@ -246,8 +246,8 @@ function EncounterSelectScene:_drawEncounters(layout)
         table.insert(metaParts, statusDescription)
       end
 
-      local actualDifficulty = Progress.peekDifficultyLevel() or (enc.difficulty or 1)
-      table.insert(metaParts, "Difficulty: " .. tostring(actualDifficulty))
+      local encounterDifficulty = enc.difficulty or 1
+      table.insert(metaParts, "Difficulty: " .. tostring(encounterDifficulty))
 
       local enemySummary = self:_enemySummary(enc)
       if enemySummary then

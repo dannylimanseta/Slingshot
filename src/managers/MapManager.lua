@@ -1074,23 +1074,31 @@ function MapManager:completeMovement()
       -- Get current difficulty level (for the next encounter)
       local currentDifficulty = Progress.peekDifficultyLevel()
       
-      -- Filter encounters: elite node picks only elite encounters, normal node picks only non-elite encounters
-      -- Also filter by difficulty level
-      local filterFn = nil
-      if isElite then
-        filterFn = function(enc)
-          local encDifficulty = enc.difficulty or 1
-          return enc.elite == true and encDifficulty == currentDifficulty
+      -- Try to find an encounter at the current difficulty, falling back to lower difficulties
+      local encounterId = nil
+      local tryDifficulty = currentDifficulty
+      
+      while tryDifficulty >= 1 and not encounterId do
+        local filterFn = nil
+        if isElite then
+          filterFn = function(enc)
+            local encDifficulty = enc.difficulty or 1
+            return enc.elite == true and encDifficulty == tryDifficulty
+          end
+        else
+          -- Normal enemy tile: exclude elite encounters, match difficulty
+          filterFn = function(enc)
+            local encDifficulty = enc.difficulty or 1
+            return enc.elite ~= true and encDifficulty == tryDifficulty
+          end
         end
-      else
-        -- Normal enemy tile: exclude elite encounters, match difficulty
-        filterFn = function(enc)
-          local encDifficulty = enc.difficulty or 1
-          return enc.elite ~= true and encDifficulty == currentDifficulty
+        
+        encounterId = EncounterManager.pickRandomEncounterId(filterFn)
+        if not encounterId then
+          tryDifficulty = tryDifficulty - 1
         end
       end
       
-      local encounterId = EncounterManager.pickRandomEncounterId(filterFn)
       if encounterId then
         EncounterManager.setEncounterById(encounterId)
       else
