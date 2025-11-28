@@ -1,6 +1,9 @@
+-- SplitScene.lua
+-- Main scene that combines GameplayScene (breakout) and BattleScene (RPG combat)
+-- Refactored to use extracted modules for better maintainability
+
 local theme = require("theme")
 local config = require("config")
-local Trail = require("utils.trail")
 local playfield = require("utils.playfield")
 local GameplayScene = require("scenes.GameplayScene")
 local BattleScene = require("scenes.BattleScene")
@@ -10,29 +13,15 @@ local ProjectileCard = require("ui.ProjectileCard")
 local LayoutManager = require("managers.LayoutManager")
 local battle_profiles = require("data.battle_profiles")
 local TopBar = require("ui.TopBar")
-local InputManager = require("managers.InputManager")
 local OrbsUI = require("ui.OrbsUI")
-
--- Utility: radial gradient image for glow (alpha falls off toward edge)
--- Shared with Ball entity for consistency
-local function makeRadialGlow(diameter)
-  local data = love.image.newImageData(diameter, diameter)
-  local cx = (diameter - 1) * 0.5
-  local cy = (diameter - 1) * 0.5
-  local r = diameter * 0.5 - 0.5
-  data:mapPixel(function(x, y)
-    local dx = x - cx
-    local dy = y - cy
-    local dist = math.sqrt(dx * dx + dy * dy)
-    local t = math.min(1, math.max(0, dist / r))
-    local a = (1 - t)
-    a = a * a -- quadratic falloff for softer edge
-    return 1, 1, 1, a
-  end)
-  return love.graphics.newImage(data)
-end
-
 local EncounterManager = require("core.EncounterManager")
+
+-- Extracted modules
+local SplitSceneEvents = require("scenes.split.SplitSceneEvents")
+local SplitSceneRenderer = require("scenes.split.SplitSceneRenderer")
+local SplitSceneInput = require("scenes.split.SplitSceneInput")
+local SplitSceneTurnLogic = require("scenes.split.SplitSceneTurnLogic")
+
 local SplitScene = {}
 SplitScene.__index = SplitScene
 
@@ -49,25 +38,25 @@ function SplitScene.new()
     turnManager = nil,
     -- Projectile card UI
     projectileCard = nil,
-    currentProjectileId = "strike", -- Default projectile
-    _prevProjectileId = nil, -- Track previous projectile for fade detection
-    tooltipFadeTimer = 0, -- Timer for tooltip fade animation
-    tooltipFadeDuration = 0.3, -- Duration of fade animation in seconds
+    currentProjectileId = "strike",
+    _prevProjectileId = nil,
+    tooltipFadeTimer = 0,
+    tooltipFadeDuration = 0.3,
     -- Layout management for dynamic canvas width
     layoutManager = LayoutManager.new(),
-    _lastCenterW = nil, -- Track width changes for wall updates
+    _lastCenterW = nil,
     -- Edge glow effects
     edgeGlowImage = nil,
     edgeGlowLeftTimer = 0,
     edgeGlowRightTimer = 0,
-    edgeGlowLeftY = 0, -- Y position of left edge bounce
-    edgeGlowRightY = 0, -- Y position of right edge bounce
-    edgeGlowDuration = 0.3, -- Duration of glow effect in seconds
+    edgeGlowLeftY = 0,
+    edgeGlowRightY = 0,
+    edgeGlowDuration = 0.3,
     -- Cached small font for orb name display
     _smallFont = smallFont,
     -- Left boundary damage effect
-    boundaryLeftDamageTimer = 0, -- Timer for left boundary fade-in when player takes damage
-    boundaryLeftDamageDuration = 0.5, -- Duration of fade-in effect
+    boundaryLeftDamageTimer = 0,
+    boundaryLeftDamageDuration = 0.5,
     -- Screenshake for full screen
     shakeTime = 0,
     shakeDuration = 0,
@@ -77,47 +66,82 @@ function SplitScene.new()
     _defeatDetected = false,
     _returnToMapTimer = 0,
     topBar = TopBar.new(),
-    orbsUI = OrbsUI.new(), -- UI for viewing equipped orbs
-    _orbsUIOpen = false, -- track if orbs UI is open
+    orbsUI = OrbsUI.new(),
+    _orbsUIOpen = false,
     _mouseX = 0,
     _mouseY = 0,
-    -- Lightning impact delay timer (delay after last lightning streak hits before playing enemy animation)
+    -- Lightning impact delay timer
     _lightningImpactDelayTimer = 0,
-    _lightningImpactDelayDuration = 0.2, -- Delay duration in seconds
+    _lightningImpactDelayDuration = 0.2,
   }, SplitScene)
 end
 
 function SplitScene:load()
-  -- Ensure layoutManager exists (it can be nil after unload when reusing the same scene instance)
+  -- Ensure layoutManager exists
   if not self.layoutManager then
     self.layoutManager = LayoutManager.new()
   end
-  -- Use virtual resolution from config (matches canvas size)
+  
+  -- Use virtual resolution from config
   local w = (config.video and config.video.virtualWidth) or 1280
   local h = (config.video and config.video.virtualHeight) or 720
   local centerRect = self.layoutManager:getCenterRect(w, h)
+  
   self.left = GameplayScene.new()
   self.right = BattleScene.new()
   
-  -- Get encounter battle profile if set, else fall back to battle type profile
+  -- Get encounter battle profile
   local currentBattleType = self.layoutManager:getBattleType()
   local battleProfile = EncounterManager.getCurrentBattleProfile() or battle_profiles.getProfile(currentBattleType)
   
   self.left:load({ x = 0, y = 0, w = centerRect.w, h = h }, self.currentProjectileId, battleProfile)
   self.right:load({ x = centerRect.w, y = 0, w = w - centerRect.w, h = h }, battleProfile)
   self._lastCenterW = centerRect.w
+  
   -- Ensure only SplitScene draws the shared top bar
   if self.left then self.left.disableTopBar = true end
   if self.right then self.right.disableTopBar = true end
-  -- Grey out orbs and inventory icons during battle (use shared top bar)
+  
+  -- Grey out orbs and inventory icons during battle
   if self.topBar then
     self.topBar.disableOrbsIcon = true
     self.topBar.disableInventoryIcon = true
   end
 
-  -- Remove per-first-enemy runtime scale multiplier for consistent enemy sizes
+  -- Load assets
+  self:loadAssets()
+  
+  -- Set up callbacks
+  self:setupCallbacks()
 
-  -- Background image (optional)
+  -- Initialize TurnManager
+  self.turnManager = TurnManager.new()
+  TurnActions.registerAll(self.turnManager)
+  
+  -- Give BattleScene access to TurnManager
+  if self.right and self.right.setTurnManager then
+    self.right:setTurnManager(self.turnManager)
+  end
+  self.turnManager._sceneRight = self.right
+  
+  -- Give GameplayScene access to TurnManager
+  if self.left and self.left.setTurnManager then
+    self.left:setTurnManager(self.turnManager)
+  end
+
+  -- Set up event handlers using extracted module
+  SplitSceneEvents.setup(self)
+  
+  -- Initialize projectile card UI
+  self.projectileCard = ProjectileCard.new()
+  
+  -- Start the first player turn
+  self.turnManager:startPlayerTurn()
+end
+
+--- Load all image assets
+function SplitScene:loadAssets()
+  -- Background image
   self.bgImage = nil
   local bgPath = (config.assets and config.assets.images and config.assets.images.background) or nil
   if bgPath then
@@ -125,7 +149,7 @@ function SplitScene:load()
     if ok then self.bgImage = img end
   end
 
-  -- Boundary images for left and right edges
+  -- Boundary images
   self.boundaryLeft = nil
   self.boundaryRight = nil
   local boundaryLeftPath = "assets/images/boundary_left.png"
@@ -135,7 +159,7 @@ function SplitScene:load()
   local okRight, imgRight = pcall(love.graphics.newImage, boundaryRightPath)
   if okRight then self.boundaryRight = imgRight end
 
-  -- Edge glow image for ball hits
+  -- Edge glow image
   self.edgeGlowImage = nil
   local edgeGlowPath = "assets/images/fx/edge_glow.png"
   local okGlow, imgGlow = pcall(love.graphics.newImage, edgeGlowPath)
@@ -152,32 +176,14 @@ function SplitScene:load()
   local blackBandPath = "assets/images/fx/black_band.png"
   local okBand, imgBand = pcall(love.graphics.newImage, blackBandPath)
   if okBand then self.blackBandImage = imgBand end
+end
 
-
-  -- Set up callback for when player takes damage
+--- Set up callbacks between scenes
+function SplitScene:setupCallbacks()
+  -- Player damage callback
   self.right.onPlayerDamage = function()
-    -- Trigger left boundary fade-in effect
     self.boundaryLeftDamageTimer = self.boundaryLeftDamageDuration
-    -- Trigger screenshake
     self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
-  end
-
-  -- Enemy turn resolved callback removed - handled by TurnManager events
-  
-  -- Initialize TurnManager
-  self.turnManager = TurnManager.new()
-  TurnActions.registerAll(self.turnManager)
-  
-  -- Give BattleScene access to TurnManager
-  if self.right and self.right.setTurnManager then
-    self.right:setTurnManager(self.turnManager)
-  end
-  -- Give TurnManager a reference to BattleScene for enemy-turn-busy checks
-  self.turnManager._sceneRight = self.right
-  
-  -- Give GameplayScene access to TurnManager
-  if self.left and self.left.setTurnManager then
-    self.left:setTurnManager(self.turnManager)
   end
 
   -- Edge hit callback for glow effect
@@ -185,302 +191,23 @@ function SplitScene:load()
     self.left.onEdgeHit = function(side, y)
       if side == "left" then
         self.edgeGlowLeftTimer = self.edgeGlowDuration
-        self.edgeGlowLeftY = y or -200 -- Use bounce y-position or default
+        self.edgeGlowLeftY = y or -200
       elseif side == "right" then
         self.edgeGlowRightTimer = self.edgeGlowDuration
-        self.edgeGlowRightY = y or -200 -- Use bounce y-position or default
+        self.edgeGlowRightY = y or -200
       end
     end
   end
-  
-  
-  -- Set up event handlers for TurnManager
-  self:setupTurnManagerEvents()
-  
-  -- Initialize projectile card UI
-  self.projectileCard = ProjectileCard.new()
-  
-  -- Show initial "PLAYER'S TURN" indicator at game start using TurnManager
-  -- Start the first player turn
-  self.turnManager:startPlayerTurn()
-end
-
--- Set up TurnManager event handlers
-function SplitScene:setupTurnManagerEvents()
-  if not self.turnManager then return end
-  
-  -- Show turn indicator event
-  self.turnManager:on("show_turn_indicator", function(data)
-    if self.right and self.right.showTurnIndicator then
-      -- Ensure we have valid data
-      local text = data and data.text or "TURN"
-      local duration = data and data.duration or 1.0
-      self.right:showTurnIndicator(text, duration)
-    end
-  end)
-  
-  -- Enable shooting when player turn becomes active
-  self.turnManager:on("state_enter", function(newState, previousState)
-    if newState == TurnManager.States.PLAYER_TURN_ACTIVE then
-      if self.left then
-        self.left.canShoot = true
-      end
-    elseif newState == TurnManager.States.PLAYER_TURN_START then
-      -- Disable shooting at start of turn (will be enabled when active)
-      if self.left then
-        self.left.canShoot = false
-      end
-    elseif newState == TurnManager.States.ENEMY_TURN_START then
-      -- Decrement calcify turns at the end of the player's turn
-      -- (transitioning from PLAYER_TURN_RESOLVING)
-      if previousState == TurnManager.States.PLAYER_TURN_RESOLVING then
-        if self.left and self.left.blocks and self.left.blocks.blocks then
-          for _, block in ipairs(self.left.blocks.blocks) do
-            if block and block.decrementCalcifyTurns then
-              block:decrementCalcifyTurns()
-            end
-          end
-        end
-      end
-    end
-  end)
-  
-  -- Apply damage event (when player turn ends)
-  self.turnManager:on("apply_damage", function(data)
-    if data.target == "enemy" and self.right and self.right.onPlayerTurnEnd then
-      local turnData = self.turnManager:getTurnData()
-      -- Pass consolidated turn data object
-      self.right:onPlayerTurnEnd({
-        damage = data.amount,
-        armor = turnData.armor or 0,
-        isAOE = turnData.isAOE or false,
-        projectileId = turnData.projectileId or "strike",
-        blockHitSequence = turnData.blockHitSequence or {},
-        baseDamage = turnData.baseDamage or data.amount,
-        orbBaseDamage = turnData.orbBaseDamage or 0,
-        critCount = turnData.critCount or 0,
-        multiplierCount = turnData.multiplierCount or 0,
-        impactBlockCount = (self._pendingImpactParams and self._pendingImpactParams.blockCount) or 1,
-        impactIsCrit = (self._pendingImpactParams and self._pendingImpactParams.isCrit) or false,
-      })
-      -- Apply healing if any
-      if turnData.heal and turnData.heal > 0 and self.right and self.right.applyHealing then
-        self.right:applyHealing(turnData.heal)
-      end
-      -- Trigger screenshake for player attack
-      self:triggerShake((config.battle and config.battle.shakeMagnitude) or 10, (config.battle and config.battle.shakeDuration) or 0.25)
-    end
-  end)
-  
-  -- Show armor popup event
-  self.turnManager:on("show_armor_popup", function(data)
-    -- This is already handled by BattleScene's onPlayerTurnEnd via pendingArmor
-    -- No additional action needed here
-  end)
-  
-  -- Check victory event
-  self.turnManager:on("check_victory", function()
-    if self.right and self.right.enemies then
-      local allDefeated = true
-      for _, enemy in ipairs(self.right.enemies) do
-        if enemy.hp > 0 and not enemy.disintegrating then
-          allDefeated = false
-          break
-        end
-      end
-      if allDefeated then
-      self.turnManager:transitionTo(TurnManager.States.VICTORY)
-      end
-    end
-  end)
-  
-  -- Enemy attack event (handled by BattleScene directly)
-  
-  -- Check defeat event
-  self.turnManager:on("check_defeat", function()
-    if self.right and self.right.playerHP and self.right.playerHP <= 0 then
-      self.turnManager:transitionTo(TurnManager.States.DEFEAT)
-    end
-  end)
-  
-  -- Spawn blocks event
-  self.turnManager:on("spawn_blocks", function(data)
-    if self.left and self.left.respawnDestroyedBlocks then
-      local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
-      local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
-      local centerRect = self.layoutManager:getCenterRect(vw, vh)
-      self.left:respawnDestroyedBlocks({ x = 0, y = 0, w = centerRect.w, h = vh }, (data and data.count) or 0)
-    end
-  end)
-  
-  -- Enemy shockwave blocks event
-  self.turnManager:on("enemy_shockwave_blocks", function()
-    if self.left and self.left.triggerBlockShakeAndDrop then
-      self.left:triggerBlockShakeAndDrop()
-    end
-  end)
-  
-  -- Enemy calcify blocks event (immediate calcify, no animation)
-  self.turnManager:on("enemy_calcify_blocks", function(data)
-    if self.left and self.left.calcifyBlocks then
-      self.left:calcifyBlocks(data.count or 3)
-    end
-  end)
-  
-  -- Enemy calcify request blocks event (for particle animation)
-  self.turnManager:on("enemy_calcify_request_blocks", function(data)
-    if self.left and self.left.getCalcifyBlockPositions then
-      local blockPositions = self.left:getCalcifyBlockPositions(data.count or 3)
-      if blockPositions and #blockPositions > 0 then
-        -- Convert block positions from GameplayScene local coordinates to screen coordinates
-        local w = (config.video and config.video.virtualWidth) or 1280
-        local h = (config.video and config.video.virtualHeight) or 720
-        local centerRect = self.layoutManager:getCenterRect(w, h)
-        local centerX = centerRect.x - 100 -- Shift breakout canvas 100px to the left (matching draw)
-        
-        -- Convert each block position to screen coordinates
-        for _, blockPos in ipairs(blockPositions) do
-          blockPos.x = blockPos.x + centerX -- Convert from local to screen X
-          -- Y doesn't need conversion as it's the same
-        end
-        
-        -- Send block positions back to BattleScene
-        if self.right and self.right.startCalcifyAnimation then
-          self.right:startCalcifyAnimation(data.enemyX, data.enemyY, blockPositions)
-        end
-      end
-    end
-  end)
-
-  -- Enemy charge skill: spawn armor blocks on the board
-  self.turnManager:on("enemy_charge_spawn_armor_blocks", function(data)
-    if self.left and self.left.spawnArmorBlocks then
-      local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
-      local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
-      local centerRect = self.layoutManager:getCenterRect(vw, vh)
-      self.left:spawnArmorBlocks({ x = 0, y = 0, w = centerRect.w, h = vh }, (data and data.count) or 3)
-    end
-  end)
-
-  -- Enemy spore skill: spawn spore blocks on the board
-  self.turnManager:on("enemy_spore_spawn_blocks", function(data)
-    if self.left and self.left.spawnSporeBlocks then
-      local vw = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
-      local vh = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
-      local centerRect = self.layoutManager:getCenterRect(vw, vh)
-      self.left:spawnSporeBlocks({ x = 0, y = 0, w = centerRect.w, h = vh }, (data and data.count) or 2)
-    end
-  end)
-
-  -- Enemy spore request positions (for particle animation)
-  self.turnManager:on("enemy_spore_request_positions", function(data)
-    if self.left and self.left.getSporeSpawnPositions and self.right and self.right.startSporeAnimation then
-      local positions = self.left:getSporeSpawnPositions((data and data.count) or 2)
-      if positions and #positions > 0 then
-        -- Convert block positions from GameplayScene local coordinates to screen coordinates
-        local w = (config.video and config.video.virtualWidth) or 1280
-        local h = (config.video and config.video.virtualHeight) or 720
-        local centerRect = self.layoutManager:getCenterRect(w, h)
-        local centerX = centerRect.x - 100 -- Shift breakout canvas 100px to the left (matching draw)
-        
-        -- Convert each block position to screen coordinates
-        for _, blockPos in ipairs(positions) do
-          blockPos.x = blockPos.x + centerX -- Convert from local to screen X
-          -- Y doesn't need conversion as it's the same
-        end
-        
-        -- Send block positions back to BattleScene
-        self.right:startSporeAnimation((data and data.enemyX) or 0, (data and data.enemyY) or 0, positions)
-      end
-    end
-  end)
-
-  -- Enemy spore: spawn a single block at provided coordinates
-  self.turnManager:on("enemy_spore_spawn_block_at", function(data)
-    if self.left and self.left.spawnSporeBlockAt and data and data.x and data.y then
-      -- Convert from screen coordinates back to GameplayScene local coordinates
-      local w = (config.video and config.video.virtualWidth) or 1280
-      local h = (config.video and config.video.virtualHeight) or 720
-      local centerRect = self.layoutManager:getCenterRect(w, h)
-      local centerX = centerRect.x - 100 -- Same offset as used in conversion
-      local localX = data.x - centerX -- Convert back to local coordinates
-      self.left:spawnSporeBlockAt(localX, data.y) -- Y doesn't need conversion
-    end
-  end)
-end
-
--- Helper function to end player turn using TurnManager
-function SplitScene:endPlayerTurnWithTurnManager()
-  local state = self.turnManager:getState()
-  if state ~= TurnManager.States.PLAYER_TURN_ACTIVE then return false end
-  
-  -- Read data directly from BattleState
-  local BattleState = require("core.BattleState")
-  local battleState = BattleState.get()
-  local rewards = battleState and battleState.rewards or {}
-  
-  -- Collect turn data - BattleState is now the single source of truth
-  local blockHitSequence = rewards.blockHitSequence or {}
-  local orbBaseDamage = rewards.baseDamage or 0
-  
-  -- Calculate base damage by summing only non-crit, non-multiplier blocks
-  local baseDamage = orbBaseDamage
-  for _, hit in ipairs(blockHitSequence) do
-    local kind = (type(hit) == "table" and hit.kind) or "damage"
-    local amount = (type(hit) == "table" and (hit.damage or hit.amount)) or 0
-    if kind ~= "crit" and kind ~= "multiplier" and kind ~= "armor" and kind ~= "heal" and kind ~= "potion" then
-      baseDamage = baseDamage + amount
-    end
-  end
-  
-  local mult = (config.score and config.score.critMultiplier) or 2
-  local critCount = rewards.critCount or 0
-  local multiplierCount = rewards.multiplierCount or 0
-  
-  -- Apply crit multiplier
-  local turnScore = baseDamage
-  if critCount > 0 then
-    turnScore = turnScore * (mult ^ critCount)
-  end
-  
-  -- Apply simple damage multiplier
-  if multiplierCount > 0 then
-    local dmgMult = (config.score and config.score.powerCritMultiplier) or 4
-    turnScore = turnScore * dmgMult
-  end
-  
-  local armor = rewards.armorThisTurn or 0
-  local heal = rewards.healThisTurn or 0
-  local blocksDestroyed = (battleState and battleState.blocks and battleState.blocks.destroyedThisTurn) or 0
-  local isAOE = rewards.aoeFlag or false
-  local projectileId = rewards.projectileId or "strike"
-  
-  -- End the turn using TurnManager
-  self.turnManager:endPlayerTurn({
-    score = turnScore,
-    armor = armor,
-    heal = heal,
-    crits = critCount,
-    blocksDestroyed = blocksDestroyed,
-    isAOE = isAOE,
-    projectileId = projectileId,
-    blockHitSequence = blockHitSequence,
-    baseDamage = baseDamage,
-    orbBaseDamage = orbBaseDamage,
-    critCount = critCount,
-    multiplierCount = multiplierCount,
-  })
-  
-  return true
 end
 
 function SplitScene:resize(width, height)
-  -- Use virtual resolution from config for layout calculations (resize is called with window dimensions, but we work in virtual space)
   local w = (config.video and config.video.virtualWidth) or 1280
   local h = (config.video and config.video.virtualHeight) or 720
   local centerRect = self.layoutManager:getCenterRect(w, h)
+  
   if self.left and self.left.resize then self.left:resize(centerRect.w, h) end
   if self.right and self.right.resize then self.right:resize(w - centerRect.w, h) end
+  
   -- Update walls if width changed significantly
   if self._lastCenterW and math.abs(centerRect.w - self._lastCenterW) > 1 then
     if self.left and self.left.updateWalls then
@@ -490,437 +217,76 @@ function SplitScene:resize(width, height)
   end
 end
 
-
 function SplitScene:draw()
-  -- Always use virtual resolution from config (matches canvas size)
   local w = (config.video and config.video.virtualWidth) or 1280
   local h = (config.video and config.video.virtualHeight) or 720
   local centerRect = self.layoutManager:getCenterRect(w, h)
   local centerW = centerRect.w
-  local centerX = centerRect.x - 100 -- Shift breakout canvas 100px to the left
+  local centerX = centerRect.x - 100
   
-  -- Calculate grid bounds (matching editor exactly)
-  -- Note: grid bounds are relative to the center canvas, so we need to add centerX offset
+  -- Calculate grid bounds
   local gridStartX, gridEndX = playfield.calculateGridBounds(centerW, h)
   local gridStartXAbsolute = centerX + gridStartX
   local gridEndXAbsolute = centerX + gridEndX
 
-  -- Apply screenshake as a camera translation (ease-out)
+  -- Apply screenshake
   love.graphics.push()
   if self.shakeTime > 0 and self.shakeDuration > 0 then
     local t = self.shakeTime / self.shakeDuration
-    local ease = t * t -- quadratic ease-out
+    local ease = t * t
     local mag = self.shakeMagnitude * ease
     local ox = (love.math.random() * 2 - 1) * mag
     local oy = (love.math.random() * 2 - 1) * mag
     love.graphics.translate(ox, oy)
   end
 
-  -- Background clear
-  love.graphics.clear(theme.colors.background)
+  -- Draw background
+  SplitSceneRenderer.drawBackground(self, w, h)
 
-  -- Draw background image if available (cover)
-  if self.bgImage then
-    local iw, ih = self.bgImage:getWidth(), self.bgImage:getHeight()
-    if iw > 0 and ih > 0 then
-      local sx = w / iw
-      local sy = h / ih
-      local s = math.max(sx, sy)
-      local dx = (w - iw * s) * 0.5
-      local dy = (h - ih * s) * 0.5
-      love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.draw(self.bgImage, dx, dy, 0, s, s)
-      love.graphics.setColor(1, 1, 1, 1)
-    end
-  end
-
-  -- Draw battle scene across full screen first (so gameplay can overlay center)
+  -- Draw battle scene (full screen, behind gameplay)
   local battleBounds = { x = 0, y = 0, w = w, h = h, center = { x = centerX, w = centerW, h = h } }
   if self.right and self.right.draw then
     self.right:draw(battleBounds)
   end
 
-  -- Draw boundary images at left and right edges of breakout canvas (outside scissor so they extend outward)
+  -- Draw boundaries
   love.graphics.push("all")
   love.graphics.setBlendMode("add")
-  
-  -- Left boundary with damage effect
-  if self.boundaryLeft then
-    local iw, ih = self.boundaryLeft:getWidth(), self.boundaryLeft:getHeight()
-    if iw > 0 and ih > 0 then
-      local scale = h / ih -- Scale to match canvas height
-      local widthScale = scale * 1.1 -- Increase width by 10%
-      local scaledWidth = iw * widthScale
-      
-      -- Calculate fade-in alpha for damage effect
-      local baseAlpha = 0.1
-      local damageAlpha = 0
-      if self.boundaryLeftDamageTimer > 0 then
-        -- Smooth fade: quick fade in (first 20%), hold briefly, then smooth fade out
-        local progress = 1 - (self.boundaryLeftDamageTimer / self.boundaryLeftDamageDuration)
-        local fadeInEnd = 0.2
-        local fadeOutStart = 0.4
-        
-        if progress <= fadeInEnd then
-          -- Fade in: 0 to 1 over first 20% using ease-out curve
-          local t = progress / fadeInEnd
-          damageAlpha = 1 - (1 - t) * (1 - t) -- Ease-out quadratic
-        elseif progress >= fadeOutStart then
-          -- Fade out: 1 to 0 over last 60% using ease-in curve
-          local t = (progress - fadeOutStart) / (1 - fadeOutStart)
-          damageAlpha = 1 - t * t -- Ease-in quadratic (smooth fade to 0)
-        else
-          -- Hold at full intensity between fade in and fade out
-          damageAlpha = 1
-        end
-      end
-      
-      -- Apply tint color #E0707E when damage effect is active, otherwise use white
-      local r, g, b = 1, 1, 1
-      if damageAlpha > 0 then
-        -- Player damage color: #E0707E = RGB(224, 112, 126)
-        r, g, b = 224/255, 112/255, 126/255
-        -- Blend base alpha with damage alpha (max intensity when damageAlpha = 1)
-        local totalAlpha = baseAlpha + damageAlpha * 0.9
-        love.graphics.setColor(r, g, b, totalAlpha)
-      else
-        love.graphics.setColor(r, g, b, baseAlpha)
-      end
-      
-      -- Align right edge of image to left grid edge (origin at top-right, extends leftward, 100px up)
-      love.graphics.draw(self.boundaryLeft, gridStartXAbsolute, -100, 0, widthScale, scale, scaledWidth, 0)
-    end
-  end
-  
-  -- Right boundary (unchanged)
-  love.graphics.setColor(1, 1, 1, 0.1)
-  
-  if self.boundaryRight then
-    local iw, ih = self.boundaryRight:getWidth(), self.boundaryRight:getHeight()
-    if iw > 0 and ih > 0 then
-      local scale = h / ih -- Scale to match canvas height
-      local widthScale = scale * 1.1 -- Increase width by 10%
-      -- Align left edge of image to right grid edge (extends rightward, 100px up)
-      love.graphics.draw(self.boundaryRight, gridEndXAbsolute, -100, 0, widthScale, scale)
-    end
-  end
-  
+  SplitSceneRenderer.drawLeftBoundary(self, gridStartXAbsolute, h)
+  SplitSceneRenderer.drawRightBoundary(self, gridEndXAbsolute, h)
   love.graphics.pop()
 
-  -- Draw gameplay centered (scissor removed, grid positioning preserved)
+  -- Draw gameplay centered
   love.graphics.push()
   love.graphics.translate(centerX, 0)
-    if self.left and self.left.draw then self.left:draw({ x = 0, y = 0, w = centerW, h = h }) end
+  if self.left and self.left.draw then 
+    self.left:draw({ x = 0, y = 0, w = centerW, h = h }) 
+  end
   love.graphics.pop()
   
+  -- Draw battle overlays
   if self.right and self.right.drawAttackOverlay then
     self.right:drawAttackOverlay(battleBounds)
   end
-  
   if self.right and self.right.drawSkillParticles then
     self.right:drawSkillParticles()
   end
 
-  -- Draw edge glow effects when ball hits edges (after gameplay scene, outside scissor so they're not clipped)
-  -- Push state to save scissor, then clear it
-  love.graphics.push("all")
-  love.graphics.setScissor() -- Disable scissor
-  love.graphics.setBlendMode("add") -- Use additive blending for glows
-  
-  -- Left edge glow (aligned to left edge of shifted canvas)
-  if self.edgeGlowLeftTimer > 0 then
-    local glowAlpha = (self.edgeGlowLeftTimer / self.edgeGlowDuration) * 0.8 -- Fade from 0.8 to 0
-    
-    if self.edgeGlowImage then
-      local iw, ih = self.edgeGlowImage:getWidth(), self.edgeGlowImage:getHeight()
-      if iw > 0 and ih > 0 then
-        local scale = (h / ih) * 0.5 -- Reduce size by 50%
-        local scaledWidth = iw * scale
-        love.graphics.setColor(1, 1, 1, glowAlpha)
-        -- Align right edge of glow to left grid edge
-        -- Flip horizontally (negative x-scale) with origin at top-right for x, center for y
-        -- When flipped, origin (0, ih/2) becomes the right edge at center vertically
-        -- Position at gridStartXAbsolute and bounce y-position (y-position is now at center of glow)
-        love.graphics.draw(self.edgeGlowImage, gridStartXAbsolute, self.edgeGlowLeftY, 0, -scale, scale, 0, ih * 0.5)
-      end
-    else
-      -- Fallback: draw a simple rectangle if image doesn't load
-      love.graphics.setColor(1, 0.5, 0, glowAlpha)
-      love.graphics.rectangle("fill", gridStartXAbsolute - 20, self.edgeGlowLeftY, 20, h)
-    end
-  end
-  
-  -- Right edge glow (aligned to left of boundary_right, extends outward to the right)
-  if self.edgeGlowRightTimer > 0 then
-    local glowAlpha = (self.edgeGlowRightTimer / self.edgeGlowDuration) * 0.8 -- Fade from 0.8 to 0
-    
-    if self.edgeGlowImage then
-      local iw, ih = self.edgeGlowImage:getWidth(), self.edgeGlowImage:getHeight()
-      if iw > 0 and ih > 0 then
-        local scale = (h / ih) * 0.5 -- Reduce size by 50%
-        love.graphics.setColor(1, 1, 1, glowAlpha)
-        -- Align left edge of glow to right grid edge
-        -- Don't flip - draw normally so it extends rightward outward
-        -- Position at bounce y-position (y-position is now at center of glow)
-        -- Origin at (0, ih/2) so vertically centered
-        love.graphics.draw(self.edgeGlowImage, gridEndXAbsolute, self.edgeGlowRightY, 0, scale, scale, 0, ih * 0.5)
-      end
-    else
-      -- Fallback: draw a simple rectangle if image doesn't load
-      love.graphics.setColor(1, 0.5, 0, glowAlpha)
-      love.graphics.rectangle("fill", gridEndXAbsolute, self.edgeGlowRightY, 20, h)
-    end
-  end
-  
-  love.graphics.pop() -- Restore state
+  -- Draw edge glows
+  SplitSceneRenderer.drawEdgeGlows(self, gridStartXAbsolute, gridEndXAbsolute, h)
 
-  -- Draw vertical guide lines marking center area (subtle)
-  love.graphics.setColor(1, 1, 1, 0.0)
-  love.graphics.setLineWidth(2)
-  love.graphics.line(centerX, 0, centerX, h)
-  love.graphics.line(centerX + centerW, 0, centerX + centerW, h)
-  love.graphics.setColor(1, 1, 1, 1)
+  -- Draw guide lines (debug)
+  SplitSceneRenderer.drawGuideLines(centerX, centerW, h)
 
-  -- Draw turn indicator overlay and text at highest z-depth (on top of everything)
-  if self.right and self.right.turnIndicator then
-    -- Use the duration from turnIndicator (already slowed by 50% at source), or default to 1.5
-    local lifetime = self.right.turnIndicator.duration or 1.5
-    local t = self.right.turnIndicator.t / lifetime -- 1 -> 0
-    local fadeInEnd = 0.85 -- Fade in completes at 85% of lifetime remaining (15% through animation)
-    local fadeOutStart = 0.15 -- Start fading out at 15% of lifetime remaining
-    
-    -- Calculate alpha with fade in and fade out
-    local alpha = 1.0
-    if t > fadeInEnd then
-      -- Fade in phase (t goes from 1.0 to fadeInEnd)
-      local fadeInProgress = (1.0 - t) / (1.0 - fadeInEnd) -- 0 -> 1
-      alpha = fadeInProgress
-    elseif t < fadeOutStart then
-      -- Fade out phase (t goes from fadeOutStart to 0)
-      alpha = t / fadeOutStart
-    else
-      -- Hold phase (full alpha)
-      alpha = 1.0
-    end
-    
-    -- Draw black band image instead of full screen overlay
-    if self.blackBandImage then
-      local bandW, bandH = self.blackBandImage:getDimensions()
-      -- Scale to fit screen width, then increase size by 50% (scale by 1.5)
-      local baseScaleX = w / bandW
-      local scaleX = baseScaleX * 1.5 -- Increase size by 50%
-      
-      -- Calculate height scale - grows during fade in, continues expanding slowly during hold, shrinks only during fade out
-      local heightScale = 1.0
-      if t > fadeInEnd then
-        -- Fade in phase: grow from 30% to 100% height
-        local fadeInProgress = (1.0 - t) / (1.0 - fadeInEnd) -- 0 -> 1
-        -- Ease-out for smooth growth
-        local easedProgress = 1.0 - (1.0 - fadeInProgress) * (1.0 - fadeInProgress)
-        local minHeightScale = 0.3
-        heightScale = minHeightScale + (1.0 - minHeightScale) * easedProgress
-      elseif t < fadeOutStart then
-        -- Fade out phase: shrink from 105% to 30% height
-        local fadeOutProgress = t / fadeOutStart -- 1 -> 0
-        -- Ease-in for smooth shrinking
-        local easedProgress = fadeOutProgress * fadeOutProgress
-        local minHeightScale = 0.3
-        -- Start shrinking from the expanded height (1.05 = 105%)
-        local maxExpandedHeight = 1.05
-        heightScale = minHeightScale + (maxExpandedHeight - minHeightScale) * easedProgress
-      else
-        -- Hold phase: continue expanding slowly from 100% to 105%
-        -- Calculate progress through hold phase (t goes from fadeInEnd to fadeOutStart)
-        local holdProgress = (t - fadeOutStart) / (fadeInEnd - fadeOutStart) -- 1 -> 0 (inverse)
-        -- Ease-out for slow expansion
-        local easedHoldProgress = 1.0 - (1.0 - holdProgress) * (1.0 - holdProgress)
-        -- Expand from 1.0 (100%) to 1.05 (105%)
-        heightScale = 1.0 + (0.05 * easedHoldProgress)
-      end
-      
-      local scaleY = scaleX * heightScale -- Apply height scale
-      local scaledH = bandH * scaleY
-      
-      -- Center vertically (accounting for height change)
-      local bandY = (h - scaledH) * 0.5
-      
-      -- Center horizontally (since band is now wider than screen)
-      local bandX = (w - (bandW * scaleX)) * 0.5
-      
-      -- Fade in/out the band
-      love.graphics.setColor(1, 1, 1, alpha)
-      love.graphics.draw(self.blackBandImage, bandX, bandY, 0, scaleX, scaleY)
-      love.graphics.setColor(1, 1, 1, 1)
-    else
-      -- Fallback to black overlay if image not loaded
-    love.graphics.setColor(0, 0, 0, 0.6 * alpha)
-    love.graphics.rectangle("fill", 0, 0, w, h)
-    love.graphics.setColor(1, 1, 1, 1)
-    end
-    
-    -- Pop-in scale animation (easeOutBack)
-    local scale = 1.0
-    if t > 0.7 then
-      local popT = (1.0 - t) / 0.3 -- 0 -> 1
-      local c1, c3 = 1.70158, 2.70158
-      local u = (popT - 1)
-      scale = 1 + c3 * (u * u * u) + c1 * (u * u)
-    end
-    
-    love.graphics.push()
-    love.graphics.setFont(theme.fonts.jackpot or theme.fonts.large)
-    local text = self.right.turnIndicator.text
-    local font = theme.fonts.jackpot or theme.fonts.large
-    local textW = font:getWidth(text)
-    local centerRect = self.layoutManager:getCenterRect(w, h)
-    local centerX = centerRect.x + centerRect.w * 0.5 -- Center of center area
-    local centerY = h * 0.5 - 20 -- Shifted up by 80px (was 130px, now shifted down by 50px)
-    -- Adjust text position based on turn type
-    if text == "YOUR TURN" then
-      centerY = centerY - 10 -- Shift YOUR TURN up by 10px
-    elseif text == "ENEMY'S TURN" then
-      centerY = centerY + 20 -- Lower ENEMY'S TURN by 20px
-    end
-    
-    -- Spacing + scale between decorative images and text (animated ease-out)
-    local baseDecorSpacing = 40
-    local startDecorSpacing = 6
-    local baseDecorScale = 0.7
-    local decorExpandDuration = 0.35
-    local decorProgress = math.min(1, math.max(0, (1 - t) / decorExpandDuration))
-    local decorEase = 1 - (1 - decorProgress) * (1 - decorProgress) * (1 - decorProgress)
-    local decorSpacing = startDecorSpacing + (baseDecorSpacing - startDecorSpacing) * decorEase
-    local decorScale = baseDecorScale * (0.5 + 0.5 * decorEase)
-    
-    love.graphics.push()
-    love.graphics.translate(centerX, centerY)
-    love.graphics.scale(scale, scale)
-    
-    -- Draw decorative images on both sides of text
-    if self.decorImage then
-      local decorW = self.decorImage:getWidth()
-      local decorH = self.decorImage:getHeight()
-      local scaledW = decorW * decorScale
-      local scaledH = decorH * decorScale
-      
-      -- Calculate center positions for both images
-      local leftCenterX = -textW * 0.5 - decorSpacing - scaledW * 0.5
-      local rightCenterX = textW * 0.5 + decorSpacing + scaledW * 0.5
-      
-      love.graphics.setColor(1, 1, 1, alpha)
-      
-      -- Draw left decorative image (normal, scaled with center pivot)
-      love.graphics.push()
-      love.graphics.translate(leftCenterX, 0)
-      love.graphics.scale(decorScale, decorScale)
-      love.graphics.draw(self.decorImage, -decorW * 0.5, -decorH * 0.5)
-      love.graphics.pop()
-      
-      -- Draw right decorative image (flipped horizontally, scaled with center pivot)
-      love.graphics.push()
-      love.graphics.translate(rightCenterX, 0)
-      love.graphics.scale(-decorScale, decorScale) -- Flip horizontally and scale
-      love.graphics.draw(self.decorImage, -decorW * 0.5, -decorH * 0.5)
-      love.graphics.pop()
-    end
-    
-    -- Draw text (no outline)
-    love.graphics.setColor(1, 1, 1, alpha)
-    local textY = -font:getHeight() * 0.5
-    love.graphics.print(text, -textW * 0.5, textY)
-    
-    -- Draw orb sprite and name below text for player turn
-    if text == "YOUR TURN" then
-      -- Get current projectile ID from shooter
-      local ProjectileManager = require("managers.ProjectileManager")
-      local projectileId = "strike"
-      if self.left and self.left.shooter and self.left.shooter.getCurrentProjectileId then
-        projectileId = self.left.shooter:getCurrentProjectileId()
-      elseif self.currentProjectileId then
-        projectileId = self.currentProjectileId
-      end
-      
-      -- Get projectile data
-      local projectile = ProjectileManager.getProjectile(projectileId)
-      if projectile then
-        -- Spacing between text and orb sprite
-        local spriteSpacing = 30
-        local spriteY = textY + font:getHeight() * 0.5 + spriteSpacing + 50 -- Shifted down by 100px
-        
-        -- Draw orb sprite
-        if projectile.icon then
-          local ok, orbImg = pcall(love.graphics.newImage, projectile.icon)
-          if ok and orbImg then
-            local spriteSize = 64 -- Size of orb sprite
-            local spriteW, spriteH = orbImg:getWidth(), orbImg:getHeight()
-            local spriteScale = spriteSize / math.max(spriteW, spriteH)
-            
-            love.graphics.setColor(1, 1, 1, alpha)
-            love.graphics.draw(orbImg, 0, spriteY, 0, spriteScale, spriteScale, spriteW * 0.5, spriteH * 0.5)
-            
-            -- Draw orb name below sprite (in smaller font)
-            love.graphics.setFont(self._smallFont)
-            
-            local orbName = projectile.name or projectileId
-            local nameW = self._smallFont:getWidth(orbName)
-            local nameY = spriteY + spriteSize * 0.5 + 15 -- Spacing below sprite
-            
-            love.graphics.setColor(1, 1, 1, alpha)
-            love.graphics.print(orbName, -nameW * 0.5, nameY)
-          end
-        end
-      end
-    end
-    
-    love.graphics.pop()
-    
-    love.graphics.setFont(theme.fonts.base)
-    love.graphics.pop()
-  end
+  -- Draw turn indicator overlay
+  SplitSceneRenderer.drawTurnIndicator(self, w, h, centerRect)
   
   love.graphics.pop() -- Pop screenshake transform
-  -- Draw projectile card at bottom-left
-  if self.projectileCard then
-    -- Get current projectile ID from shooter's rotation system
-    local ProjectileManager = require("managers.ProjectileManager")
-    local projectileIdToShow = "strike"
-    
-    -- Get projectile ID from shooter if available (uses dynamic rotation)
-    if self.left and self.left.shooter and self.left.shooter.getCurrentProjectileId then
-      projectileIdToShow = self.left.shooter:getCurrentProjectileId()
-      else
-      -- Fallback to stored projectile ID
-        projectileIdToShow = self.currentProjectileId or "strike"
-    end
-    
-    if projectileIdToShow then
-      local cardMargin = 32 -- Increased padding from edges
-      local cardX = cardMargin
-      -- Calculate card height dynamically
-      local projectile = ProjectileManager.getProjectile(projectileIdToShow)
-      local cardH = 90 -- Default fallback
-      if projectile and self.projectileCard.calculateHeight then
-        cardH = self.projectileCard:calculateHeight(projectile)
-      end
-      local cardY = h - cardH - cardMargin
-      
-      -- Calculate fade alpha (fade out then fade in)
-      local fadeAlpha = 1.0
-      if self.tooltipFadeTimer > 0 then
-        local fadeProgress = self.tooltipFadeTimer / self.tooltipFadeDuration
-        -- Fade out in first half, fade in in second half
-        if fadeProgress > 0.5 then
-          fadeAlpha = (fadeProgress - 0.5) * 2 -- 0 to 1 from 0.5 to 0
-        else
-          fadeAlpha = 1 - (fadeProgress * 2) -- 1 to 0 from 0 to 0.5
-        end
-      end
-      
-      self.projectileCard:draw(cardX, cardY, projectileIdToShow, fadeAlpha)
-    end
-  end
   
-  -- Draw top bar on top (z-order)
+  -- Draw projectile card
+  SplitSceneRenderer.drawProjectileCard(self, w, h)
+  
+  -- Draw top bar
   if self.topBar then
     self.topBar:draw()
   end
@@ -931,163 +297,40 @@ function SplitScene:draw()
   end
 end
 
-local function pointInBounds(x, y, b)
-  return x >= b.x and x <= b.x + b.w and y >= b.y and y <= b.y + b.h
-end
-
 function SplitScene:mousepressed(x, y, button)
-  -- Store mouse position for OrbsUI
-  self._mouseX = x
-  self._mouseY = y
-  
-  -- Check if orbs UI is open - handle close button click
-  if self._orbsUIOpen and self.orbsUI then
-    if self.orbsUI:mousepressed(x, y, button) then
-      -- Close button was clicked
-      self._orbsUIOpen = false
-      self.orbsUI:setVisible(false)
-      return
-    end
-    -- Don't process other clicks when UI is open (allow scrolling)
-    return
-  end
-  
-  -- Check if clicking on inventory icon in top bar
-  if self.topBar and not self.topBar.disableInventoryIcon and self.topBar.inventoryIconBounds then
-    local bounds = self.topBar.inventoryIconBounds
-    if x >= bounds.x and x <= bounds.x + bounds.w and y >= bounds.y and y <= bounds.y + bounds.h then
-      return "open_inventory"
-    end
-  end
-  
-  -- Check if clicking on orbs icon in top bar
-  if self.topBar and self.topBar.orbsIconBounds then
-    local bounds = self.topBar.orbsIconBounds
-    if x >= bounds.x and x <= bounds.x + bounds.w and y >= bounds.y and y <= bounds.y + bounds.h then
-      self._orbsUIOpen = true
-      if self.orbsUI then
-        self.orbsUI:setVisible(true)
-      end
-      return
-    end
-  end
-  
-  local w = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
-  local h = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
-  local centerRect = self.layoutManager:getCenterRect(w, h)
-  local centerX = centerRect.x - 100 -- Shift breakout canvas 100px to the left
-  local centerBounds = { x = centerX, y = 0, w = centerRect.w, h = h }
-  if pointInBounds(x, y, centerBounds) and self.left and self.left.mousepressed then
-    self.left:mousepressed(x - centerBounds.x, y - centerBounds.y, button, centerBounds)
-  elseif self.right and self.right.mousepressed then
-    -- Forward clicks outside center to battle scene with full-screen bounds
-    self.right:mousepressed(x, y, button, { x = 0, y = 0, w = w, h = h, center = centerRect.center })
-  end
+  return SplitSceneInput.mousepressed(self, x, y, button)
 end
 
 function SplitScene:mousereleased(x, y, button)
-  -- Check if orbs UI is open - handle drag and drop
-  if self._orbsUIOpen and self.orbsUI then
-    if self.orbsUI:mousereleased(x, y, button) then
-      -- If orbs were reordered, reload shooter projectiles
-      if self.left and self.left.shooter and self.left.shooter.loadProjectiles then
-        self.left.shooter:loadProjectiles()
-      end
-      return
-    end
-  end
-  
-  local w = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
-  local h = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
-  local centerRect = self.layoutManager:getCenterRect(w, h)
-  local centerX = centerRect.x - 100 -- Shift breakout canvas 100px to the left
-  local centerBounds = { x = centerX, y = 0, w = centerRect.w, h = h }
-  if pointInBounds(x, y, centerBounds) and self.left and self.left.mousereleased then
-    self.left:mousereleased(x - centerBounds.x, y - centerBounds.y, button, centerBounds)
-  elseif self.right and self.right.mousereleased then
-    self.right:mousereleased(x, y, button, { x = 0, y = 0, w = w, h = h, center = centerRect.center })
-  end
+  return SplitSceneInput.mousereleased(self, x, y, button)
 end
 
 function SplitScene:mousemoved(x, y, dx, dy)
-  -- Store mouse position for OrbsUI
-  self._mouseX = x
-  self._mouseY = y
-  
-  local w = (config.video and config.video.virtualWidth) or love.graphics.getWidth()
-  local h = (config.video and config.video.virtualHeight) or love.graphics.getHeight()
-  local centerRect = self.layoutManager:getCenterRect(w, h)
-  local centerX = centerRect.x - 100 -- Shift breakout canvas 100px to the left
-  local centerBounds = { x = centerX, y = 0, w = centerRect.w, h = h }
-  if pointInBounds(x, y, centerBounds) and self.left and self.left.mousemoved then
-    self.left:mousemoved(x - centerBounds.x, y - centerBounds.y, dx, dy, centerBounds)
-  elseif self.right and self.right.mousemoved then
-    self.right:mousemoved(x, y, dx, dy, { x = 0, y = 0, w = w, h = h, center = centerRect.center })
-  end
+  return SplitSceneInput.mousemoved(self, x, y, dx, dy)
 end
 
 function SplitScene:wheelmoved(x, y)
-  -- Handle scrolling for OrbsUI
-  if self._orbsUIOpen and self.orbsUI then
-    self.orbsUI:scroll(y)
-    return
-  end
+  return SplitSceneInput.wheelmoved(self, x, y)
 end
 
 function SplitScene:keypressed(key, scancode, isRepeat)
-  if key == "p" then
-    -- Signal to open formation editor
-    return "open_formation_editor"
-  elseif key == "escape" then
-    -- Return to map (manual exit from battle)
-    return "return_to_map"
-  end
-  -- Forward keypress to sub-scenes if needed
-  if self.left and self.left.keypressed then
-    self.left:keypressed(key, scancode, isRepeat)
-  end
-  if self.right and self.right.keypressed then
-    self.right:keypressed(key, scancode, isRepeat)
-  end
+  return SplitSceneInput.keypressed(self, key, scancode, isRepeat)
 end
 
--- Bridge: when left turn ends, forward score to right
--- We detect the transition from canShoot=false to canShoot=true and ball=nil
 function SplitScene:update(dt)
-  -- Update layout manager (handles tweening)
+  -- Update layout manager
   if self.layoutManager then
     self.layoutManager:update(dt)
   end
 
-  -- Update edge glow timers
-  if self.edgeGlowLeftTimer > 0 then
-    self.edgeGlowLeftTimer = math.max(0, self.edgeGlowLeftTimer - dt)
-  end
-  if self.edgeGlowRightTimer > 0 then
-    self.edgeGlowRightTimer = math.max(0, self.edgeGlowRightTimer - dt)
-  end
+  -- Update timers
+  self:updateTimers(dt)
   
-  -- Update left boundary damage effect timer
-  if self.boundaryLeftDamageTimer > 0 then
-    self.boundaryLeftDamageTimer = math.max(0, self.boundaryLeftDamageTimer - dt)
-  end
-  
-  -- Update screenshake timer
-  if self.shakeTime > 0 then
-    self.shakeTime = math.max(0, self.shakeTime - dt)
-    if self.shakeTime <= 0 then
-      self.shakeTime = 0
-      self.shakeDuration = 0
-      self.shakeMagnitude = 0
-    end
-  end
-  
-  -- Always use virtual resolution from config (matches canvas size)
   local w = (config.video and config.video.virtualWidth) or 1280
   local h = (config.video and config.video.virtualHeight) or 720
   local centerRect = self.layoutManager:getCenterRect(w, h)
   
-  -- Update walls if width changed significantly (for smooth tweening)
+  -- Update walls if width changed
   if self._lastCenterW and math.abs(centerRect.w - self._lastCenterW) > 1 then
     if self.left and self.left.updateWalls then
       self.left:updateWalls(centerRect.w, h)
@@ -1097,165 +340,91 @@ function SplitScene:update(dt)
     self._lastCenterW = centerRect.w
   end
 
-  -- Call sub-updates (battle gets full context + where center is)
-  if self.left and self.left.update then self.left:update(dt, { x = 0, y = 0, w = centerRect.w, h = h }) end
-  if self.right and self.right.update then self.right:update(dt, { x = 0, y = 0, w = w, h = h, center = centerRect.center }) end
+  -- Update sub-scenes
+  if self.left and self.left.update then 
+    self.left:update(dt, { x = 0, y = 0, w = centerRect.w, h = h }) 
+  end
+  if self.right and self.right.update then 
+    self.right:update(dt, { x = 0, y = 0, w = w, h = h, center = centerRect.center }) 
+  end
   
   -- Update OrbsUI
   if self.orbsUI then
     self.orbsUI:update(dt, self._mouseX, self._mouseY)
   end
 
-  -- Controller/Steam Deck support via InputManager (non-invasive)
-  do
-    -- Map pointer to gameplay (left) local coordinates
-    local pointerX, pointerY = InputManager.getPointer()
-    local centerX = centerRect.x - 100
-    local centerBounds = { x = centerX, y = 0, w = centerRect.w, h = h }
-    local inLeft =
-      pointerX >= centerBounds.x and pointerX <= centerBounds.x + centerBounds.w and
-      pointerY >= centerBounds.y and pointerY <= centerBounds.y + centerBounds.h
+  -- Controller/gamepad support
+  SplitSceneInput.updateController(self, centerRect, h)
 
-    if inLeft and self.left then
-      local lx = pointerX - centerBounds.x
-      local ly = pointerY - centerBounds.y
-      -- Keep gameplay cursor in sync with controller pointer
-      if self.left.mousemoved then
-        self.left:mousemoved(lx, ly, 0, 0, centerBounds)
-      end
-      -- Shoot action maps to left mouse press/release
-      if InputManager.pressed("shoot") and self.left.mousepressed then
-        self.left:mousepressed(lx, ly, 1, centerBounds)
-      end
-      if InputManager.released("shoot") and self.left.mousereleased then
-        self.left:mousereleased(lx, ly, 1, centerBounds)
-      end
-    end
-
-    -- Battle target cycling
-    if self.right and InputManager.pressed("next_target") and self.right._cycleEnemySelection then
-      self.right:_cycleEnemySelection()
-    end
-  end
-
-  -- Detect turn end: when player turn is active and all balls are gone
-  local canShoot = self.left and self.left.canShoot
-  local hasSingleBall = (self.left and self.left.ball and self.left.ball.alive) and true or false
-  local hasMultipleBalls = false
-  if self.left and self.left.balls then
-    for _, ball in ipairs(self.left.balls) do
-      if ball and ball.alive then
-        hasMultipleBalls = true
-        break
-      end
-    end
-  end
-  local hasBall = hasSingleBall or hasMultipleBalls
-  
-  -- Detect shot start (transition from inactive to active)
-  self._prevShotActive = self._prevShotActive or false
-  local shotActive = (canShoot == false and hasBall)
-  self._prevShotActive = shotActive
-
-  -- Turn ended: player turn active, shot was fired, and no balls remain
-  local turnState = self.turnManager:getState()
-  local shotWasFired = (canShoot == false) -- If canShoot is false, a shot was fired
-  
-  -- Check if black holes are still active (delay turn end until they finish)
-  local hasActiveBlackHoles = false
-  if self.left and self.left.blackHoles and #self.left.blackHoles > 0 then
-    local cfg = (config.gameplay and config.gameplay.blackHole) or {}
-    local duration = cfg.duration or 1.8
-    for _, hole in ipairs(self.left.blackHoles) do
-      if (hole.t or 0) < duration then
-        hasActiveBlackHoles = true
-        break
-      end
-    end
-  end
-  
-  -- Check if lightning hits are still pending (delay turn end until all delayed lightning hits apply)
-  local hasPendingLightningHits = false
-  if self.left and self.left.blocks and self.left.blocks.blocks then
-    for _, b in ipairs(self.left.blocks.blocks) do
-      if b and b.alive and b._lightningHitPending then
-        hasPendingLightningHits = true
-        break
-      end
-    end
-  end
-  
-  -- Check if current attack is lightning
-  local isLightningAttack = false
-  local projectileId = "strike"
-  if self.left and self.left.shooter and self.left.shooter.getCurrentProjectileId then
-    projectileId = self.left.shooter:getCurrentProjectileId()
-  elseif self.currentProjectileId then
-    projectileId = self.currentProjectileId
-  end
-  isLightningAttack = (projectileId == "lightning")
-  
-  -- Start lightning impact delay timer when last lightning hit completes
-  if isLightningAttack and not hasPendingLightningHits and self._lightningImpactDelayTimer == 0 and turnState == TurnManager.States.PLAYER_TURN_ACTIVE and shotWasFired and not hasBall and not hasActiveBlackHoles then
-    self._lightningImpactDelayTimer = self._lightningImpactDelayDuration
-  end
-  
-  -- Update lightning impact delay timer
-  if self._lightningImpactDelayTimer > 0 then
-    self._lightningImpactDelayTimer = self._lightningImpactDelayTimer - dt
-    if self._lightningImpactDelayTimer < 0 then
-      self._lightningImpactDelayTimer = 0
-    end
-  end
-  
-  -- Trigger impact VFX after delay (or immediately if not lightning)
-  local shouldTriggerImpact = false
-  if turnState == TurnManager.States.PLAYER_TURN_ACTIVE and shotWasFired and not hasBall and not hasActiveBlackHoles and not hasPendingLightningHits then
-    if isLightningAttack then
-      -- For lightning, wait for delay timer to expire
-      if self._lightningImpactDelayTimer <= 0 then
-        shouldTriggerImpact = true
-      end
-    else
-      -- For non-lightning, trigger immediately
-      shouldTriggerImpact = true
-    end
-  end
-  
-  if shouldTriggerImpact then
+  -- Detect turn end and trigger impact VFX
+  if SplitSceneTurnLogic.detectTurnEnd(self, dt) then
     -- Trigger impact VFX
     if self.right and self.right.playImpact then
       local blockCount = (self.left and self.left.blocksHitThisTurn) or 1
       local isCrit = (self.left and self.left.critThisTurn and self.left.critThisTurn > 0) or false
       self.right:playImpact(blockCount, isCrit)
     end
-    -- End the turn using TurnManager
-    self:endPlayerTurnWithTurnManager()
+    -- End the turn
+    SplitSceneTurnLogic.endPlayerTurn(self)
     -- Reset lightning delay timer
     self._lightningImpactDelayTimer = 0
   end
 
-  -- (Jackpot feed removed)
-
-  -- Ensure TurnManager processes its action queue each frame
+  -- Update TurnManager
   if self.turnManager and self.turnManager.update then
     self.turnManager:update(dt)
   end
   
-  -- Detect projectile changes and trigger fade animation
-  -- Get current projectile ID from shooter's rotation system
+  -- Update projectile fade animation
+  self:updateProjectileFade(dt)
+  
+  -- Victory/defeat handling
+  local victoryDefeatResult = SplitSceneTurnLogic.updateVictoryDefeat(self, dt)
+  if victoryDefeatResult then
+    return victoryDefeatResult
+  end
+  
+  return nil
+end
+
+--- Update all timers
+function SplitScene:updateTimers(dt)
+  -- Edge glow timers
+  if self.edgeGlowLeftTimer > 0 then
+    self.edgeGlowLeftTimer = math.max(0, self.edgeGlowLeftTimer - dt)
+  end
+  if self.edgeGlowRightTimer > 0 then
+    self.edgeGlowRightTimer = math.max(0, self.edgeGlowRightTimer - dt)
+  end
+  
+  -- Left boundary damage effect timer
+  if self.boundaryLeftDamageTimer > 0 then
+    self.boundaryLeftDamageTimer = math.max(0, self.boundaryLeftDamageTimer - dt)
+  end
+  
+  -- Screenshake timer
+  if self.shakeTime > 0 then
+    self.shakeTime = math.max(0, self.shakeTime - dt)
+    if self.shakeTime <= 0 then
+      self.shakeTime = 0
+      self.shakeDuration = 0
+      self.shakeMagnitude = 0
+    end
+  end
+end
+
+--- Update projectile card fade animation
+function SplitScene:updateProjectileFade(dt)
   local projectileIdToShow = "strike"
   if self.left and self.left.shooter and self.left.shooter.getCurrentProjectileId then
     projectileIdToShow = self.left.shooter:getCurrentProjectileId()
   else
-    -- Fallback to stored projectile ID
-      projectileIdToShow = self.currentProjectileId or "strike"
+    projectileIdToShow = self.currentProjectileId or "strike"
   end
   
   -- Check if projectile changed
   if projectileIdToShow ~= self._prevProjectileId then
     if self._prevProjectileId ~= nil then
-      -- Projectile changed, start fade animation
       self.tooltipFadeTimer = self.tooltipFadeDuration
     end
     self._prevProjectileId = projectileIdToShow
@@ -1265,170 +434,9 @@ function SplitScene:update(dt)
   if self.tooltipFadeTimer > 0 then
     self.tooltipFadeTimer = math.max(0, self.tooltipFadeTimer - dt)
   end
-  
-  -- Check for victory/defeat and return to map after delay
-  -- Check for victory condition: all enemies defeated or BattleScene win state
-  local isVictory = false
-  if self.right then
-    if self.right.state == "win" then
-      isVictory = true
-    elseif self.right.enemies then
-      local allDefeated = true
-      for _, enemy in ipairs(self.right.enemies) do
-        if enemy.hp > 0 and not enemy.disintegrating then
-          allDefeated = false
-          break
-        end
-      end
-      if allDefeated then
-        isVictory = true
-      end
-    end
-  end
-  
-  -- Helper function to check if all actions are complete
-  local function areAllActionsComplete()
-    if not self.right then return false end
-    
-    -- Check if any enemies are still disintegrating
-    if self.right.enemies then
-      local config = require("config")
-      local cfg = config.battle and config.battle.disintegration or {}
-      local duration = cfg.duration or 0.8
-      
-      for _, enemy in ipairs(self.right.enemies) do
-        -- Check if disintegrating and not yet complete
-        if enemy.disintegrating then
-          local disintegrationTime = enemy.disintegrationTime or 0
-          if disintegrationTime < duration then
-            return false -- Still disintegrating
-          end
-        end
-        -- Check if pending disintegration (waiting for other animations)
-        if enemy.pendingDisintegration then
-          return false -- Waiting for other animations
-        end
-      end
-    end
-    
-    -- Check if impact animations are still active
-    if self.right.impactInstances and #self.right.impactInstances > 0 then
-      return false -- Impact animations still playing
-    end
-    if self.right.blackHoleAttacks and #self.right.blackHoleAttacks > 0 then
-      return false -- Black hole attacks still active
-    end
-    
-    -- Check if any popups are still active
-    if self.right.popups and #self.right.popups > 0 then
-      for _, popup in ipairs(self.right.popups) do
-        if popup.t and popup.t > 0 then
-          -- Check if it's an animated damage popup that's still in sequence
-          if popup.kind == "animated_damage" and popup.sequence then
-            local sequenceIndex = popup.sequenceIndex or 1
-            if sequenceIndex < #popup.sequence then
-              return false -- Sequence still in progress
-            end
-            -- Check if sequence timer indicates it's still showing
-            if popup.sequenceTimer and popup.sequenceTimer > 0 then
-              local lastStep = popup.sequence[#popup.sequence]
-              if lastStep then
-                local hasExclamation = lastStep.text and string.find(lastStep.text, "!") ~= nil
-                local lingerTime = hasExclamation and 0.2 or 0.05
-                local totalDisplayTime = (lastStep.duration or 0.15) + lingerTime
-                if popup.sequenceTimer < totalDisplayTime then
-                  return false -- Still showing final number
-                end
-              end
-            end
-          elseif popup.t > 0 then
-            return false -- Other popups still active
-          end
-        end
-      end
-    end
-    
-    return true -- All actions complete
-  end
-  
-  if isVictory then
-    -- Mark victory detected, but only start timer when all actions are complete
-    if not self._victoryDetected then
-      self._victoryDetected = true
-      -- Ensure TurnManager is in VICTORY state
-      if self.turnManager then
-        local state = self.turnManager:getState()
-        if state ~= TurnManager.States.VICTORY then
-          self.turnManager:transitionTo(TurnManager.States.VICTORY)
-        end
-      end
-      
-      -- Award gold based on encounter type (normal vs elite)
-      local EncounterManager = require("core.EncounterManager")
-      local encounter = EncounterManager.getCurrentEncounter()
-      if encounter then
-        local goldReward = self:calculateGoldReward(encounter)
-        if goldReward > 0 then
-          -- Store gold reward for display in RewardsScene; actual add happens on Rewards click
-          self._battleGoldReward = goldReward
-        end
-      end
-    end
-    
-    -- Only start timer after all actions (disintegration, impacts, popups) are complete
-    if self._victoryDetected and (not self._returnToMapTimer or self._returnToMapTimer == 0) then
-      if areAllActionsComplete() then
-        self._returnToMapTimer = 0.05 -- Very short delay after all actions complete
-      end
-    end
-  end
-  
-  -- Check for defeat condition: player HP at 0 or BattleScene lose state
-  local isDefeat = false
-  if self.right then
-    -- Check multiple defeat conditions
-    if (self.right.playerHP and self.right.playerHP <= 0) or
-       (self.right.state == "lose") then
-      isDefeat = true
-    end
-  end
-  
-  if isDefeat then
-    -- Only start timer if not already started
-    if not self._defeatDetected then
-      self._defeatDetected = true
-      self._returnToMapTimer = 2.0 -- Shorter delay for defeat
-      -- Ensure TurnManager is in DEFEAT state
-      if self.turnManager then
-        local state = self.turnManager:getState()
-        if state ~= TurnManager.States.DEFEAT then
-          self.turnManager:transitionTo(TurnManager.States.DEFEAT)
-        end
-      end
-    end
-  end
-  
-  -- Return to map when timer expires
-  if self._returnToMapTimer and self._returnToMapTimer > 0 then
-    self._returnToMapTimer = self._returnToMapTimer - dt
-    if self._returnToMapTimer <= 0 then
-      -- Store victory status and gold reward before resetting flags
-      local wasVictory = self._victoryDetected
-      local goldReward = self._battleGoldReward or 0
-      -- Reset flags
-      self._victoryDetected = false
-      self._defeatDetected = false
-      self._returnToMapTimer = 0
-      self._battleGoldReward = nil
-      -- Return victory status and gold reward along with return signal
-      return { type = "return_to_map", victory = wasVictory, goldReward = goldReward }
-    end
-  end
-  
-  return nil
 end
 
--- Set the current projectile (updates both tooltip and shooter)
+--- Set the current projectile
 function SplitScene:setProjectile(projectileId)
   self.currentProjectileId = projectileId or "strike"
   if self.left and self.left.setProjectile then
@@ -1436,18 +444,14 @@ function SplitScene:setProjectile(projectileId)
   end
 end
 
--- Set battle type (triggers tween to new canvas width)
--- @param battleType string - Battle type from battle_profiles.Types
--- @param duration number - Optional tween duration in seconds (default: 0.25)
+--- Set battle type (triggers tween to new canvas width)
 function SplitScene:setBattleType(battleType, duration)
   if self.layoutManager then
     self.layoutManager:setBattleType(battleType, duration)
   end
 end
 
--- Set canvas width factor directly (for testing/flexibility)
--- @param factor number - Width factor (0.0 to 1.0)
--- @param duration number - Optional tween duration in seconds (default: 0.25)
+--- Set canvas width factor directly
 function SplitScene:setCanvasWidthFactor(factor, duration)
   if self.layoutManager then
     return self.layoutManager:setTargetFactor(factor, duration)
@@ -1455,7 +459,7 @@ function SplitScene:setCanvasWidthFactor(factor, duration)
   return false
 end
 
--- Get current battle type
+--- Get current battle type
 function SplitScene:getBattleType()
   if self.layoutManager then
     return self.layoutManager:getBattleType()
@@ -1463,37 +467,22 @@ function SplitScene:getBattleType()
   return nil
 end
 
--- Trigger screenshake
+--- Trigger screenshake
 function SplitScene:triggerShake(magnitude, duration)
   self.shakeMagnitude = magnitude or 10
   self.shakeDuration = duration or 0.25
   self.shakeTime = self.shakeDuration
 end
 
--- Calculate gold reward based on encounter type
--- Normal encounters: 16-25 gold
--- Elite encounters: 24-36 gold
-function SplitScene:calculateGoldReward(encounter)
-  if not encounter then
-    return love.math.random(16, 25) -- Default to normal if no encounter
-  end
-  
-  if encounter.elite == true then
-    return love.math.random(24, 36)
-  else
-    return love.math.random(16, 25)
-  end
-end
-
--- Reload blocks from battle profile (called when returning from formation editor)
+--- Reload blocks from battle profile
 function SplitScene:reloadBlocks()
   if not self.left then return end
-  -- Ensure layoutManager exists if this scene was previously unloaded and is being reused
+  
   if not self.layoutManager then
     self.layoutManager = LayoutManager.new()
   end
   
-  -- Reload datasets so encounters use the latest formations
+  -- Reload datasets
   if EncounterManager and EncounterManager.reloadDatasets then
     EncounterManager.reloadDatasets()
     if EncounterManager.getCurrentEncounterId and EncounterManager.setEncounterById then
@@ -1506,24 +495,20 @@ function SplitScene:reloadBlocks()
   package.loaded["data.battle_profiles"] = nil
   battle_profiles = require("data.battle_profiles")
   
-  -- Get current battle profile
   local currentBattleType = self.layoutManager:getBattleType()
   local battleProfile = (EncounterManager and EncounterManager.getCurrentBattleProfile and EncounterManager.getCurrentBattleProfile()) or battle_profiles.getProfile(currentBattleType)
   
-  -- Get bounds for GameplayScene
   local w, h = love.graphics.getDimensions()
   local centerRect = self.layoutManager:getCenterRect(w, h)
   local bounds = { x = 0, y = 0, w = centerRect.w, h = h }
   
-  -- Reload blocks in GameplayScene
   if self.left and self.left.reloadBlocks then
     self.left:reloadBlocks(battleProfile, bounds)
   end
 end
 
--- Cleanup method: propagates unload to child scenes
+--- Cleanup
 function SplitScene:unload()
-  -- Unload child scenes (GameplayScene and BattleScene)
   if self.left and self.left.unload then
     self.left:unload()
   end
@@ -1531,7 +516,6 @@ function SplitScene:unload()
     self.right:unload()
   end
   
-  -- Clear references
   self.left = nil
   self.right = nil
   self.turnManager = nil
@@ -1540,5 +524,3 @@ function SplitScene:unload()
 end
 
 return SplitScene
-
-
